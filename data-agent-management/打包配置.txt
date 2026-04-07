@@ -1,0 +1,6 @@
+永久配置（如果经常需要跳过测试）idea
+File → Settings (Windows/Linux) 或 IntelliJ IDEA → Preferences (Mac)
+Build, Execution, Deployment → Build Tools → Maven → Runner
+在 "VM Options" 中输入：
+plaintext
+-Dmaven.test.skip=true

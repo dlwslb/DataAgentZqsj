@@ -1,0 +1,29 @@
+
+https://github.com/spring-ai-alibaba/DataAgent/blob/main/docs/KNOWLEDGE_USAGE.md
+
+三、 智能体知识库配置 (Agent Knowledge)
+定位：这是 DataAgent 的外脑扩充（RAG）。支持非结构化文档上传，用于提供背景信息、行业知识、SOP 或历史案例。
+
+1. 知识类型与用途
+支持 文档、问答对(Q&A) 等。
+
+A. 文档 (File Upload: PDF, DOCX, MD)
+用途：
+数据库Schema说明书：如果表结构极其复杂，语义模型写不下，可以上传一份详细的数据库设计文档。
+业务流程SOP：帮助 Planner (规划节点) 理解业务流程，甚至更好地按你想要的步骤进行数据分析。例如你觉得Agent做的“销量预测“老是做不好，你们公司有自己的销量预测流程，第一步如何做，第二步如何....等等固定流程，此时你完全可以在文档写上 "如何进行销量预测的步骤”，直接指定销量预测的流程。 强烈建议使用这个功能。当然你也可以放到Q&A问答对里面，或者把多个问答对塞到一个文档里面再上传。
+行业报告：帮助 Report Generator (报告生成节点) 在生成最终 HTML 报告时，增加行业洞察和背景知识，而不只是单纯罗列数据。
+
+B. 问答对/常见问题 (Q&A / FAQ) —— ⭐ 调优神器
+这是修正 Agent 错误行为最高效的方式（Few-Shot Learning）。
+
+用途：当发现 Agent 对某类问题 SQL 生成总是错误时，不要反复改 Prompt，直接加一个 Q&A。
+最佳实践配置：
+问题 (Q)：模拟用户的提问。例如：统计上个月的销售额。
+答案 (A)：提供标准的 SQL 写法，或者思维链（CoT）。
+案例：
+Q: 查询去年的活跃用户数
+A: 活跃用户的定义是登录次数>3次。SQL逻辑应该是：SELECT count(distinct user_id) FROM login_logs WHERE login_time >= '2023-01-01' AND login_time <= '2023-12-31' GROUP BY user_id HAVING count(*) > 3。
+
+
+npm install
+npm run dev -- --host 0.0.0.0

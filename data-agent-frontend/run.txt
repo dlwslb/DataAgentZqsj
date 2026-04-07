@@ -1,0 +1,7 @@
+
+# 3. 启动前端
+cd data-agent-frontend
+npm install && npm run dev
+
+
+npm run dev -- --host 0.0.0.0
