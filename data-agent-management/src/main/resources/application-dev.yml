@@ -1,0 +1,40 @@
+# 开发环境配置  tender_data_agent
+spring:
+  datasource:
+    #url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://101.200.133.35:3300/tender_data_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
+    url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://39.102.200.143:2881/tender_data_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
+    password: ${DATA_AGENT_DATASOURCE_PASSWORD:Daren87087766!}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.alibaba.druid.pool.DruidDataSource
+  ai:
+    vectorstore:
+      type: simple  # 开发环境用内存向量，启动快
+    alibaba:
+      data-agent:
+        vector-store:
+          table-topk-limit: 10
+          table-similarity-threshold: 0.2
+          default-topk-limit: 8
+          default-similarity-threshold: 0.4
+        llm-service-type: stream
+        code-executor:
+          code-pool-executor: local  # 开发环境用本地Python
+          python-max-tries-count: 3
+        file:
+          type: local
+          path-prefix: data-agent
+          path: uploads
+          url-prefix: /uploads
+          imageSize: 2097152
+        max-sql-retry-count: 3
+        langfuse:
+          enabled: false
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    org.springframework.jdbc: debug

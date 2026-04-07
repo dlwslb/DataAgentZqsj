@@ -18,6 +18,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import routes from '@/router/routes';
 import modelConfigService from '@/services/modelConfig';
+import systemConfigService from '@/services/systemConfig';
 
 // 创建路由实例
 const router = createRouter({
@@ -38,10 +39,11 @@ let hasShownWarning = false;
 // 全局路由守卫
 router.beforeEach(async (to, from, next) => {
   // 设置页面标题
+  const systemName = await systemConfigService.getSystemName();
   if (to.meta?.title) {
-    document.title = `${to.meta.title} - Spring AI Alibaba Data Agent`;
+    document.title = `${to.meta.title} - ${systemName}`;
   } else {
-    document.title = 'Spring AI Alibaba Data Agent';
+    document.title = systemName;
   }
 
   if (to.path === '/model-config') {

@@ -21,7 +21,7 @@
         <div class="brand-section">
           <div class="brand-logo">
             <i class="bi bi-robot"></i>
-            <span class="brand-text">Spring AI Alibaba Data Agent</span>
+            <span class="brand-text">{{ systemName }}</span>
           </div>
           <nav class="header-nav">
             <div class="nav-item" :class="{ active: isAgentPage() }" @click="goToAgentList">
@@ -46,11 +46,18 @@
 
 <script>
   import { useRouter } from 'vue-router';
+  import { ref, onMounted } from 'vue';
+  import systemConfigService from '@/services/systemConfig';
 
   export default {
     name: 'BaseLayout',
     setup() {
       const router = useRouter();
+      const systemName = ref('Spring AI Alibaba Data Agent');
+
+      onMounted(async () => {
+        systemName.value = await systemConfigService.getSystemName();
+      });
 
       // 导航方法
       const goToAgentList = () => {
@@ -75,6 +82,7 @@
       };
 
       return {
+        systemName,
         goToAgentList,
         goToModelConfig,
         isAgentPage,
