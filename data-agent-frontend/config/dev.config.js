@@ -2,7 +2,7 @@
 const API_TARGET = 'http://localhost:58065';
 
 export default {
-  base: '/zqsjAgents/',
+  base: '',
   build: {
     outDir: 'zqsjAgents',
   },
