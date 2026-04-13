@@ -1,5 +1,5 @@
 server:
-  port: 8065
+  port: 58065
   address: 0.0.0.0
 
 springdoc:
