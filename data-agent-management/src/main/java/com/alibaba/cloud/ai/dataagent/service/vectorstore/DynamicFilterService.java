@@ -219,7 +219,7 @@ public class DynamicFilterService {
 		return combineWithAnd(conditions);
 	}
 
-	public Filter.Expression buildFilterExpressionForSearchColumns(Integer datasourceId,
+	public Filter.Expression buildFilterExpressionForSearchColumns(Integer datasourceId, String agentId,
 			List<String> upstreamTableNames) {
 		if (upstreamTableNames == null || upstreamTableNames.isEmpty()) {
 			log.warn("Upstream table names list is empty. Returning empty filter signal.");
@@ -229,13 +229,16 @@ public class DynamicFilterService {
 		FilterExpressionBuilder b = new FilterExpressionBuilder();
 		List<Filter.Expression> conditions = new ArrayList<>();
 
-		// 1. DatasourceId 条件
+		// 1. AgentId 条件
+		conditions.add(b.eq(Constant.AGENT_ID, agentId).build());
+
+		// 2. DatasourceId 条件
 		conditions.add(b.eq(Constant.DATASOURCE_ID, datasourceId.toString()).build());
 
-		// 2. VectorType 条件
+		// 3. VectorType 条件
 		conditions.add(b.eq(DocumentMetadataConstant.VECTOR_TYPE, DocumentMetadataConstant.COLUMN).build());
 
-		// 3. TableName 条件
+		// 4. TableName 条件
 		conditions.add(b.in(DocumentMetadataConstant.TABLE_NAME, upstreamTableNames.toArray()).build());
 
 		return combineWithAnd(conditions);

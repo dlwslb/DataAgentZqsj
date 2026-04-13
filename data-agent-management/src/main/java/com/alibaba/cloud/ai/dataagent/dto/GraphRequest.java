@@ -40,4 +40,10 @@ public class GraphRequest {
 
 	private boolean nl2sqlOnly;
 
+	/**
+	 * User role: admin shows full analysis process, user shows only results
+	 */
+	@Builder.Default
+	private String userRole = "admin";
+
 }

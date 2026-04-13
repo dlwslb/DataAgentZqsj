@@ -162,7 +162,13 @@ public class AgentStartupInitialization implements ApplicationRunner, Disposable
 	private boolean isAlreadyInitialized(Long agentId) {
 		try {
 			String agentIdStr = String.valueOf(agentId);
-			return agentVectorStoreService.hasDocuments(agentIdStr);
+			// 检查是否有该 agentId 的 TABLE 类型文档（Schema 初始化的标志）
+			boolean hasTableDocs = agentVectorStoreService.hasDocuments(agentIdStr);
+			if (hasTableDocs) {
+				log.debug("Agent {} already has vector data, skipping initialization", agentId);
+				return true;
+			}
+			return false;
 		}
 		catch (Exception e) {
 			log.error("Failed to check initialization status for agent: {}, assuming not initialized", agentId, e);

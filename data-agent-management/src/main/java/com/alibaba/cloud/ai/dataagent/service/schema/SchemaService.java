@@ -24,9 +24,9 @@ import java.util.List;
 
 public interface SchemaService {
 
-	Boolean schema(Integer datasourceId, SchemaInitRequest schemaInitRequest) throws Exception;
+	Boolean schema(Integer datasourceId, String agentId, SchemaInitRequest schemaInitRequest) throws Exception;
 
-	List<Document> getTableDocumentsByDatasource(Integer datasourceId, String query);
+	List<Document> getTableDocumentsByDatasource(Integer datasourceId, String agentId, String query);
 
 	void extractDatabaseName(SchemaDTO schemaDTO, DbConfigBO dbConfig);
 
@@ -35,6 +35,6 @@ public interface SchemaService {
 
 	List<Document> getTableDocuments(Integer datasourceId, List<String> tableNames);
 
-	List<Document> getColumnDocumentsByTableName(Integer datasourceId, List<String> tableNames);
+	List<Document> getColumnDocumentsByTableName(Integer datasourceId, String agentId, List<String> tableNames);
 
 }

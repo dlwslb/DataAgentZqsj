@@ -22,13 +22,10 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.async.ResultCallback;
-import com.github.dockerjava.api.model.AccessMode;
-import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
-import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
@@ -41,11 +38,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -253,17 +246,7 @@ public class DockerCodePoolExecutorService extends AbstractCodePoolExecutorServi
 			.withAutoRemove(false)
 			.withTmpFs(Map.of("/tmp", ""))
 			.withNetworkMode(this.properties.getNetworkMode());
-
-		if (!this.isRemote) {
-			List<Bind> binds = new ArrayList<>();
-			binds.add(new Bind(tempDir.resolve("script.py").toAbsolutePath().toString(), new Volume("/app/script.py"),
-					AccessMode.ro));
-			binds.add(new Bind(tempDir.resolve("requirements.txt").toAbsolutePath().toString(),
-					new Volume("/app/requirements.txt"), AccessMode.ro));
-			binds.add(new Bind(tempDir.resolve("input_data.txt").toAbsolutePath().toString(),
-					new Volume("/app/input_data.txt"), AccessMode.ro));
-			config.withBinds(binds.toArray(new Bind[0]));
-		}
+		// 注意：不再使用绑定挂载，统一使用 docker cp 复制文件（可覆盖容器内的目录）
 		return config;
 	}
 
@@ -289,9 +272,13 @@ public class DockerCodePoolExecutorService extends AbstractCodePoolExecutorServi
 
 		// Generate temporary directory and files
 		Path tempDir = Files.createTempDirectory(containerName);
-		Files.createFile(tempDir.resolve("requirements.txt"));
-		Files.createFile(tempDir.resolve("script.py"));
-		Files.createFile(tempDir.resolve("input_data.txt"));
+		for (String fileName : new String[]{"requirements.txt", "script.py", "input_data.txt"}) {
+			Path filePath = tempDir.resolve(fileName);
+			if (Files.exists(filePath)) {
+				Files.deleteIfExists(filePath);
+			}
+			Files.createFile(filePath);
+		}
 
 		// Create container
 		HostConfig hostConfig = this.createHostConfig(tempDir);
@@ -321,20 +308,21 @@ public class DockerCodePoolExecutorService extends AbstractCodePoolExecutorServi
 		try {
 			// 1. Prepare files
 			this.writeContextFiles(tempDir, request);
-			this.uploadFilesIfRemote(containerId, tempDir);
+			// 2. Copy files to container (覆盖容器内可能存在的同名目录)
+			this.copyFilesToContainer(containerId, tempDir);
 
-			// 2. Start container and wait
+			// 3. Start container and wait
 			dockerClient.startContainerCmd(containerId).exec();
 			dockerClient.waitContainerCmd(containerId)
 				.start()
 				.awaitCompletion(this.properties.getContainerTimeout(), TimeUnit.SECONDS);
 
-			// 3. Fetch logs
+			// 4. Fetch logs
 			LogResult logs = this.fetchExecutionLogs(containerId, tempDir);
 			String stdout = logs.stdout;
 			String stderr = logs.stderr;
 
-			// 4. Check exit code
+			// 5. Check exit code
 			InspectContainerResponse inspectResponse = dockerClient.inspectContainerCmd(containerId).exec();
 			int exitCode = Objects.requireNonNull(inspectResponse.getState().getExitCodeLong()).intValue();
 			if (exitCode != 0) {
@@ -359,6 +347,14 @@ public class DockerCodePoolExecutorService extends AbstractCodePoolExecutorServi
 	}
 
 	private void writeContextFiles(Path tempDir, TaskRequest request) throws IOException {
+		for (String fileName : new String[]{"script.py", "requirements.txt", "input_data.txt"}) {
+			Path filePath = tempDir.resolve(fileName);
+			if (Files.exists(filePath)) {
+				Files.deleteIfExists(filePath);
+			}
+			Files.createFile(filePath);
+		}
+
 		Files.write(tempDir.resolve("script.py"),
 				StringUtils.hasText(request.code()) ? request.code().getBytes() : "".getBytes());
 		Files.write(tempDir.resolve("requirements.txt"),
@@ -367,10 +363,10 @@ public class DockerCodePoolExecutorService extends AbstractCodePoolExecutorServi
 				StringUtils.hasText(request.input()) ? request.input().getBytes() : "".getBytes());
 	}
 
-	private void uploadFilesIfRemote(String containerId, Path tempDir) {
-		if (!this.isRemote) {
-			return;
-		}
+	/**
+	 * 复制文件到容器（统一使用 docker cp，可覆盖容器内的目录）
+	 */
+	private void copyFilesToContainer(String containerId, Path tempDir) {
 		String[] files = { "script.py", "requirements.txt", "input_data.txt" };
 		for (String file : files) {
 			dockerClient.copyArchiveToContainerCmd(containerId)

@@ -242,6 +242,24 @@ public class AgentVectorStoreServiceImpl implements AgentVectorStoreService {
 	}
 
 	@Override
+	public List<Document> searchWithFilter(String query, Filter.Expression filterExpression, int topK,
+			double similarityThreshold) {
+		Assert.hasText(query, "Query cannot be empty.");
+		Assert.notNull(filterExpression, "filterExpression cannot be null.");
+		log.info("searchWithFilter - query: {}, filter: {}, topK: {}, threshold: {}", 
+				query, filterExpression, topK, similarityThreshold);
+		SearchRequest searchRequest = SearchRequest.builder()
+			.query(query)
+			.topK(topK)
+			.filterExpression(filterExpression)
+			.similarityThreshold(similarityThreshold)
+			.build();
+		List<Document> results = vectorStore.similaritySearch(searchRequest);
+		log.info("searchWithFilter - found {} documents", results.size());
+		return results;
+	}
+
+	@Override
 	public boolean hasDocuments(String agentId) {
 		// 类似 MySQL 的 LIMIT 1,只检查是否存在文档
 		List<Document> docs = vectorStore.similaritySearch(org.springframework.ai.vectorstore.SearchRequest.builder()

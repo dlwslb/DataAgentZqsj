@@ -68,6 +68,10 @@ public class PromptConstant {
 		return new PromptTemplate(PromptLoader.loadPrompt("report-generator-plain"));
 	}
 
+	public static PromptTemplate getReportGeneratorSimplePromptTemplate() {
+		return new PromptTemplate(PromptLoader.loadPrompt("report-generator-simple"));
+	}
+
 	public static PromptTemplate getSqlErrorFixerPromptTemplate() {
 		return new PromptTemplate(PromptLoader.loadPrompt("sql-error-fixer"));
 	}

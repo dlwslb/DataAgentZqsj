@@ -99,7 +99,7 @@ public class ReportGeneratorNode implements NodeAction {
 
 		// Generate report streaming flux
 		Flux<ChatResponse> reportGenerationFlux = generateReport(userInput, plan, executionResults,
-				summaryAndRecommendations, agentId);
+				summaryAndRecommendations, agentId, state);
 
 		TextType reportTextType = TextType.MARK_DOWN;
 
@@ -142,7 +142,7 @@ public class ReportGeneratorNode implements NodeAction {
 	 * Generates the analysis report.
 	 */
 	private Flux<ChatResponse> generateReport(String userInput, Plan plan, HashMap<String, String> executionResults,
-			String summaryAndRecommendations, Long agentId) {
+			String summaryAndRecommendations, Long agentId, OverAllState state) {
 		// Build user requirements and plan description
 		String userRequirementsAndPlan = buildUserRequirementsAndPlan(userInput, plan);
 
@@ -153,8 +153,11 @@ public class ReportGeneratorNode implements NodeAction {
 		List<UserPromptConfig> optimizationConfigs = promptConfigService.getOptimizationConfigs("report-generator",
 				agentId);
 
+		// Get user role from state
+		String userRole = StateUtil.getStringValue(state, USER_ROLE, "admin");
+
 		String reportPrompt = PromptHelper.buildReportGeneratorPromptWithOptimization(userRequirementsAndPlan,
-				analysisStepsAndData, summaryAndRecommendations, optimizationConfigs);
+				analysisStepsAndData, summaryAndRecommendations, optimizationConfigs, userRole);
 		log.debug("Report Node Prompt: \n {} \n", reportPrompt);
 		return llmService.callUser(reportPrompt);
 	}

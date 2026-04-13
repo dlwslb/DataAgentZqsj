@@ -99,10 +99,10 @@ public class SchemaRecallNode implements NodeAction {
 
 		// Execute business logic first - recall schema information immediately
 		List<Document> tableDocuments = new ArrayList<>(
-				schemaService.getTableDocumentsByDatasource(datasourceId, input));
+				schemaService.getTableDocumentsByDatasource(datasourceId, agentId, input));
 		// extract table names
 		List<String> recalledTableNames = extractTableName(tableDocuments);
-		List<Document> columnDocuments = schemaService.getColumnDocumentsByTableName(datasourceId, recalledTableNames);
+		List<Document> columnDocuments = schemaService.getColumnDocumentsByTableName(datasourceId, agentId, recalledTableNames);
 
 		String failMessage = """
 				\n 未检索到相关数据表

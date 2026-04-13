@@ -64,7 +64,71 @@ public class MarkdownParserUtil {
 		}
 
 		// Extract just the content between delimiters
-		return markdownCode.substring(contentStart, endIndex);
+		String code = markdownCode.substring(contentStart, endIndex);
+
+		// Normalize indentation: convert tabs to 4 spaces and remove common leading
+		// indentation
+		return normalizeIndentation(code);
+	}
+
+	/**
+	 * Normalize code indentation by converting tabs to spaces and removing common
+	 * leading indentation.
+	 * @param code the code with potentially mixed indentation
+	 * @return the code with normalized indentation (only spaces, no tabs)
+	 */
+	private static String normalizeIndentation(String code) {
+		// Convert tabs to 4 spaces
+		code = code.replace("\t", "    ");
+
+		// Split into lines
+		String[] lines = code.split("\n", -1);
+
+		// Find the minimum indentation (ignoring empty lines)
+		int minIndent = Integer.MAX_VALUE;
+		for (String line : lines) {
+			if (line.trim().isEmpty()) {
+				continue; // Skip empty lines
+			}
+			// Count leading spaces
+			int leadingSpaces = 0;
+			for (char c : line.toCharArray()) {
+				if (c == ' ') {
+					leadingSpaces++;
+				}
+				else {
+					break;
+				}
+			}
+			if (leadingSpaces < minIndent) {
+				minIndent = leadingSpaces;
+			}
+		}
+
+		// If no indentation found, return as is
+		if (minIndent == Integer.MAX_VALUE || minIndent == 0) {
+			return code;
+		}
+
+		// Remove common indentation from all lines
+		StringBuilder result = new StringBuilder();
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i];
+			if (line.trim().isEmpty()) {
+				result.append("");
+			}
+			else if (line.length() >= minIndent) {
+				result.append(line.substring(minIndent));
+			}
+			else {
+				result.append(line);
+			}
+			if (i < lines.length - 1) {
+				result.append("\n");
+			}
+		}
+
+		return result.toString();
 	}
 
 }

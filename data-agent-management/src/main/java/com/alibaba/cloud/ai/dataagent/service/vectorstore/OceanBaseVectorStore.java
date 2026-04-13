@@ -203,23 +203,21 @@ public class OceanBaseVectorStore implements VectorStore {
 			WhereClauseResult filterWhere = null;
 			if (request.getFilterExpression() != null) {
 				filterWhere = buildWhereClause(request.getFilterExpression());
-				sql.append("WHERE ").append(filterWhere.clause).append(" AND ");
-			} else {
-				sql.append("WHERE ");
+				sql.append("WHERE ").append(filterWhere.clause);
 			}
 
+			// ✅ OceanBase: cosine_distance 不能在 WHERE 中使用，只能在 ORDER BY 中
 			sql.append(String.format(
-					"cosine_distance(embedding, '%s') <= ? " +
-							"ORDER BY similarity ASC APPROXIMATE LIMIT ?",
+					" ORDER BY similarity ASC APPROXIMATE LIMIT ?",
 					queryVectorStr));
 
 			List<Object> params = new ArrayList<>();
 			if (filterWhere != null) {
 				params.addAll(filterWhere.params);
 			}
-			params.add(threshold);
 			params.add(topK);
 
+			//log.info("OceanBase similarity search SQL: {}, params: {}", sql.toString(), params);
 			return jdbcTemplate.query(sql.toString(), params.toArray(), documentRowMapper());
 		} catch (Exception e) {
 			log.error("Similarity search failed for query: {}", query, e);
@@ -278,27 +276,27 @@ public class OceanBaseVectorStore implements VectorStore {
 			typeField.setAccessible(true);
 			Object type = typeField.get(expr);
 
-			// 只处理 EQ 类型
+			// 处理 EQ 类型
 			if ("EQ".equals(type.toString())) {
 				java.lang.reflect.Field leftField = expr.getClass().getDeclaredField("left");
 				leftField.setAccessible(true);
 				Object left = leftField.get(expr);
-
+			
 				java.lang.reflect.Field rightField = expr.getClass().getDeclaredField("right");
 				rightField.setAccessible(true);
 				Object right = rightField.get(expr);
-
+			
 				// left 应该是 KeyExpression，有 key() 方法
 				if (left != null) {
 					java.lang.reflect.Method keyMethod = left.getClass().getMethod("key");
 					String property = (String) keyMethod.invoke(left);
-
+			
 					if (property != null && property.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
 						String jsonPath = "$." + property;
-						
+								
 						// 提取 right 的实际值（可能是 Filter$Value 包装）
 						Object actualValue = extractValue(right);
-						
+								
 						if (actualValue instanceof String) {
 							return new WhereClauseResult(
 									"JSON_UNQUOTE(JSON_EXTRACT(metadata, ?)) = ?",
@@ -312,6 +310,29 @@ public class OceanBaseVectorStore implements VectorStore {
 						}
 					}
 				}
+			}
+					
+			// 处理 AND 类型
+			if ("AND".equals(type.toString())) {
+				java.lang.reflect.Field leftField = expr.getClass().getDeclaredField("left");
+				leftField.setAccessible(true);
+				Filter.Expression leftExpr = (Filter.Expression) leftField.get(expr);
+			
+				java.lang.reflect.Field rightField = expr.getClass().getDeclaredField("right");
+				rightField.setAccessible(true);
+				Filter.Expression rightExpr = (Filter.Expression) rightField.get(expr);
+			
+				WhereClauseResult leftWhere = buildWhereClause(leftExpr);
+				WhereClauseResult rightWhere = buildWhereClause(rightExpr);
+			
+				List<Object> allParams = new ArrayList<>();
+				allParams.addAll(leftWhere.params);
+				allParams.addAll(rightWhere.params);
+			
+				return new WhereClauseResult(
+						"(" + leftWhere.clause + " AND " + rightWhere.clause + ")",
+						allParams
+				);
 			}
 
 			log.debug("Unsupported filter type: {}, using fallback", type);

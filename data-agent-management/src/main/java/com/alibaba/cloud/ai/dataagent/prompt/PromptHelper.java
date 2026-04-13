@@ -139,10 +139,12 @@ public class PromptHelper {
 	 * @param userRequirementsAndPlan user requirements and plan
 	 * @param analysisStepsAndData analysis steps and data
 	 * @param summaryAndRecommendations summary and recommendations
+	 * @param userRole user role: 'admin' or 'user'
 	 * @return built prompt
 	 */
 	public static String buildReportGeneratorPromptWithOptimization(String userRequirementsAndPlan,
-			String analysisStepsAndData, String summaryAndRecommendations, List<UserPromptConfig> optimizationConfigs) {
+			String analysisStepsAndData, String summaryAndRecommendations, List<UserPromptConfig> optimizationConfigs,
+			String userRole) {
 
 		Map<String, Object> params = new HashMap<>();
 		params.put("user_requirements_and_plan", userRequirementsAndPlan);
@@ -154,8 +156,15 @@ public class PromptHelper {
 		String optimizationSection = buildOptimizationSection(optimizationConfigs, params);
 		params.put("optimization_section", optimizationSection);
 
-		// only plain report
-		return PromptConstant.getReportGeneratorPlainPromptTemplate().render(params);
+		// 根据用户角色选择不同的模板
+		if ("user".equals(userRole)) {
+			// 普通用户：使用精简版模板，只包含结果解读
+			return PromptConstant.getReportGeneratorSimplePromptTemplate().render(params);
+		}
+		else {
+			// 管理员：使用完整版模板
+			return PromptConstant.getReportGeneratorPlainPromptTemplate().render(params);
+		}
 	}
 
 	public static String buildSqlErrorFixerPrompt(SqlGenerationDTO sqlGenerationDTO) {

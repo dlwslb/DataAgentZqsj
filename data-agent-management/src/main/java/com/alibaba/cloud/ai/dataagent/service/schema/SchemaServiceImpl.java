@@ -39,7 +39,6 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.BatchingStrategy;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
@@ -107,7 +106,7 @@ public class SchemaServiceImpl implements SchemaService {
 				relatedNamesFromForeignKeys);
 		if (!missingTables.isEmpty() && datasourceId != null) {
 			loadMissingTableDocuments(datasourceId, mutableTableDocuments, missingTables);
-			loadMissingColDocForMissingTables(datasourceId, mutableColumnDocuments, missingTables);
+			loadMissingColDocForMissingTables(datasourceId, agentId, mutableColumnDocuments, missingTables);
 		}
 
 		// Build table list
@@ -127,8 +126,8 @@ public class SchemaServiceImpl implements SchemaService {
 	}
 
 	@Override
-	public Boolean schema(Integer datasourceId, SchemaInitRequest schemaInitRequest) throws Exception {
-		log.info("Starting schema initialization for datasource: {}", datasourceId);
+	public Boolean schema(Integer datasourceId, String agentId, SchemaInitRequest schemaInitRequest) throws Exception {
+		log.info("Starting schema initialization for datasource: {}, agent: {}", datasourceId, agentId);
 		DbConfigBO config = schemaInitRequest.getDbConfig();
 		DbQueryParameter dqp = DbQueryParameter.from(config)
 			.setSchema(config.getSchema())
@@ -139,8 +138,8 @@ public class SchemaServiceImpl implements SchemaService {
 			Accessor dbAccessor = accessorFactory.getAccessorByDbConfig(config);
 
 			// 清理旧数据
-			log.info("Clearing existing schema data for datasource: {}", datasourceId);
-			clearSchemaDataForDatasource(datasourceId);
+			log.info("Clearing existing schema data for datasource: {}, agent: {}", datasourceId, agentId);
+			clearSchemaDataForDatasourceAndAgent(datasourceId, agentId);
 			log.debug("Successfully cleared existing schema data for datasource: {}", datasourceId);
 
 			// 处理外键
@@ -170,11 +169,11 @@ public class SchemaServiceImpl implements SchemaService {
 			log.info("Successfully processed all tables for datasource: {}", datasourceId);
 
 			// 转换为文档
-			List<Document> columnDocs = convertColumnsToDocuments(datasourceId, tables);
-			List<Document> tableDocs = convertTablesToDocuments(datasourceId, tables);
+			List<Document> columnDocs = convertColumnsToDocuments(datasourceId, agentId, tables);
+			List<Document> tableDocs = convertTablesToDocuments(datasourceId, agentId, tables);
 
 			// 存储文档
-			log.info("Storing  columns and {} tables for datasource: {}", columnDocs.size(), tableDocs.size(),
+			log.info("Storing {} columns and {} tables for datasource: {}", columnDocs.size(), tableDocs.size(),
 					datasourceId);
 			storeSchemaDocuments(datasourceId, columnDocs, tableDocs);
 			log.info("Successfully stored all documents for datasource: {}", datasourceId);
@@ -271,9 +270,10 @@ public class SchemaServiceImpl implements SchemaService {
 		return map;
 	}
 
-	protected void clearSchemaDataForDatasource(Integer datasourceId) throws Exception {
-		// 检查是否有文档需要删除
+	protected void clearSchemaDataForDatasourceAndAgent(Integer datasourceId, String agentId) throws Exception {
+		// 按 agentId + datasourceId 删除，避免影响其他 Agent
 		Map<String, Object> metadata = new HashMap<>();
+		metadata.put(Constant.AGENT_ID, agentId);
 		metadata.put(Constant.DATASOURCE_ID, datasourceId.toString());
 		metadata.put(DocumentMetadataConstant.VECTOR_TYPE, DocumentMetadataConstant.COLUMN);
 
@@ -284,7 +284,7 @@ public class SchemaServiceImpl implements SchemaService {
 	}
 
 	@Override
-	public List<Document> getTableDocumentsByDatasource(Integer datasourceId, String query) {
+	public List<Document> getTableDocumentsByDatasource(Integer datasourceId, String agentId, String query) {
 		Assert.notNull(datasourceId, "datasourceId cannot be null");
 		int tableTopK = dataAgentProperties.getVectorStore().getTableTopkLimit();
 		double tableThreshold = dataAgentProperties.getVectorStore().getTableSimilarityThreshold();
@@ -293,20 +293,14 @@ public class SchemaServiceImpl implements SchemaService {
 		FilterExpressionBuilder b = new FilterExpressionBuilder();
 		List<Filter.Expression> conditions = new ArrayList<>();
 
+		conditions.add(b.eq(Constant.AGENT_ID, agentId).build());
 		conditions.add(b.eq(Constant.DATASOURCE_ID, datasourceId.toString()).build());
 		conditions.add(b.eq(DocumentMetadataConstant.VECTOR_TYPE, DocumentMetadataConstant.TABLE).build());
 
 		Filter.Expression filterExpression = DynamicFilterService.combineWithAnd(conditions);
 
 		// 执行向量检索
-		SearchRequest searchRequest = SearchRequest.builder()
-			.query(query)
-			.topK(tableTopK)
-			.similarityThreshold(tableThreshold)
-			.filterExpression(filterExpression)
-			.build();
-
-		return agentVectorStoreService.getDocumentsOnlyByFilter(filterExpression, tableTopK);
+		return agentVectorStoreService.searchWithFilter(query, filterExpression, tableTopK, tableThreshold);
 	}
 
 	private List<String> getMissingTableNamesWithForeignKeySet(List<Document> tableDocuments,
@@ -342,10 +336,10 @@ public class SchemaServiceImpl implements SchemaService {
 		}
 	}
 
-	private void loadMissingColDocForMissingTables(Integer datasourceId, List<Document> curColDocs,
+	private void loadMissingColDocForMissingTables(Integer datasourceId, String agentId, List<Document> curColDocs,
 			List<String> missingTableNames) {
 		// 加载缺失的列文档
-		List<Document> foundColumnDocs = this.getColumnDocumentsByTableName(datasourceId, missingTableNames);
+		List<Document> foundColumnDocs = this.getColumnDocumentsByTableName(datasourceId, agentId, missingTableNames);
 		if (!foundColumnDocs.isEmpty()) {
 			// 使用公共方法添加去重后的文档
 			addUniqueDocuments(curColDocs, foundColumnDocs, DocumentMetadataConstant.COLUMN, missingTableNames);
@@ -503,13 +497,13 @@ public class SchemaServiceImpl implements SchemaService {
 	}
 
 	@Override
-	public List<Document> getColumnDocumentsByTableName(Integer datasourceId, List<String> tableNames) {
+	public List<Document> getColumnDocumentsByTableName(Integer datasourceId, String agentId, List<String> tableNames) {
 		Assert.notNull(datasourceId, "DatasourceId cannot be null.");
 		if (tableNames.isEmpty()) {
 			log.warn("TableNames is empty.We need talbeNames to search their columns");
 			return Collections.emptyList();
 		}
-		Filter.Expression filterExpression = dynamicFilterService.buildFilterExpressionForSearchColumns(datasourceId,
+		Filter.Expression filterExpression = dynamicFilterService.buildFilterExpressionForSearchColumns(datasourceId, agentId,
 				tableNames);
 		if (filterExpression == null) {
 			log.error("FilterExpression is null.This should not happen when tableNames is not Empty, ");
