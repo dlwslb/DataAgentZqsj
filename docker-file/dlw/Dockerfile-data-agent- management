@@ -2,11 +2,19 @@
 ## 感谢复旦核博士的建议！灰子哥，牛皮！
 FROM eclipse-temurin:21-jre
 
-## 创建目录，并使用它作为工作目录
-RUN mkdir -p /agent-management
-WORKDIR /sagent-management
+#配置使用 code-pool-executor: docker（Docker 执行器模式）
+RUN apt-get update && \
+    apt-get install -y docker.io curl python3 python3-pip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+## 创建目录，并使用它作为工作目录 
+##DockerCodePoolExecutorService.java(295 - 310)问题找到了！第 302 行硬编码了 .withWorkingDir("/app")，但你的 Dockerfile 工作目录是 /agent-management，且没有创建 /app 目录
+RUN mkdir -p /agent-management /app
+#RUN mkdir -p /agent-management
+WORKDIR /agent-management
 ## 将后端项目的 Jar 文件，复制到镜像中
-COPY ./data-agent-management.jar app.jar
+COPY ./data-agent-management-1.0.0.jar app.jar
 
 ## 设置 TZ 时区
 ##ENV TZ=Asia/Shanghai
@@ -31,8 +39,8 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 \
 ## 应用参数
 ENV ARGS=""
 
-## 暴露后端项目的 58080 端口
-EXPOSE 58080
+## 暴露后端项目的 58065 端口
+EXPOSE 58065
 
 ## 启动后端项目
 CMD java ${JAVA_OPTS} -jar app.jar $ARGS
