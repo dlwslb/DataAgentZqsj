@@ -30,3 +30,12 @@ export interface PageResponse<T = unknown> {
   pageSize: number;
   totalPages: number;
 }
+
+// 创建统一的 axios 实例，自动添加 base 路径
+import axios from 'axios';
+
+const apiClient = axios.create({
+  baseURL: import.meta.env.BASE_URL || '/',
+});
+
+export { apiClient };

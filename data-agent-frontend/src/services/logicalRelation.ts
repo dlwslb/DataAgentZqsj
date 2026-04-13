@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 import { ApiResponse } from '@/services/common';
 
 // 逻辑外键接口定义
@@ -32,13 +32,13 @@ export interface LogicalRelation {
   updatedTime?: string;
 }
 
-const API_BASE_URL = '/api/datasource';
+const API_BASE_URL = 'api/datasource';
 
 class LogicalRelationService {
   // 获取指定数据源的逻辑外键列表
   async getLogicalRelations(datasourceId: number): Promise<LogicalRelation[]> {
     try {
-      const response = await axios.get<ApiResponse<LogicalRelation[]>>(
+      const response = await apiClient.get<ApiResponse<LogicalRelation[]>>(
         `${API_BASE_URL}/${datasourceId}/logical-relations`,
       );
       return response.data.data || [];
@@ -57,7 +57,7 @@ class LogicalRelationService {
     >,
   ): Promise<LogicalRelation | null> {
     try {
-      const response = await axios.post<ApiResponse<LogicalRelation>>(
+      const response = await apiClient.post<ApiResponse<LogicalRelation>>(
         `${API_BASE_URL}/${datasourceId}/logical-relations`,
         logicalRelation,
       );
@@ -77,7 +77,7 @@ class LogicalRelationService {
       'id' | 'datasourceId' | 'isDeleted' | 'createdTime' | 'updatedTime'
     >,
   ): Promise<ApiResponse<LogicalRelation>> {
-    const response = await axios.put<ApiResponse<LogicalRelation>>(
+    const response = await apiClient.put<ApiResponse<LogicalRelation>>(
       `${API_BASE_URL}/${datasourceId}/logical-relations/${relationId}`,
       logicalRelation,
     );
@@ -89,7 +89,7 @@ class LogicalRelationService {
     datasourceId: number,
     relationId: number,
   ): Promise<ApiResponse<void>> {
-    const response = await axios.delete<ApiResponse<void>>(
+    const response = await apiClient.delete<ApiResponse<void>>(
       `${API_BASE_URL}/${datasourceId}/logical-relations/${relationId}`,
     );
     return response.data;
@@ -100,7 +100,7 @@ class LogicalRelationService {
     datasourceId: number,
     logicalRelations: LogicalRelation[],
   ): Promise<ApiResponse<LogicalRelation[]>> {
-    const response = await axios.put<ApiResponse<LogicalRelation[]>>(
+    const response = await apiClient.put<ApiResponse<LogicalRelation[]>>(
       `${API_BASE_URL}/${datasourceId}/logical-relations`,
       logicalRelations,
     );
@@ -110,7 +110,7 @@ class LogicalRelationService {
   // 获取数据源表的字段列表
   async getTableColumns(datasourceId: number, tableName: string): Promise<string[]> {
     try {
-      const response = await axios.get<ApiResponse<string[]>>(
+      const response = await apiClient.get<ApiResponse<string[]>>(
         `${API_BASE_URL}/${datasourceId}/tables/${tableName}/columns`,
       );
       if (response.data.success) {

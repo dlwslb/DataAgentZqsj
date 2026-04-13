@@ -22,6 +22,7 @@ export interface GraphRequest {
   humanFeedbackContent?: string;
   rejectedPlan: boolean;
   nl2sqlOnly: boolean;
+  userRole?: 'admin' | 'user'; // User role: admin shows full process, user shows only results
 }
 
 export interface GraphNodeResponse {
@@ -44,7 +45,7 @@ export enum TextType {
   TEXT = 'TEXT',
 }
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = `${import.meta.env.BASE_URL}api`;
 
 class GraphService {
   /**
@@ -71,6 +72,9 @@ class GraphService {
     params.append('humanFeedback', request.humanFeedback.toString());
     params.append('rejectedPlan', request.rejectedPlan.toString());
     params.append('nl2sqlOnly', request.nl2sqlOnly.toString());
+    if (request.userRole) {
+      params.append('userRole', request.userRole);
+    }
 
     if (request.humanFeedbackContent) {
       params.append('humanFeedbackContent', request.humanFeedbackContent);

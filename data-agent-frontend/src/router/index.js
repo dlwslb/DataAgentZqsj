@@ -22,7 +22,7 @@ import systemConfigService from '@/services/systemConfig';
 
 // 创建路由实例
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior(to, from, savedPosition) {
     // 路由切换时滚动到顶部
@@ -38,13 +38,19 @@ let hasShownWarning = false;
 
 // 全局路由守卫
 router.beforeEach(async (to, from, next) => {
-  // 设置页面标题
-  const systemName = await systemConfigService.getSystemName();
-  if (to.meta?.title) {
-    document.title = `${to.meta.title} - ${systemName}`;
-  } else {
-    document.title = systemName;
-  }
+  // 设置页面标题（异步，不阻塞路由）
+  systemConfigService.getSystemName().then(systemName => {
+    if (to.meta?.title) {
+      document.title = `${to.meta.title} - ${systemName}`;
+    } else {
+      document.title = systemName;
+    }
+  }).catch(() => {
+    // 失败时使用默认标题
+    if (to.meta?.title) {
+      document.title = to.meta.title;
+    }
+  });
 
   if (to.path === '/model-config') {
     console.log(`导航到: ${to.path} (${to.name})`);

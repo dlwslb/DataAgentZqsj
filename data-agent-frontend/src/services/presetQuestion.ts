@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 
 interface PresetQuestion {
   id?: number;
@@ -31,7 +31,7 @@ interface PresetQuestionDTO {
   isActive?: boolean;
 }
 
-const API_BASE_URL = '/api/agent';
+const API_BASE_URL = 'api/agent';
 
 class PresetQuestionService {
   /**
@@ -41,7 +41,7 @@ class PresetQuestionService {
    */
   async list(agentId: number): Promise<PresetQuestion[]> {
     try {
-      const response = await axios.get<PresetQuestion[]>(
+      const response = await apiClient.get<PresetQuestion[]>(
         `${API_BASE_URL}/${agentId}/preset-questions`,
       );
       return response.data;
@@ -62,7 +62,7 @@ class PresetQuestionService {
         question: q.question,
         isActive: q.isActive ?? true,
       }));
-      const response = await axios.post(
+      const response = await apiClient.post(
         `${API_BASE_URL}/${agentId}/preset-questions`,
         questionsData,
       );
@@ -80,7 +80,7 @@ class PresetQuestionService {
    */
   async delete(agentId: number, questionId: number): Promise<boolean> {
     try {
-      await axios.delete(`${API_BASE_URL}/${agentId}/preset-questions/${questionId}`);
+      await apiClient.delete(`${API_BASE_URL}/${agentId}/preset-questions/${questionId}`);
       return true;
     } catch (error) {
       console.error('删除预设问题失败:', error);

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 import { ApiResponse } from '@/services/common';
 import { AgentDatasource } from '@/services/datasource';
 
@@ -37,7 +37,7 @@ class AgentDatasourceService {
    */
   async initSchema(agentId: string): Promise<ApiResponse<null>> {
     try {
-      const response = await axios.post<ApiResponse<null>>(`${BASE_URL_FUNC(agentId)}/init`);
+      const response = await apiClient.post<ApiResponse<null>>(`${BASE_URL_FUNC(agentId)}/init`);
       return response.data;
     } catch (error) {
       throw new Error(`初始化Schema失败: ${error}`);
@@ -50,7 +50,7 @@ class AgentDatasourceService {
    */
   async getAgentDatasource(agentId: number): Promise<AgentDatasource[]> {
     try {
-      const response = await axios.get<ApiResponse<AgentDatasource[]>>(
+      const response = await apiClient.get<ApiResponse<AgentDatasource[]>>(
         BASE_URL_FUNC(String(agentId)),
       );
       if (response.data.success) {
@@ -68,7 +68,7 @@ class AgentDatasourceService {
    */
   async getActiveAgentDatasource(agentId: number): Promise<AgentDatasource> {
     try {
-      const response = await axios.get<ApiResponse<AgentDatasource>>(
+      const response = await apiClient.get<ApiResponse<AgentDatasource>>(
         BASE_URL_FUNC(String(agentId)) + '/active',
       );
       if (response.data.success) {
@@ -93,7 +93,7 @@ class AgentDatasourceService {
     datasourceId: number,
   ): Promise<ApiResponse<AgentDatasource>> {
     try {
-      const response = await axios.post<ApiResponse<AgentDatasource>>(
+      const response = await apiClient.post<ApiResponse<AgentDatasource>>(
         `${BASE_URL_FUNC(agentId)}/${datasourceId}`,
       );
       return response.data;
@@ -112,7 +112,7 @@ class AgentDatasourceService {
     datasourceId: number,
   ): Promise<ApiResponse<null>> {
     try {
-      const response = await axios.delete<ApiResponse<null>>(
+      const response = await apiClient.delete<ApiResponse<null>>(
         `${BASE_URL_FUNC(agentId)}/${datasourceId}`,
       );
       return response.data;
@@ -131,7 +131,7 @@ class AgentDatasourceService {
     dto: ToggleDatasourceDto,
   ): Promise<ApiResponse<AgentDatasource>> {
     try {
-      const response = await axios.put<ApiResponse<AgentDatasource>>(
+      const response = await apiClient.put<ApiResponse<AgentDatasource>>(
         `${BASE_URL_FUNC(agentId)}/toggle`,
         dto,
       );
@@ -151,7 +151,7 @@ class AgentDatasourceService {
     dto: UpdateDatasourceTablesDto,
   ): Promise<ApiResponse<null>> {
     try {
-      const response = await axios.post<ApiResponse<null>>(`${BASE_URL_FUNC(agentId)}/tables`, dto);
+      const response = await apiClient.post<ApiResponse<null>>(`${BASE_URL_FUNC(agentId)}/tables`, dto);
       return response.data;
     } catch (error) {
       throw new Error(`更新数据源表列表失败: ${error}`);

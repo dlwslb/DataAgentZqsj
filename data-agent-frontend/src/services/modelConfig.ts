@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 import type { ApiResponse } from './common';
 
 export interface ModelConfig {
@@ -42,14 +42,14 @@ export interface ModelCheckReady {
   ready: boolean;
 }
 
-const API_BASE_URL = '/api/model-config';
+const API_BASE_URL = 'api/model-config';
 
 class ModelConfigService {
   /**
    * 获取模型配置列表
    */
   async list(): Promise<ModelConfig[]> {
-    const response = await axios.get<ApiResponse<ModelConfig[]>>(`${API_BASE_URL}/list`);
+    const response = await apiClient.get<ApiResponse<ModelConfig[]>>(`${API_BASE_URL}/list`);
     return response.data.data || [];
   }
 
@@ -59,7 +59,7 @@ class ModelConfigService {
    */
   async add(config: Omit<ModelConfig, 'id'>): Promise<ApiResponse<string>> {
     console.log('config: ' + config);
-    const response = await axios.post<ApiResponse<string>>(`${API_BASE_URL}/add`, config);
+    const response = await apiClient.post<ApiResponse<string>>(`${API_BASE_URL}/add`, config);
     return response.data;
   }
 
@@ -68,7 +68,7 @@ class ModelConfigService {
    * @param config 模型配置对象
    */
   async update(config: ModelConfig): Promise<ApiResponse<string>> {
-    const response = await axios.put<ApiResponse<string>>(`${API_BASE_URL}/update`, config);
+    const response = await apiClient.put<ApiResponse<string>>(`${API_BASE_URL}/update`, config);
     return response.data;
   }
 
@@ -77,7 +77,7 @@ class ModelConfigService {
    * @param id 配置ID
    */
   async delete(id: number): Promise<ApiResponse<string>> {
-    const response = await axios.delete<ApiResponse<string>>(`${API_BASE_URL}/${id}`);
+    const response = await apiClient.delete<ApiResponse<string>>(`${API_BASE_URL}/${id}`);
     return response.data;
   }
 
@@ -86,7 +86,7 @@ class ModelConfigService {
    * @param id 配置ID
    */
   async activate(id: number): Promise<ApiResponse<string>> {
-    const response = await axios.post<ApiResponse<string>>(`${API_BASE_URL}/activate/${id}`);
+    const response = await apiClient.post<ApiResponse<string>>(`${API_BASE_URL}/activate/${id}`);
     return response.data;
   }
 
@@ -95,7 +95,7 @@ class ModelConfigService {
    * @param config 模型配置对象
    */
   async testConnection(config: Omit<ModelConfig, 'id'>): Promise<ApiResponse<string>> {
-    const response = await axios.post<ApiResponse<string>>(`${API_BASE_URL}/test`, config);
+    const response = await apiClient.post<ApiResponse<string>>(`${API_BASE_URL}/test`, config);
     return response.data;
   }
 
@@ -103,7 +103,7 @@ class ModelConfigService {
    * 检查模型配置是否就绪（聊天模型和嵌入模型都需要配置）
    */
   async checkReady(): Promise<ModelCheckReady> {
-    const response = await axios.get<ApiResponse<ModelCheckReady>>(`${API_BASE_URL}/check-ready`);
+    const response = await apiClient.get<ApiResponse<ModelCheckReady>>(`${API_BASE_URL}/check-ready`);
     return (
       response.data.data || { chatModelReady: false, embeddingModelReady: false, ready: false }
     );

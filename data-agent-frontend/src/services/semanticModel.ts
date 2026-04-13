@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 import { ApiResponse } from './common';
 
 interface SemanticModel {
@@ -66,7 +66,7 @@ interface BatchImportResult {
   errors: string[];
 }
 
-const API_BASE_URL = '/api/semantic-model';
+const API_BASE_URL = 'api/semantic-model';
 
 class SemanticModelService {
   /**
@@ -79,7 +79,7 @@ class SemanticModelService {
     if (agentId !== undefined) params.agentId = agentId.toString();
     if (keyword) params.keyword = keyword;
 
-    const response = await axios.get<ApiResponse<SemanticModel[]>>(API_BASE_URL, { params });
+    const response = await apiClient.get<ApiResponse<SemanticModel[]>>(API_BASE_URL, { params });
     return response.data.data || [];
   }
 
@@ -89,10 +89,10 @@ class SemanticModelService {
    */
   async get(id: number): Promise<SemanticModel | null> {
     try {
-      const response = await axios.get<ApiResponse<SemanticModel>>(`${API_BASE_URL}/${id}`);
+      const response = await apiClient.get<ApiResponse<SemanticModel>>(`${API_BASE_URL}/${id}`);
       return response.data.data || null;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -104,7 +104,7 @@ class SemanticModelService {
    * @param model 语义模型 DTO 对象
    */
   async create(model: SemanticModelAddDto): Promise<boolean> {
-    const response = await axios.post<ApiResponse>(API_BASE_URL, model);
+    const response = await apiClient.post<ApiResponse>(API_BASE_URL, model);
     return response.data.success;
   }
 
@@ -115,10 +115,10 @@ class SemanticModelService {
    */
   async update(id: number, model: SemanticModel): Promise<boolean> {
     try {
-      const response = await axios.put<ApiResponse>(`${API_BASE_URL}/${id}`, model);
+      const response = await apiClient.put<ApiResponse>(`${API_BASE_URL}/${id}`, model);
       return response.data.success;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return false;
       }
       throw error;
@@ -131,10 +131,10 @@ class SemanticModelService {
    */
   async delete(id: number): Promise<boolean> {
     try {
-      const response = await axios.delete<ApiResponse>(`${API_BASE_URL}/${id}`);
+      const response = await apiClient.delete<ApiResponse>(`${API_BASE_URL}/${id}`);
       return response.data.success;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return false;
       }
       throw error;
@@ -146,7 +146,7 @@ class SemanticModelService {
    * @param ids 语义模型 ID 列表
    */
   async batchDelete(ids: number[]): Promise<boolean> {
-    const response = await axios.delete<ApiResponse>(`${API_BASE_URL}/batch`, {
+    const response = await apiClient.delete<ApiResponse>(`${API_BASE_URL}/batch`, {
       data: ids,
     });
     return response.data.success;
@@ -157,7 +157,7 @@ class SemanticModelService {
    * @param ids 语义模型 ID 列表
    */
   async enable(ids: number[]): Promise<boolean> {
-    const response = await axios.put<ApiResponse>(`${API_BASE_URL}/enable`, ids);
+    const response = await apiClient.put<ApiResponse>(`${API_BASE_URL}/enable`, ids);
     return response.data.success;
   }
 
@@ -166,7 +166,7 @@ class SemanticModelService {
    * @param ids 语义模型 ID 列表
    */
   async disable(ids: number[]): Promise<boolean> {
-    const response = await axios.put<ApiResponse>(`${API_BASE_URL}/disable`, ids);
+    const response = await apiClient.put<ApiResponse>(`${API_BASE_URL}/disable`, ids);
     return response.data.success;
   }
 
@@ -175,7 +175,7 @@ class SemanticModelService {
    * @param dto 批量导入DTO
    */
   async batchImport(dto: SemanticModelBatchImportDTO): Promise<BatchImportResult> {
-    const response = await axios.post<ApiResponse<BatchImportResult>>(
+    const response = await apiClient.post<ApiResponse<BatchImportResult>>(
       `${API_BASE_URL}/batch-import`,
       dto,
     );
@@ -192,7 +192,7 @@ class SemanticModelService {
     formData.append('file', file);
     formData.append('agentId', agentId.toString());
 
-    const response = await axios.post<ApiResponse<BatchImportResult>>(
+    const response = await apiClient.post<ApiResponse<BatchImportResult>>(
       `${API_BASE_URL}/import/excel`,
       formData,
       {
@@ -208,7 +208,7 @@ class SemanticModelService {
    * 下载Excel模板
    */
   async downloadTemplate(): Promise<void> {
-    const response = await axios.get(`${API_BASE_URL}/template/download`, {
+    const response = await apiClient.get(`${API_BASE_URL}/template/download`, {
       responseType: 'blob',
     });
 

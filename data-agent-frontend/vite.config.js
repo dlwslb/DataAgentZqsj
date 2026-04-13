@@ -13,37 +13,33 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import compression from 'vite-plugin-compression';
 import { resolve } from 'path';
+import devConfig from './config/dev.config.js';
+import prodConfig from './config/prod.config.js';
 
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-    },
-  },
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8065',
-        changeOrigin: true,
-      },
-      '/nl2sql': {
-        target: 'http://localhost:8065',
-        changeOrigin: true,
-      },
-      '/uploads': {
-        target: 'http://localhost:8065',
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const isProd = mode === 'production';
+  const config = isProd ? prodConfig : devConfig;
+
+  return {
+    plugins: [vue(), compression({ algorithm: 'gzip' })],
+    base: config.base,
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
       },
     },
-    historyApiFallback: true,
-  },
-  build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
-  },
+    server: {
+      ...config.server,
+      historyApiFallback: true,
+    },
+    build: {
+      outDir: config.build.outDir,
+      assetsDir: 'assets',
+    },
+  };
 });

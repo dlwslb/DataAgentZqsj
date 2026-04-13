@@ -231,7 +231,7 @@
         if (sessionEventSource.value) {
           sessionEventSource.value.close();
         }
-        const source = new EventSource(`/api/agent/${currentAgentId}/sessions/stream`);
+        const source = new EventSource(`${import.meta.env.BASE_URL}api/agent/${currentAgentId}/sessions/stream`);
         source.addEventListener('title-updated', event => {
           try {
             const data = JSON.parse((event as MessageEvent<string>).data) as SessionUpdateEvent;

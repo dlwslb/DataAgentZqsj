@@ -19,6 +19,8 @@
  * 封装所有业务相关的API调用
  */
 
+import { apiClient } from './common';
+
 interface UploadResponse {
   success: boolean;
   message?: string;
@@ -32,21 +34,10 @@ export const fileUploadApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const url = '/api/upload/avatar';
-    return fetch(url, {
-      method: 'POST',
-      body: formData,
-    }).then(async response => {
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`Upload failed: ${response.status} ${text}`);
-      }
-      const ct = response.headers.get('content-type') || '';
-      if (ct.includes('application/json')) {
-        return await response.json();
-      }
-      const text = await response.text();
-      return { success: true, message: 'ok', url: text };
-    });
+    return apiClient.post('api/upload/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }).then(response => response.data);
   },
 };

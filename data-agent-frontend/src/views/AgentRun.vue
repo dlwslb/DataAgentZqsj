@@ -49,23 +49,20 @@
             />
           </div>
           <div v-else class="messages-area">
-            <div
-              v-for="message in currentMessages"
-              :key="message.id"
-              :class="message.messageType === 'text' ? ['message-container', message.role] : ''"
-            >
-              <!-- HTML类型消息直接渲染 -->
-              <div v-if="message.messageType === 'html'" v-html="message.content"></div>
-              <!-- 数据集消息尝试图表渲染 -->
-              <div v-else-if="message.messageType === 'result-set'" class="result-set-message">
+            <template v-for="message in currentMessages" :key="message.id">
+              <!-- HTML类型消息：仅管理员模式显示 -->
+              <div v-if="message.messageType === 'html' && requestOptions.userRole === 'admin'" v-html="message.content"></div>
+              <!-- 数据集消息：根据配置显示 -->
+              <div v-else-if="message.messageType === 'result-set' && resultSetDisplayConfig.showSqlResults" class="result-set-message">
                 <ResultSetDisplay
                   v-if="message.content"
                   :resultData="JSON.parse(message.content)"
                   :pageSize="resultSetDisplayConfig.pageSize"
                 />
               </div>
+              <!-- 报告消息：两种模式都显示 -->
               <div
-                v-else-if="message.messageType === 'markdown-report'"
+                v-else-if="message.messageType === 'markdown-report' || message.messageType === 'html-report'"
                 class="markdown-report-message"
               >
                 <div
@@ -117,18 +114,34 @@
                   <ReportHtmlView v-else :content="message.content" />
                 </div>
               </div>
-              <!-- 文本类型消息使用原有布局 -->
-              <div v-else :class="['message', message.role]">
-                <div class="message-avatar">
-                  <el-avatar :size="32">
-                    {{ message.role === 'user' ? '我' : 'AI' }}
-                  </el-avatar>
-                </div>
-                <div class="message-content">
-                  <div class="message-text" v-html="formatMessageContent(message)"></div>
+              <!-- 用户消息：两种模式都显示 -->
+              <div v-else-if="message.role === 'user'" :class="['message-container', message.role]">
+                <div :class="['message', message.role]">
+                  <div class="message-avatar">
+                    <el-avatar :size="32">
+                      {{ message.role === 'user' ? '我' : 'AI' }}
+                    </el-avatar>
+                  </div>
+                  <div class="message-content">
+                    <div class="message-text" v-html="formatMessageContent(message)"></div>
+                  </div>
                 </div>
               </div>
-            </div>
+              <!-- 其他文本类型消息：仅管理员模式显示 -->
+              <div v-else-if="requestOptions.userRole === 'admin'" :class="['message-container', message.role]">
+                <div :class="['message', message.role]">
+                  <div class="message-avatar">
+                    <el-avatar :size="32">
+                      {{ message.role === 'user' ? '我' : 'AI' }}
+                    </el-avatar>
+                  </div>
+                  <div class="message-content">
+                    <div class="message-text" v-html="formatMessageContent(message)"></div>
+                  </div>
+                </div>
+              </div>
+              <!-- 普通用户模式下，不满足以上条件的消息不会被渲染，不会占用空间 -->
+            </template>
 
             <!-- 流式响应显示区域 -->
             <div v-if="isStreaming" class="streaming-response">
@@ -160,9 +173,9 @@
                       <ReportHtmlView v-else :content="getMarkdownContentFromNode(nodeBlock)" />
                     </div>
                   </div>
-                  <!-- 如果是 RESULT_SET 节点，使用 ResultSetDisplay 组件 -->
+                  <!-- 如果是 RESULT_SET 节点，根据配置决定是否显示 -->
                   <div
-                    v-else-if="nodeBlock.length > 0 && nodeBlock[0].textType === 'RESULT_SET'"
+                    v-else-if="nodeBlock.length > 0 && nodeBlock[0].textType === 'RESULT_SET' && resultSetDisplayConfig.showSqlResults"
                     class="agent-response-block"
                   >
                     <div class="agent-response-title">
@@ -176,8 +189,16 @@
                       />
                     </div>
                   </div>
-                  <!-- 其他节点使用原来的 HTML 渲染方式 -->
-                  <div v-else v-html="generateNodeHtml(nodeBlock)"></div>
+                  <!-- ReportGeneratorNode 的其他类型（如 HTML 报告），两种模式都显示 -->
+                  <div
+                    v-else-if="nodeBlock.length > 0 && nodeBlock[0].nodeName === 'ReportGeneratorNode'"
+                    v-html="generateNodeHtml(nodeBlock)"
+                  ></div>
+                  <!-- 其他中间处理节点：仅管理员模式显示 -->
+                  <div
+                    v-else-if="requestOptions.userRole === 'admin'"
+                    v-html="generateNodeHtml(nodeBlock)"
+                  ></div>
                 </template>
               </div>
             </div>
@@ -219,6 +240,13 @@
                 :onQuestionClick="handlePresetQuestionClick"
               />
               <div class="switch-group">
+                <div class="switch-item">
+                  <span class="switch-label">管理员模式</span>
+                  <el-switch
+                    v-model="isAdminMode"
+                    :disabled="isStreaming || showHumanFeedback"
+                  />
+                </div>
                 <div class="switch-item">
                   <span class="switch-label">人工反馈</span>
                   <el-tooltip
@@ -512,6 +540,7 @@
         },
       });
       const requestOptions = ref({
+        userRole: 'user' as 'user' | 'admin', // 用户模式，默认普通用户
         humanFeedback: false,
         nl2sqlOnly: false,
         reportFormat: 'markdown' as 'markdown' | 'html', // 'markdown' | 'html'，控制报告展示方式
@@ -541,6 +570,14 @@
       });
 
       const agentId = computed(() => route.params.id as string);
+
+      // 管理员模式开关（双向绑定到 requestOptions.userRole）
+      const isAdminMode = computed({
+        get: () => requestOptions.value.userRole === 'admin',
+        set: (val: boolean) => {
+          requestOptions.value.userRole = val ? 'admin' : 'user';
+        },
+      });
 
       const loadAgent = async () => {
         try {
@@ -612,6 +649,7 @@
             rejectedPlan: false,
             humanFeedbackContent: null,
             threadId: sessionState.lastRequest?.threadId || null,
+            userRole: requestOptions.value.userRole,
           };
 
           userInput.value = '';
@@ -1357,6 +1395,7 @@
         autoScroll,
         chatContainer,
         nodeBlocks,
+        isAdminMode,
         agentId,
         showHumanFeedback,
         lastRequest,

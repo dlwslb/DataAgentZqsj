@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 
 /**
  * 知识库实体
@@ -58,14 +58,14 @@ export interface PageResult<T> {
   message?: string;
 }
 
-const API_BASE_URL = '/api/agent-knowledge';
+const API_BASE_URL = 'api/agent-knowledge';
 
 class AgentKnowledgeService {
   /**
    * 分页查询知识列表（支持多条件过滤）
    */
   async queryByPage(queryDTO: AgentKnowledgeQueryDTO): Promise<PageResult<AgentKnowledge>> {
-    const response = await axios.post<PageResult<AgentKnowledge>>(
+    const response = await apiClient.post<PageResult<AgentKnowledge>>(
       `${API_BASE_URL}/query/page`,
       queryDTO,
     );
@@ -86,7 +86,7 @@ class AgentKnowledgeService {
     if (status) params.status = status;
     if (keyword) params.keyword = keyword;
 
-    const response = await axios.get<{ success: boolean; data: AgentKnowledge[] }>(
+    const response = await apiClient.get<{ success: boolean; data: AgentKnowledge[] }>(
       `${API_BASE_URL}/agent/${agentId}`,
       { params },
     );
@@ -98,12 +98,12 @@ class AgentKnowledgeService {
    */
   async getById(id: number): Promise<AgentKnowledge | null> {
     try {
-      const response = await axios.get<{ success: boolean; data: AgentKnowledge }>(
+      const response = await apiClient.get<{ success: boolean; data: AgentKnowledge }>(
         `${API_BASE_URL}/${id}`,
       );
       return response.data.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -114,7 +114,7 @@ class AgentKnowledgeService {
    * 创建知识
    */
   async create(knowledge: AgentKnowledge): Promise<AgentKnowledge> {
-    const response = await axios.post<{ success: boolean; data: AgentKnowledge }>(
+    const response = await apiClient.post<{ success: boolean; data: AgentKnowledge }>(
       `${API_BASE_URL}/create`,
       knowledge,
     );
@@ -126,13 +126,13 @@ class AgentKnowledgeService {
    */
   async update(id: number, knowledge: Partial<AgentKnowledge>): Promise<AgentKnowledge | null> {
     try {
-      const response = await axios.put<{ success: boolean; data: AgentKnowledge }>(
+      const response = await apiClient.put<{ success: boolean; data: AgentKnowledge }>(
         `${API_BASE_URL}/${id}`,
         knowledge,
       );
       return response.data.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -144,7 +144,7 @@ class AgentKnowledgeService {
    */
   async updateRecallStatus(id: number, recalled: boolean): Promise<AgentKnowledge | null> {
     try {
-      const response = await axios.put<{ success: boolean; data: AgentKnowledge }>(
+      const response = await apiClient.put<{ success: boolean; data: AgentKnowledge }>(
         `${API_BASE_URL}/recall/${id}`,
         null,
         {
@@ -165,10 +165,10 @@ class AgentKnowledgeService {
    */
   async delete(id: number): Promise<boolean> {
     try {
-      await axios.delete(`${API_BASE_URL}/${id}`);
+      await apiClient.delete(`${API_BASE_URL}/${id}`);
       return true;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return false;
       }
       throw error;
@@ -180,7 +180,7 @@ class AgentKnowledgeService {
    */
   async retryEmbedding(id: number): Promise<boolean> {
     try {
-      const response = await axios.post<{ success: boolean }>(
+      const response = await apiClient.post<{ success: boolean }>(
         `${API_BASE_URL}/retry-embedding/${id}`,
       );
       return response.data.success;
@@ -197,7 +197,7 @@ class AgentKnowledgeService {
     totalCount: number;
     typeStatistics: Array<[string, number]>;
   }> {
-    const response = await axios.get<{
+    const response = await apiClient.get<{
       success: boolean;
       data: {
         totalCount: number;

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || '';
 
 class SystemConfigService {
   private systemName: string | null = null;
@@ -26,7 +26,7 @@ class SystemConfigService {
    */
   async getSystemConfig() {
     try {
-      const response = await axios.get(`${API_BASE}/api/system/config`);
+      const response = await apiClient.get(`${API_BASE}/api/system/config`);
       return response.data;
     } catch (error) {
       console.error('获取系统配置失败:', error);

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import axios from 'axios';
+import { apiClient } from './common';
 import { ApiResponse } from './common';
 
 export interface Agent {
@@ -34,7 +34,7 @@ export interface Agent {
   humanReviewEnabled?: number | boolean; // 0 or 1, default is 0
 }
 
-const API_BASE_URL = '/api/agent';
+const API_BASE_URL = 'api/agent';
 
 export interface AgentApiKeyResponse {
   apiKey: string | null;
@@ -54,7 +54,7 @@ class AgentService {
     if (status) params.status = status;
     if (keyword) params.keyword = keyword;
 
-    const response = await axios.get<Agent[]>(`${API_BASE_URL}/list`, { params });
+    const response = await apiClient.get<Agent[]>(`${API_BASE_URL}/list`, { params });
     return response.data;
   }
 
@@ -64,10 +64,10 @@ class AgentService {
    */
   async get(id: number): Promise<Agent | null> {
     try {
-      const response = await axios.get<Agent>(`${API_BASE_URL}/${id}`);
+      const response = await apiClient.get<Agent>(`${API_BASE_URL}/${id}`);
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -85,7 +85,7 @@ class AgentService {
       status: agent.status || 'draft',
     };
 
-    const response = await axios.post<Agent>(API_BASE_URL, agentData);
+    const response = await apiClient.post<Agent>(API_BASE_URL, agentData);
     return response.data;
   }
 
@@ -108,10 +108,10 @@ class AgentService {
         tags: agent.tags,
         humanReviewEnabled: agent.humanReviewEnabled ? 1 : 0,
       };
-      const response = await axios.put<Agent>(`${API_BASE_URL}/${id}`, agentData);
+      const response = await apiClient.put<Agent>(`${API_BASE_URL}/${id}`, agentData);
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -124,10 +124,10 @@ class AgentService {
    */
   async delete(id: number): Promise<boolean> {
     try {
-      await axios.delete(`${API_BASE_URL}/${id}`);
+      await apiClient.delete(`${API_BASE_URL}/${id}`);
       return true;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return false;
       }
       throw error;
@@ -140,10 +140,10 @@ class AgentService {
    */
   async publish(id: number): Promise<Agent | null> {
     try {
-      const response = await axios.post<Agent>(`${API_BASE_URL}/${id}/publish`);
+      const response = await apiClient.post<Agent>(`${API_BASE_URL}/${id}/publish`);
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -156,10 +156,10 @@ class AgentService {
    */
   async offline(id: number): Promise<Agent | null> {
     try {
-      const response = await axios.post<Agent>(`${API_BASE_URL}/${id}/offline`);
+      const response = await apiClient.post<Agent>(`${API_BASE_URL}/${id}/offline`);
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -171,13 +171,13 @@ class AgentService {
    */
   async getApiKey(id: number): Promise<AgentApiKeyResponse | null> {
     try {
-      const response = await axios.get<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key`);
+      const response = await apiClient.get<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key`);
       if (response.data.success) {
         return response.data.data ?? null;
       }
       throw new Error(response.data.message);
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (apiClient.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
       throw error;
@@ -188,7 +188,7 @@ class AgentService {
    * 生成/重置 API Key
    */
   async generateApiKey(id: number): Promise<AgentApiKeyResponse> {
-    const response = await axios.post<AgentApiKeyApiResult>(
+    const response = await apiClient.post<AgentApiKeyApiResult>(
       `${API_BASE_URL}/${id}/api-key/generate`,
     );
     if (response.data.success && response.data.data) {
@@ -198,7 +198,7 @@ class AgentService {
   }
 
   async resetApiKey(id: number): Promise<AgentApiKeyResponse> {
-    const response = await axios.post<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key/reset`);
+    const response = await apiClient.post<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key/reset`);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }
@@ -209,7 +209,7 @@ class AgentService {
    * 删除 API Key
    */
   async deleteApiKey(id: number): Promise<AgentApiKeyResponse> {
-    const response = await axios.delete<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key`);
+    const response = await apiClient.delete<AgentApiKeyApiResult>(`${API_BASE_URL}/${id}/api-key`);
     if (response.data.success && response.data.data) {
       return response.data.data;
     }
@@ -220,7 +220,7 @@ class AgentService {
    * 启用/禁用 API Key
    */
   async toggleApiKey(id: number, enabled: boolean): Promise<AgentApiKeyResponse> {
-    const response = await axios.post<AgentApiKeyApiResult>(
+    const response = await apiClient.post<AgentApiKeyApiResult>(
       `${API_BASE_URL}/${id}/api-key/enable`,
       null,
       {
