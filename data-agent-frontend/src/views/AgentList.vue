@@ -446,6 +446,7 @@
     cursor: pointer;
     transition: all 0.2s ease;
     border-radius: 12px;
+    margin-bottom: 20px;
   }
 
   .agent-card:hover {

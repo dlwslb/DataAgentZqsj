@@ -19,6 +19,7 @@ import { ElMessage } from 'element-plus';
 import routes from '@/router/routes';
 import modelConfigService from '@/services/modelConfig';
 import systemConfigService from '@/services/systemConfig';
+import authService from '@/services/auth';
 
 // 创建路由实例
 const router = createRouter({
@@ -51,6 +52,25 @@ router.beforeEach(async (to, from, next) => {
       document.title = to.meta.title;
     }
   });
+
+  // 检查是否需要认证
+  const requiresAuth = to.meta.requiresAuth !== false;
+  const isAuthenticated = authService.isAuthenticated();
+
+  if (requiresAuth && !isAuthenticated) {
+    // 需要认证但未登录，重定向到登录页
+    next({
+      path: '/login',
+      query: { redirect: to.fullPath },
+    });
+    return;
+  }
+
+  if (to.path === '/login' && isAuthenticated) {
+    // 已登录用户访问登录页，重定向到首页
+    next('/agents');
+    return;
+  }
 
   if (to.path === '/model-config') {
     console.log(`导航到: ${to.path} (${to.name})`);

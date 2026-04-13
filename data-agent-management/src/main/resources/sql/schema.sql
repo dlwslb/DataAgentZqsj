@@ -244,6 +244,30 @@ create table if not exists agent_datasource_tables
     comment '某个智能体某个数据源所选中的数据表';
 
 
+-- 系统用户表
+CREATE TABLE IF NOT EXISTS `system_users` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+    `username` VARCHAR(100) NOT NULL COMMENT '用户名',
+    `password` VARCHAR(255) NOT NULL COMMENT '密码（加密存储）',
+    `nickname` VARCHAR(100) COMMENT '昵称',
+    `email` VARCHAR(255) COMMENT '邮箱',
+    `avatar` VARCHAR(500) COMMENT '头像URL',
+    `role` VARCHAR(50) DEFAULT 'user' COMMENT '角色：admin-管理员，user-普通用户',
+    `status` INT DEFAULT 1 COMMENT '状态：0-禁用，1-启用',
+    `create_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_username` (`username`),
+    INDEX `idx_status` (`status`)
+) ENGINE = InnoDB COMMENT = '系统用户表';
+
+-- 插入默认管理员账户 (密码: drMtAgent/daRen87087766!)
+INSERT INTO `system_users` (`username`, `password`, `nickname`, `email`, `role`, `status`)
+VALUES ('drMtAgent', '$2a$10$Fsf0OZrJaGo748FqJK1YyubaRenwej14.a0VEc/ZUCIHVOEqU8hAK', '系统管理员', 'admin@example.com', 'admin', 1)
+ON DUPLICATE KEY UPDATE `username` = `username`;
+
+-- ... existing code ...
+
 -- 模型配置表
 CREATE TABLE IF NOT EXISTS `model_config` (
                                               `id` int(11) NOT NULL AUTO_INCREMENT,
