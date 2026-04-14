@@ -16,6 +16,7 @@
 package com.alibaba.cloud.ai.dataagent.entity;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -43,7 +44,7 @@ public class Agent {
 	// todo: 改为枚举
 	private String status; // Status: draft-pending publication, published-published,
 							// offline-offline
-
+	@JsonIgnore
 	private String apiKey; // API Key for external access, format sk-xxx
 
 	@Builder.Default

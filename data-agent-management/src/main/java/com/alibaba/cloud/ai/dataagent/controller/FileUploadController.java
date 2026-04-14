@@ -91,9 +91,20 @@ public class FileUploadController {
 			String requestMapPath = this.getClass().getAnnotation(RequestMapping.class).value()[0];
 			String requestPath = request.getPath().value();
 			String urlPrefix = fileStorageProperties.getUrlPrefix();
-			String filePath = requestPath.substring(requestMapPath.length() + urlPrefix.length());
+			String requestPrefix = requestMapPath + urlPrefix + "/";
+			if (!requestPath.startsWith(requestPrefix)) {
+				return ResponseEntity.badRequest().build();
+			}
+			String filePath = requestPath.substring(requestPrefix.length());
+			if (filePath.isBlank()) {
+				return ResponseEntity.badRequest().build();
+			}
 
-			Path fullPath = Paths.get(fileStorageProperties.getPath(), filePath);
+			Path basePath = fileStorageProperties.getLocalBasePath().toAbsolutePath().normalize();
+			Path fullPath = basePath.resolve(filePath).normalize();
+			if (!fullPath.startsWith(basePath)) {
+				return ResponseEntity.status(403).build();
+			}
 
 			if (!Files.exists(fullPath) || Files.isDirectory(fullPath)) {
 				return ResponseEntity.notFound().build();
@@ -103,8 +114,8 @@ public class FileUploadController {
 			String contentType = Files.probeContentType(fullPath);
 
 			return ResponseEntity.ok()
-				.contentType(MediaType.parseMediaType(contentType != null ? contentType : "application/octet-stream"))
-				.body(fileContent);
+					.contentType(MediaType.parseMediaType(contentType != null ? contentType : "application/octet-stream"))
+					.body(fileContent);
 
 		}
 		catch (IOException e) {
