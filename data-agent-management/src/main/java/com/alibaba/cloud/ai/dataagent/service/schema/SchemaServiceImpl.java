@@ -105,7 +105,7 @@ public class SchemaServiceImpl implements SchemaService {
 		List<String> missingTables = getMissingTableNamesWithForeignKeySet(mutableTableDocuments,
 				relatedNamesFromForeignKeys);
 		if (!missingTables.isEmpty() && datasourceId != null) {
-			loadMissingTableDocuments(datasourceId, mutableTableDocuments, missingTables);
+			loadMissingTableDocuments(datasourceId, agentId, mutableTableDocuments, missingTables);
 			loadMissingColDocForMissingTables(datasourceId, agentId, mutableColumnDocuments, missingTables);
 		}
 
@@ -322,10 +322,10 @@ public class SchemaServiceImpl implements SchemaService {
 		return new ArrayList<>(missingTables);
 	}
 
-	private void loadMissingTableDocuments(Integer datasourceId, List<Document> tableDocuments,
+	private void loadMissingTableDocuments(Integer datasourceId, String agentId, List<Document> tableDocuments,
 			List<String> missingTableNames) {
 		// 加载缺失的表文档
-		List<Document> foundTableDocs = this.getTableDocuments(datasourceId, missingTableNames);
+		List<Document> foundTableDocs = this.getTableDocuments(datasourceId, agentId, missingTableNames);
 		if (foundTableDocs.size() > missingTableNames.size())
 			log.error("When we search missing tables:{},  more than expected tables for datasource: {}",
 					missingTableNames, datasourceId);
@@ -482,12 +482,12 @@ public class SchemaServiceImpl implements SchemaService {
 	}
 
 	@Override
-	public List<Document> getTableDocuments(Integer datasourceId, List<String> tableNames) {
+	public List<Document> getTableDocuments(Integer datasourceId, String agentId, List<String> tableNames) {
 		Assert.notNull(datasourceId, "DatasourceId cannot be null.");
 		if (tableNames.isEmpty())
 			return Collections.emptyList();
 		// 通过元数据过滤查找目标表
-		Filter.Expression filterExpression = DynamicFilterService.buildFilterExpressionForSearchTables(datasourceId,
+		Filter.Expression filterExpression = DynamicFilterService.buildFilterExpressionForSearchTables(datasourceId, agentId,
 				tableNames);
 		if (filterExpression == null) {
 			log.error("FilterExpression is null.This should not happen when tableNames is not Empty, ");

@@ -33,7 +33,7 @@ public interface SchemaService {
 	void buildSchemaFromDocuments(String agentId, List<Document> columnDocumentList, List<Document> tableDocuments,
 			SchemaDTO schemaDTO);
 
-	List<Document> getTableDocuments(Integer datasourceId, List<String> tableNames);
+	List<Document> getTableDocuments(Integer datasourceId, String agentId, List<String> tableNames);
 
 	List<Document> getColumnDocumentsByTableName(Integer datasourceId, String agentId, List<String> tableNames);
 

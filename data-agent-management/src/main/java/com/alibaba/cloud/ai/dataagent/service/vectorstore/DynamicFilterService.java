@@ -197,18 +197,21 @@ public class DynamicFilterService {
 		return escaped;
 	}
 
-	public static Filter.Expression buildFilterExpressionForSearchTables(Integer datasourceId,
+	public static Filter.Expression buildFilterExpressionForSearchTables(Integer datasourceId, String agentId,
 			List<String> tableNames) {
 		FilterExpressionBuilder b = new FilterExpressionBuilder();
 		List<Filter.Expression> conditions = new ArrayList<>();
 
-		// 1. 基础条件：datasourceId
+		// 1. 基础条件：agentId
+		conditions.add(b.eq(Constant.AGENT_ID, agentId).build());
+
+		// 2. 基础条件：datasourceId
 		conditions.add(b.eq(Constant.DATASOURCE_ID, datasourceId.toString()).build());
 
-		// 2. 基础条件：vectorType = TABLE
+		// 3. 基础条件：vectorType = TABLE
 		conditions.add(b.eq(DocumentMetadataConstant.VECTOR_TYPE, DocumentMetadataConstant.TABLE).build());
 
-		// 3. 动态条件：表名列表 IN 查询
+		// 4. 动态条件：表名列表 IN 查询
 		if (tableNames != null && !tableNames.isEmpty()) {
 			conditions.add(b.in(DocumentMetadataConstant.NAME, tableNames.toArray()).build());
 		}
