@@ -28,11 +28,14 @@ public interface ChatSessionMapper {
 	 * Query session list by agent ID
 	 */
 	@Select("""
+			<script>
 			SELECT * FROM chat_session
 			WHERE agent_id = #{agentId} AND status != 'deleted'
+			<if test="userId != null">AND user_id = #{userId}</if>
 			ORDER BY is_pinned DESC, update_time DESC
+			</script>
 			""")
-	List<ChatSession> selectByAgentId(@Param("agentId") Integer agentId);
+	List<ChatSession> selectByAgentId(@Param("agentId") Integer agentId, @Param("userId") Long userId);
 
 	/**
 	 * Query session details by session ID

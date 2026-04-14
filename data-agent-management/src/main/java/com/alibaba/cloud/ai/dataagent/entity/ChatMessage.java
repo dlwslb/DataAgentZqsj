@@ -42,6 +42,8 @@ public class ChatMessage {
 
 	private String metadata; // JSON格式的元数据
 
+	private Long userId; // 用户ID
+
 	private LocalDateTime createTime;
 
 }

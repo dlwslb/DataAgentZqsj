@@ -59,8 +59,18 @@ public class ChatController {
 	 * Get session list for an agent
 	 */
 	@GetMapping("/agent/{id}/sessions")
-	public ResponseEntity<List<ChatSession>> getAgentSessions(@PathVariable(value = "id") Integer id) {
-		List<ChatSession> sessions = chatSessionService.findByAgentId(id);
+	public ResponseEntity<List<ChatSession>> getAgentSessions(@PathVariable(value = "id") Integer id,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
+		Long userId = null;
+		if (userIdHeader != null && !userIdHeader.isEmpty()) {
+			try {
+				userId = Long.parseLong(userIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid User-ID header: {}", userIdHeader);
+			}
+		}
+		
+		List<ChatSession> sessions = chatSessionService.findByAgentId(id, userId);
 		return ResponseEntity.ok(sessions);
 	}
 
@@ -69,9 +79,27 @@ public class ChatController {
 	 */
 	@PostMapping("/agent/{id}/sessions")
 	public ResponseEntity<ChatSession> createSession(@PathVariable(value = "id") Integer id,
-			@RequestBody(required = false) Map<String, Object> request) {
+			@RequestBody(required = false) Map<String, Object> request,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
 		String title = request != null ? (String) request.get("title") : null;
-		Long userId = request != null ? (Long) request.get("userId") : null;
+		
+		// 优先从header获取userId，如果没有则从request body获取
+		Long userId = null;
+		if (userIdHeader != null && !userIdHeader.isEmpty()) {
+			try {
+				userId = Long.parseLong(userIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid User-ID header: {}", userIdHeader);
+			}
+		}
+		
+		// 如果header中没有，尝试从request body获取（兼容旧版本）
+		if (userId == null && request != null) {
+			Object userIdFromBody = request.get("userId");
+			if (userIdFromBody instanceof Number) {
+				userId = ((Number) userIdFromBody).longValue();
+			}
+		}
 
 		ChatSession session = chatSessionService.createSession(id, title, userId);
 		return ResponseEntity.ok(session);
@@ -100,17 +128,29 @@ public class ChatController {
 	 */
 	@PostMapping("/sessions/{sessionId}/messages")
 	public ResponseEntity<ChatMessage> saveMessage(@PathVariable(value = "sessionId") String sessionId,
-			@RequestBody ChatMessageDTO request) {
+			@RequestBody ChatMessageDTO request,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
 		try {
 			if (request == null) {
 				return ResponseEntity.badRequest().build();
 			}
+			
+			Long userId = null;
+			if (userIdHeader != null && !userIdHeader.isEmpty()) {
+				try {
+					userId = Long.parseLong(userIdHeader);
+				} catch (NumberFormatException e) {
+					log.warn("Invalid User-ID header: {}", userIdHeader);
+				}
+			}
+			
 			ChatMessage message = ChatMessage.builder()
 				.sessionId(sessionId)
 				.role(request.getRole())
 				.content(request.getContent())
 				.messageType(request.getMessageType())
 				.metadata(request.getMetadata())
+				.userId(userId)
 				.build();
 
 			ChatMessage savedMessage = chatMessageService.saveMessage(message);

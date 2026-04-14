@@ -27,7 +27,7 @@ public interface ChatSessionService {
 	/**
 	 * Get session list by agent ID
 	 */
-	List<ChatSession> findByAgentId(Integer agentId);
+	List<ChatSession> findByAgentId(Integer agentId, Long userId);
 
 	/**
 	 * Create a new session

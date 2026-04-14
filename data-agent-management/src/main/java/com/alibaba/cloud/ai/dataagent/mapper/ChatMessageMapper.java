@@ -63,8 +63,8 @@ public interface ChatMessageMapper {
 	List<ChatMessage> selectBySessionIdAndRole(@Param("sessionId") String sessionId, @Param("role") String role);
 
 	@Insert("""
-			INSERT INTO chat_message (session_id, role, content, message_type, metadata, create_time)
-			VALUES (#{sessionId}, #{role}, #{content}, #{messageType}, #{metadata}, NOW())
+			INSERT INTO chat_message (session_id, role, content, message_type, metadata, user_id, create_time)
+			VALUES (#{sessionId}, #{role}, #{content}, #{messageType}, #{metadata}, #{userId}, NOW())
 			""")
 	@Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
 	int insert(ChatMessage message);

@@ -36,8 +36,8 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 	 * Get session list by agent ID
 	 */
 	@Override
-	public List<ChatSession> findByAgentId(Integer agentId) {
-		return chatSessionMapper.selectByAgentId(agentId);
+	public List<ChatSession> findByAgentId(Integer agentId, Long userId) {
+		return chatSessionMapper.selectByAgentId(agentId, userId);
 	}
 
 	@Override

@@ -196,12 +196,14 @@ CREATE TABLE IF NOT EXISTS chat_message (
   content TEXT NOT NULL COMMENT '消息内容',
   message_type VARCHAR(50) DEFAULT 'text' COMMENT '消息类型：text-文本，sql-SQL查询，result-查询结果，error-错误',
   metadata JSON COMMENT '元数据（JSON格式）',
+  user_id BIGINT COMMENT '用户ID',
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (id),
   INDEX idx_chat_message_session_id (session_id),
   INDEX idx_chat_message_role (role),
   INDEX idx_chat_message_message_type (message_type),
   INDEX idx_chat_message_create_time (create_time),
+  INDEX idx_chat_message_user_id (user_id),
   FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
 ) ENGINE = InnoDB COMMENT = '聊天消息表';
 
