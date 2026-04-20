@@ -1,0 +1,50 @@
+# 生产环境配置 tender_agent
+spring:
+  datasource:
+    url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
+    password: ${DATA_AGENT_DATASOURCE_PASSWORD:Daren87087766!}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.alibaba.druid.pool.DruidDataSource
+  ai:
+    vectorstore:
+      type: oceanbase  # 生产环境用OceanBase向量
+    alibaba:
+      data-agent:
+        vector-store:
+          table-topk-limit: 10
+          table-similarity-threshold: 0.2
+          default-topk-limit: 8
+          default-similarity-threshold: 0.4
+        llm-service-type: stream
+        code-executor:
+          code-pool-executor: docker  # 生产环境用Docker
+          host: ${DOCKER_HOST:}  # 远程Docker地址
+          python-max-tries-count: 5
+        file:
+          type: local
+          path-prefix: data-agent
+          path: uploads
+          url-prefix: /uploads
+          imageSize: 2097152
+          oss:
+            access-key-id: ${OSS_ACCESS_KEY_ID:}
+            access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+            endpoint: ${OSS_ENDPOINT:}
+            bucket-name: ${OSS_BUCKET_NAME:}
+            custom-domain: ${OSS_CUSTOM_DOMAIN:}
+        max-sql-retry-count: 10
+        langfuse:
+          enabled: ${LANGFUSE_ENABLED:false}
+          host: ${LANGFUSE_HOST:}
+          public-key: ${LANGFUSE_PUBLIC_KEY:}
+          secret-key: ${LANGFUSE_SECRET_KEY:}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    root: info
+    com.alibaba.cloud.ai.dataagent: info

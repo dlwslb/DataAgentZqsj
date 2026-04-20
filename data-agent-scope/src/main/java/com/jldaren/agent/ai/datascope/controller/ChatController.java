@@ -26,11 +26,12 @@ public class ChatController {
     private final DataAnalystAgent dataAnalystAgent;
     private final ReportGeneratorAgent reportGeneratorAgent;
 
-    //http://localhost:58064/api/v1/chat/quick?message=你好
+    //http://localhost:58064/api/v1/chat/quick?agentId=1&message=你好
     @GetMapping("/quick")
     @Operation(summary = "快速测试", description = "GET 请求直接返回回复")
-    public Mono<String> quickChat(@RequestParam(defaultValue = "你好") String message) {
+    public Mono<String> quickChat(@RequestParam Long agentId, @RequestParam(defaultValue = "你好") String message) {
         ChatRequest request = new ChatRequest();
+        request.setAgentId(agentId);
         request.setMessage(message);
         return chatService.chat(request)
                 .map(Msg::getTextContent);

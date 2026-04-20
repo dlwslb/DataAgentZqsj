@@ -72,21 +72,21 @@
       <!-- 会话列表 -->
       <div class="session-list" style="margin-top: 20px">
         <div
-          v-for="session in sessions"
-          :key="session.id"
+          v-for="session in displaySessions"
+          :key="session?.id || Math.random()"
           :class="[
             'session-item',
-            { active: handleGetCurrentSession()?.id === session.id, pinned: session.isPinned },
+            { active: handleGetCurrentSession()?.id === session?.id, pinned: session?.isPinned },
           ]"
-          @click="handleSelectSession(session)"
+          @click="session && handleSelectSession(session)"
         >
           <div class="session-header">
             <span
               class="session-title"
               @dblclick="startEditSessionTitle(session)"
-              v-if="!session.editing"
+              v-if="!session?.editing"
             >
-              {{ session.title || '新会话' }}
+              {{ session?.title || '新会话' }}
             </span>
             <el-input
               v-else
@@ -103,7 +103,7 @@
               </el-button>
               <el-button type="text" size="small" @click.stop="togglePinSession(session)">
                 <el-icon>
-                  <StarFilled v-if="session.isPinned" />
+                  <StarFilled v-if="session?.isPinned" />
                   <Star v-else />
                 </el-icon>
               </el-button>
@@ -113,7 +113,7 @@
             </div>
           </div>
           <div class="session-time">
-            {{ formatTime(session.updateTime || session.createTime) }}
+            {{ formatTime(session?.updateTime || session?.createTime) }}
           </div>
         </div>
       </div>
@@ -183,6 +183,32 @@
         type: Function as PropType<(sessionId: string) => void>,
         required: true,
       },
+      handleUpdateSessionTitle: {
+        type: Function as PropType<(sessionId: string, title: string) => Promise<void>>,
+        required: false,
+        default: null,
+      },
+      handlePinSession: {
+        type: Function as PropType<(sessionId: string, pinned: boolean) => Promise<void>>,
+        required: false,
+        default: null,
+      },
+      handleCreateSession: {
+        type: Function as PropType<(sessionName?: string) => Promise<any>>,
+        required: false,
+        default: null,
+      },
+      handleClearAllSessions: {
+        type: Function as PropType<() => Promise<void>>,
+        required: false,
+        default: null,
+      },
+      // 可选的外部 sessions 数据
+      externalSessions: {
+        type: Array as PropType<ExtendedChatSession[]>,
+        required: false,
+        default: null,
+      },
     },
     setup(props) {
       const sessions = ref<ExtendedChatSession[]>([]);
@@ -193,6 +219,11 @@
 
       const router = useRouter();
       const route = useRoute();
+
+      // 使用外部传入的 sessions 或内部的 sessions
+      const displaySessions = computed(() => {
+        return props.externalSessions || sessions.value;
+      });
 
       const formatTime = (time: Date | string | undefined) => {
         if (!time) return '';
@@ -278,7 +309,12 @@
         }
 
         try {
-          await ChatService.renameSession(session.id, newTitle);
+          // AgentScope 模式使用父组件提供的方法
+          if (props.handleUpdateSessionTitle) {
+            await props.handleUpdateSessionTitle(session.id, newTitle);
+          } else {
+            await ChatService.renameSession(session.id, newTitle);
+          }
           session.title = newTitle;
           session.editing = false;
           ElMessage.success('会话标题已更新');
@@ -302,6 +338,11 @@
       };
 
       const loadSessions = async () => {
+        // 如果有外部传入的 sessions，直接使用
+        if (props.externalSessions) {
+          return;
+        }
+        
         try {
           sessions.value = await ChatService.getAgentSessions(parseInt(agentId.value));
           // 默认选择第一个会话或创建新会话
@@ -318,7 +359,17 @@
 
       const createNewSession = async () => {
         try {
-          const newSession = await ChatService.createSession(parseInt(agentId.value), '新会话');
+          let newSession;
+          if (props.handleCreateSession) {
+            newSession = await props.handleCreateSession('新会话');
+          } else {
+            newSession = await ChatService.createSession(parseInt(agentId.value), '新会话');
+          }
+          // 检查返回值是否有效
+          if (!newSession) {
+            ElMessage.error('创建会话失败');
+            return;
+          }
           sessions.value.unshift(newSession);
           await props.handleSelectSession(newSession);
           ElMessage.success('新会话创建成功');
@@ -330,6 +381,13 @@
 
       const togglePinSession = async (session: ChatSession) => {
         try {
+          // AgentScope 模式使用父组件提供的方法
+          if (props.handlePinSession) {
+            await props.handlePinSession(session.id, !session.isPinned);
+            session.isPinned = !session.isPinned;
+            ElMessage.success(session.isPinned ? '会话已置顶' : '会话已取消置顶');
+            return;
+          }
           await ChatService.pinSession(session.id, !session.isPinned);
           session.isPinned = !session.isPinned;
           ElMessage.success(session.isPinned ? '会话已置顶' : '会话已取消置顶');
@@ -346,10 +404,15 @@
             cancelButtonText: '取消',
             type: 'warning',
           });
-          await ChatService.deleteSession(session.id);
-          props.handleDeleteSessionState(session.id);
+          // AgentScope 模式使用父组件的删除方法
+          if (props.externalSessions) {
+            props.handleDeleteSessionState(session.id);
+          } else {
+            await ChatService.deleteSession(session.id);
+            props.handleDeleteSessionState(session.id);
+          }
           sessions.value = sessions.value.filter((s: ChatSession) => s.id !== session.id);
-          if (props.handleGetCurrentSession() == session) {
+          if (props.handleGetCurrentSession()?.id === session.id) {
             await props.handleSetCurrentSession(null);
           }
           ElMessage.success('会话删除成功');
@@ -368,6 +431,11 @@
             cancelButtonText: '取消',
             type: 'warning',
           });
+          // 如果有外部 sessions，使用父组件提供的方法
+          if (props.handleClearAllSessions) {
+            await props.handleClearAllSessions();
+            return;
+          }
           await ChatService.clearAgentSessions(parseInt(agentId.value));
           sessions.value.forEach((session: ChatSession) => {
             props.handleDeleteSessionState(session.id);
@@ -400,6 +468,7 @@
 
       return {
         sessions,
+        displaySessions,
         collapsed,
         formatTime,
         goBack,

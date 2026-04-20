@@ -41,5 +41,8 @@ export default defineConfig(({ mode }) => {
       outDir: config.build.outDir,
       assetsDir: 'assets',
     },
+    define: {
+      'import.meta.env.VITE_AGENT_SCOPE_API_TARGET': JSON.stringify(config.agentScope?.apiTarget || 'http://localhost:58064'),
+    },
   };
 });

@@ -1,11 +1,30 @@
 spring:
+  profiles:
+    active: dev
+    #active: prod
   application:
     name: data-agent-scope
+  autoconfigure:
+    exclude:
+      - io.agentscope.spring.boot.a2a.AgentscopeA2aAutoConfiguration
+  datasource:
+    url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
+    password: ${DATA_AGENT_DATASOURCE_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.alibaba.druid.pool.DruidDataSource
 
 # DataAgentScope Web Application Configuration
 server:
   port: 58064
   address: 0.0.0.0
+
+# MyBatis 配置
+mybatis:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 # AgentScope Configuration
 agentscope:

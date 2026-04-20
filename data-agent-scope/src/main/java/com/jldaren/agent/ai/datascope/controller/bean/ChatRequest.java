@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChatRequest {
+    private Long agentId;        // 智能体ID (必填)
     private String sessionId;    // 会话ID (用于多轮对话)
     private String message;      // 用户消息
     private boolean stream;      // 是否流式响应

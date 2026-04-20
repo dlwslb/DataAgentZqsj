@@ -72,6 +72,44 @@ const routes = [
     },
   },
 
+  // AgentScope 智能体模块
+  {
+    path: '/agent-scope',
+    name: 'AgentScopeList',
+    component: () => import('@/views/AgentScopeList.vue'),
+    meta: {
+      title: 'AgentScope 智能体',
+      module: 'agent-scope',
+    },
+  },
+  {
+    path: '/agent-scope/create',
+    name: 'AgentScopeCreate',
+    component: () => import('@/views/AgentScopeCreate.vue'),
+    meta: {
+      title: '创建 AgentScope 智能体',
+      module: 'agent-scope',
+    },
+  },
+  {
+    path: '/agent-scope/:id',
+    name: 'AgentScopeDetail',
+    component: () => import('@/views/AgentScopeDetail.vue'),
+    meta: {
+      title: 'AgentScope 智能体详情',
+      module: 'agent-scope',
+    },
+  },
+  {
+    path: '/agent-scope/:id/run',
+    name: 'AgentScopeRun',
+    component: () => import('@/views/AgentScopeRun.vue'),
+    meta: {
+      title: '运行 AgentScope 智能体',
+      module: 'agent-scope',
+    },
+  },
+
   // 模型配置模块
   {
     path: '/model-config',

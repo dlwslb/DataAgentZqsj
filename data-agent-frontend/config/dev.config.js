@@ -1,5 +1,6 @@
 // 开发环境配置
 const API_TARGET = 'http://localhost:58065';
+const AGENT_SCOPE_API_TARGET = 'http://localhost:58064';
 
 export default {
   base: '',
@@ -23,5 +24,8 @@ export default {
         changeOrigin: true,
       },
     },
+  },
+  agentScope: {
+    apiTarget: AGENT_SCOPE_API_TARGET,
   },
 };

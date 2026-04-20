@@ -28,6 +28,10 @@
               <i class="bi bi-grid-3x3-gap"></i>
               <span>智能体列表</span>
             </div>
+            <div class="nav-item" :class="{ active: isAgentScopePage() }" @click="goToAgentScopeList">
+              <i class="bi bi-robot"></i>
+              <span>AgentScope智能体列表</span>
+            </div>
             <div class="nav-item" :class="{ active: isModelConfigPage() }" @click="goToModelConfig">
               <i class="bi bi-gear"></i>
               <span>模型配置</span>
@@ -89,6 +93,10 @@
         router.push('/agents');
       };
 
+      const goToAgentScopeList = () => {
+        router.push('/agent-scope');
+      };
+
       const goToModelConfig = () => {
         router.push('/model-config');
       };
@@ -99,6 +107,15 @@
           router.currentRoute.value.name === 'AgentDetail' ||
           router.currentRoute.value.name === 'AgentCreate' ||
           router.currentRoute.value.name === 'AgentRun'
+        );
+      };
+
+      const isAgentScopePage = () => {
+        return (
+          router.currentRoute.value.name === 'AgentScopeList' ||
+          router.currentRoute.value.name === 'AgentScopeDetail' ||
+          router.currentRoute.value.name === 'AgentScopeCreate' ||
+          router.currentRoute.value.name === 'AgentScopeRun'
         );
       };
 
@@ -139,8 +156,10 @@
         systemName,
         userInfo,
         goToAgentList,
+        goToAgentScopeList,
         goToModelConfig,
         isAgentPage,
+        isAgentScopePage,
         isModelConfigPage,
         handleCommand,
         UserFilled,

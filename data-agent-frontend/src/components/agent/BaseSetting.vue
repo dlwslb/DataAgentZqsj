@@ -116,8 +116,7 @@
 </template>
 
 <script lang="ts">
-  import { Agent } from '@/services/agent';
-  import agentService from '@/services/agent';
+  import { agentScopeApi, AgentScope } from '@/services/agentScope';
   import { defineComponent, computed } from 'vue';
   import { ElMessage, ElMessageBox } from 'element-plus';
   import { Edit, Delete } from '@element-plus/icons-vue';
@@ -127,7 +126,7 @@
     name: 'AgentBaseSetting',
     props: {
       agent: {
-        type: Object as () => Agent,
+        type: Object as () => AgentScope,
         required: true,
       },
     },
@@ -136,13 +135,8 @@
 
       const updateAgent = async () => {
         try {
-          const agent = await agentService.update(props.agent.id, props.agent);
-          if (agent === null) {
-            console.error('更新智能体失败:', agent);
-            ElMessage.error('更新失败：未知错误');
-          } else {
-            ElMessage.success('更新成功！');
-          }
+          await agentScopeApi.update(props.agent.id, props.agent);
+          ElMessage.success('更新成功！');
         } catch (e) {
           console.error('更新智能体失败:', e);
           ElMessage.error('更新失败：' + (e.message || '未知错误'));
@@ -162,13 +156,9 @@
             },
           );
 
-          const result = await agentService.delete(props.agent.id);
-          if (result) {
-            ElMessage.success('智能体已删除');
-            await router.push('/agents');
-          } else {
-            ElMessage.error('删除失败：智能体不存在');
-          }
+          await agentScopeApi.delete(props.agent.id);
+          ElMessage.success('智能体已删除');
+          await router.push('/agent-scope');
         } catch {
           // 用户点击取消按钮，忽略此错误
         }

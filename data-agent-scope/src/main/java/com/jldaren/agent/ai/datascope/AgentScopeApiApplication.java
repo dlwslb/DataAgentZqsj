@@ -40,8 +40,8 @@ public class AgentScopeApiApplication {
                 "║  网络访问:  http://{}:{}{}                          ║\n" +
                 "║  Swagger:  http://localhost:{}/swagger-ui.html              ║\n" +
                 "╚═══════════════════════════════════════════════════════════════╝",
-                port, "/api/v1/chat/quick?message=你好",
-                hostAddress, port, "/api/v1/chat/quick?message=你好",
+                port, "/api/v1/chat/quick?agentId=1&message=你好",
+                hostAddress, port, "/api/v1/chat/quick?agentId=1&message=你好",
                 port);
         };
     }
