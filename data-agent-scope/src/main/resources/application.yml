@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: data-agent-scope
+
+# DataAgentScope Web Application Configuration
+server:
+  port: 58064
+  address: 0.0.0.0
+
+# AgentScope Configuration
+agentscope:
+  # DashScope API Key (set via environment variable: DASHSCOPE_API_KEY)
+  #api-key: ${DASHSCOPE_API_KEY:}
+  api-key: sk-26979f34a1a64da2ad4e695b5f4e9d6a
+  # Model name 当前有bug只能使用这种没有版本号的模型名称qwen-max、qwen-plus、qwen-turbo
+  model-name: qwen-max
+  # Base URL for DashScope API (optional, default is Alibaba Cloud official endpoint)
+  base-url: https://dashscope.aliyuncs.com
+  # Graceful Shutdown 优雅停机
+  shutdown:
+    enabled: true
+    timeout-seconds: 20
+  # HTTP Compression HTTP 压缩
+  compression:
+    enabled: false
+  # A2A Protocol A2A 协议
+  a2a:
+    remote-agent-url: http://localhost:8080
+
+logging:
+  level:
+    com.alibaba.cloud.ai.datascope: DEBUG
+    io.agentscope: INFO
