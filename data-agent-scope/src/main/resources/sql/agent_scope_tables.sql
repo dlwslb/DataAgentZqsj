@@ -69,3 +69,17 @@ CREATE TABLE IF NOT EXISTS agent_scope_session (
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentScope会话表';
 
+-- ---------------------------------------------------------
+-- 表4: agentscope_vector_store - AgentScope 向量存储表
+-- 用于 Spring AI Alibaba OceanBase VectorStore (AgentScope模块专用)
+-- ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS agentscope_vector_store (
+    id VARCHAR(64) PRIMARY KEY COMMENT '向量ID',
+    content TEXT NOT NULL COMMENT '文本内容',
+    metadata JSON COMMENT '元数据JSON',
+    embedding VECTOR(1536) COMMENT '向量数据,维度1536',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentScope向量存储表';
+

@@ -10,7 +10,9 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 
 import java.net.InetAddress;
 
-@SpringBootApplication
+@SpringBootApplication(exclude = {
+        com.alibaba.cloud.ai.vectorstore.oceanbase.OceanBaseVectorStoreAutoConfiguration.class
+})
 @EnableAspectJAutoProxy
 @Slf4j
 public class AgentScopeApiApplication {

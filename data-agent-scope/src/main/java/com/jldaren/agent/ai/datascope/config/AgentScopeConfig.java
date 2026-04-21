@@ -4,15 +4,16 @@ import com.jldaren.agent.ai.datascope.compression.CompressingHttpTransport;
 import com.jldaren.agent.ai.datascope.compression.CompressionConfig;
 import com.jldaren.agent.ai.datascope.entity.ModelConfig;
 import com.jldaren.agent.ai.datascope.mapper.ModelConfigMapper;
+import com.jldaren.agent.ai.datascope.plan.DatabasePlanStorage;
 import com.jldaren.agent.ai.datascope.tool.WeatherTool;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.plan.storage.PlanStorage;
 import io.agentscope.core.tool.Toolkit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * AgentScope 基础配置
@@ -35,9 +36,11 @@ public class AgentScopeConfig {
     private boolean compressionEnabled;
 
     private final ModelConfigMapper modelConfigMapper;
+    private final JdbcTemplate jdbcTemplate;
 
-    public AgentScopeConfig(ModelConfigMapper modelConfigMapper) {
+    public AgentScopeConfig(ModelConfigMapper modelConfigMapper, JdbcTemplate jdbcTemplate) {
         this.modelConfigMapper = modelConfigMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -91,6 +94,14 @@ public class AgentScopeConfig {
         // 注册默认工具
         toolkit.registerTool(new WeatherTool());
         return toolkit;
+    }
+
+    /**
+     * 获取计划存储实例
+     * 使用数据库持久化存储
+     */
+    public PlanStorage getPlanStorage() {
+        return new DatabasePlanStorage(jdbcTemplate);
     }
 
 }

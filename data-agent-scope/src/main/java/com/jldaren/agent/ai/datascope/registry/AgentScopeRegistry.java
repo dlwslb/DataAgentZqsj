@@ -1,18 +1,3 @@
-/*
- * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.jldaren.agent.ai.datascope.registry;
 
 import com.jldaren.agent.ai.datascope.config.AgentScopeConfig;
@@ -20,9 +5,9 @@ import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.plan.PlanNotebook;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -111,7 +96,11 @@ public class AgentScopeRegistry {
             prompt = getDefaultPrompt();
         }
 
-        Memory memory = new InMemoryMemory();
+        Memory memory = new InMemoryMemory();// 短期记忆（当前会话）
+        PlanNotebook planNotebook = PlanNotebook.builder()
+                .storage(agentScopeConfig.getPlanStorage())
+                .maxSubtasks(15)// 限制最大子任务数，防止无限递归
+                .build();
 
         return ReActAgent.builder()
                 .name(name)
@@ -119,6 +108,7 @@ public class AgentScopeRegistry {
                 .model(agentScopeConfig.getChatModel())
                 .memory(memory)
                 .toolkit(agentScopeConfig.getToolkit())
+                .planNotebook(planNotebook)
                 .maxIters(10)
                 .checkRunning(true)
                 .build();

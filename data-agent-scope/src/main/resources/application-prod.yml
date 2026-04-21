@@ -7,8 +7,26 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
   ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-v3  # 使用通义千问的文本嵌入模型
     vectorstore:
       type: oceanbase  # 生产环境用OceanBase向量
+      oceanbase:
+        initialize-schema: false  # 生产环境不自动初始化
+        distance-type: COSINE
+        embedding-dimension: 1536
+        index-type: HNSW
+        hnsw-m: 16
+        hnsw-ef-construction: 64
+        table-name: agentscope_vector_store  # AgentScope向量存储表名
+        datasource:
+          url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
+          username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
+          password: ${DATA_AGENT_DATASOURCE_PASSWORD:Daren87087766!}
+          driver-class-name: com.mysql.cj.jdbc.Driver
     alibaba:
       data-agent:
         vector-store:

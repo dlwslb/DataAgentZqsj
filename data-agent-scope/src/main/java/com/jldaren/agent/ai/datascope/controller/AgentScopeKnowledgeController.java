@@ -1,22 +1,8 @@
-/*
- * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.jldaren.agent.ai.datascope.controller;
 
 import com.jldaren.agent.ai.datascope.entity.AgentScopeKnowledge;
 import com.jldaren.agent.ai.datascope.mapper.AgentScopeKnowledgeMapper;
+import com.jldaren.agent.ai.datascope.service.RagService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-
 import java.util.List;
 import java.util.Map;
 
@@ -40,6 +25,7 @@ import java.util.Map;
 public class AgentScopeKnowledgeController {
 
     private final AgentScopeKnowledgeMapper knowledgeMapper;
+    private final RagService ragService;
 
     /**
      * 获取知识列表
@@ -88,9 +74,8 @@ public class AgentScopeKnowledgeController {
         knowledgeMapper.insert(knowledge);
         log.info("✅ Knowledge 创建成功: id={}, agentId={}, title={}", knowledge.getId(), agentId, knowledge.getTitle());
 
-        // 异步处理向量化（这里简化处理，直接标记为完成）
-        // 实际项目中应该异步调用向量化服务
-        knowledgeMapper.updateEmbeddingStatus(knowledge.getId(), "COMPLETED");
+        // 异步处理向量化
+        ragService.embedAndStoreKnowledge(knowledge);
 
         return knowledge;
     }
@@ -109,6 +94,12 @@ public class AgentScopeKnowledgeController {
         knowledge.setId(id);
         knowledgeMapper.updateById(knowledge);
 
+        // 如果内容发生变化，重新向量化
+        if (knowledge.getContent() != null && !knowledge.getContent().equals(existing.getContent())) {
+            ragService.deleteKnowledgeVectors(id);
+            ragService.embedAndStoreKnowledge(knowledge);
+        }
+
         log.info("✅ Knowledge 更新成功: id={}, title={}", id, knowledge.getTitle());
         return knowledge;
     }
@@ -123,6 +114,9 @@ public class AgentScopeKnowledgeController {
         if (knowledge == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge not found: " + id);
         }
+
+        // 先删除向量数据
+        ragService.deleteKnowledgeVectors(id);
 
         // 软删除
         knowledgeMapper.softDelete(id);
@@ -156,17 +150,13 @@ public class AgentScopeKnowledgeController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge not found: " + id);
         }
 
-        // 重置状态为处理中
-        knowledgeMapper.updateEmbeddingStatus(id, "PROCESSING");
+        // 先删除旧的向量数据
+        ragService.deleteKnowledgeVectors(id);
 
-        // 模拟异步处理
-        // 实际项目中应该发送到消息队列或异步调用向量化服务
-        log.info("🔄 知识向量化重试: id={}, title={}", id, knowledge.getTitle());
+        // 重新向量化
+        ragService.embedAndStoreKnowledge(knowledge);
 
-        // 简化处理：直接标记为完成
-        knowledgeMapper.updateEmbeddingStatus(id, "COMPLETED");
-
-        log.info("✅ 知识向量化完成: id={}", id);
+        log.info("✅ 知识向量化重试完成: id={}", id);
     }
 
     /**
