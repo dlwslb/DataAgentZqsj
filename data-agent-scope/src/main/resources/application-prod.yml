@@ -76,11 +76,6 @@ mybatis:
   configuration:
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
-logging:
-  level:
-    root: info
-    com.alibaba.cloud.ai.dataagent: info
-
 # AgentScope 长期记忆配置
 agentscope:
   memory:
@@ -95,3 +90,12 @@ agentscope:
     cleanup-cron: "0 0 3 * * ?"  # 清理过期任务 cron 表达式 (生产环境凌晨3点)
     cleanup-enabled: true  # 是否启用定时清理
     max-content-length: 2000  # 向量存储时最大内容长度(避免token超限)
+  # A2A Protocol A2A 协议
+  a2a:
+    remote-agent-url: http://172.26.177.96:58065
+    remote-agent-id: "5"
+
+logging:
+  level:
+    root: info
+    com.alibaba.cloud.ai.dataagent: info

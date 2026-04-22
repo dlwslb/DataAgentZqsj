@@ -42,9 +42,6 @@ agentscope:
   # HTTP Compression HTTP 压缩
   compression:
     enabled: false
-  # A2A Protocol A2A 协议
-  a2a:
-    remote-agent-url: http://192.168.3.177:58065
 
 logging:
   level:
