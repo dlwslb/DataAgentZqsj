@@ -39,8 +39,63 @@
                 </el-avatar>
               </div>
               <div class="message-content">
-                <div class="message-text">
-                  <span v-html="formatMessage(msg.content)"></span>
+                <!-- Markdown/HTML 报告：与 AgentRun.vue 保持一致 -->
+                <div
+                  v-if="msg.messageType === 'markdown-report' || msg.messageType === 'html-report'"
+                  class="markdown-report-message"
+                >
+                  <div
+                    class="markdown-report-header"
+                    style="display: flex; justify-content: space-between; align-items: center"
+                  >
+                    <div class="report-info">
+                      <el-icon><Document /></el-icon>
+                      <span>报告已生成</span>
+                      <el-radio-group
+                        v-model="reportFormat"
+                        size="small"
+                        class="report-format-inline"
+                      >
+                        <el-radio-button value="markdown">Markdown</el-radio-button>
+                        <el-radio-button value="html">HTML</el-radio-button>
+                      </el-radio-group>
+                    </div>
+                    <el-button-group size="large">
+                      <el-button
+                        type="primary"
+                        @click="downloadMarkdownReport(msg.content)"
+                      >
+                        <el-icon><Download /></el-icon>
+                        下载Markdown报告
+                      </el-button>
+                      <el-button
+                        type="success"
+                        @click="downloadHtmlReport(msg.content)"
+                      >
+                        <el-icon><Download /></el-icon>
+                        下载HTML报告
+                      </el-button>
+                      <el-tooltip content="全屏查看报告" placement="top">
+                        <el-button type="info" @click="openReportFullscreen(msg.content)">
+                          <el-icon><FullScreen /></el-icon>
+                          全屏
+                        </el-button>
+                      </el-tooltip>
+                    </el-button-group>
+                  </div>
+                  <div class="markdown-report-content">
+                    <MarkdownAgentContainer
+                      v-if="reportFormat === 'markdown'"
+                      class="md-body"
+                      :content="msg.content"
+                      :options="options"
+                    />
+                    <ReportHtmlView v-else :content="msg.content" />
+                  </div>
+                </div>
+                <!-- 普通文本消息 -->
+                <div v-else class="message-text">
+                  <span v-html="formatMessage(msg.content, msg.messageType)"></span>
                   <div class="message-time">{{ msg.createTime }}</div>
                 </div>
               </div>
@@ -86,6 +141,44 @@
         </div>
       </el-main>
     </el-container>
+
+    <!-- 报告全屏遮罩 -->
+    <Teleport to="body">
+      <div
+        v-if="showReportFullscreen"
+        class="report-fullscreen-overlay"
+        @click.self="closeReportFullscreen"
+      >
+        <div class="report-fullscreen-container">
+          <div class="report-fullscreen-header">
+            <span class="report-fullscreen-title">
+              {{ reportFormat === 'markdown' ? 'Markdown 报告' : 'HTML 报告' }}
+            </span>
+            <el-button
+              type="danger"
+              circle
+              class="report-fullscreen-close"
+              @click="closeReportFullscreen"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+          <div class="report-fullscreen-content">
+            <MarkdownAgentContainer
+              v-if="reportFormat === 'markdown'"
+              class="md-body report-fullscreen-body"
+              :content="fullscreenReportContent"
+              :options="options"
+            />
+            <ReportHtmlView
+              v-else
+              :content="fullscreenReportContent"
+              class="report-fullscreen-body"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </BaseLayout>
 </template>
 
@@ -93,9 +186,13 @@
   import { ref, onMounted, nextTick, computed } from 'vue';
   import { useRouter } from 'vue-router';
   import { ElMessage } from 'element-plus';
-  import { Loading } from '@element-plus/icons-vue';
+  import { Loading, Document, Download, FullScreen, Close } from '@element-plus/icons-vue';
+  import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
   import BaseLayout from '@/layouts/BaseLayout.vue';
   import ChatSessionSidebar from '@/components/run/ChatSessionSidebar.vue';
+  import MarkdownAgentContainer from '@/components/run/markdown';
+  import ReportHtmlView from '@/components/run/ReportHtmlView.vue';
   import { agentScopeApi, AgentScope, ChatSession, ChatMessage } from '@/services/agentScope';
 
   export default {
@@ -104,6 +201,12 @@
       BaseLayout,
       ChatSessionSidebar,
       Loading,
+      Document,
+      Download,
+      FullScreen,
+      Close,
+      MarkdownAgentContainer,
+      ReportHtmlView,
     },
     setup() {
       const router = useRouter();
@@ -125,6 +228,39 @@
       const inputMessage = ref('');
       const sending = ref(false);
       const chatContainer = ref<HTMLElement | null>(null);
+      const reportFormat = ref<'markdown' | 'html'>('markdown');
+      const showReportFullscreen = ref(false);
+      const fullscreenReportContent = ref('');
+      const options = ref({
+        markdownIt: {
+          linkify: true,
+        },
+        linkAttributes: {
+          attrs: {
+            target: '_blank',
+            rel: 'noopener',
+          },
+        },
+      });
+
+      // Markdown转HTML
+      const markdownToHtml = (markdown: string): string => {
+        if (!markdown) return '';
+        marked.setOptions({ gfm: true, breaks: true });
+        const rawHtml = marked.parse(markdown) as string;
+        return DOMPurify.sanitize(rawHtml);
+      };
+
+      // 格式化消息内容，根据类型选择渲染方式
+      const formatMessage = (content: string, messageType?: string) => {
+        if (messageType === 'markdown-report' || messageType === 'markdown') {
+          return markdownToHtml(content);
+        }
+        if (messageType === 'html-report' || messageType === 'html') {
+          return content;
+        }
+        return content.replace(/\n/g, '<br>');
+      };
 
       // 转换为 ChatSessionSidebar 需要的格式
       const agentForSidebar = computed(() => ({
@@ -323,7 +459,7 @@
             agentId: agent.value.id,
             role: 'assistant',
             content: data.message,
-            messageType: 'text',
+            messageType: data.messageType || 'text',
             createTime: new Date().toLocaleString(),
           });
 
@@ -338,14 +474,58 @@
         }
       };
 
+      // 下载 Markdown 报告
+      const downloadMarkdownReport = (content: string) => {
+        if (!content) {
+          ElMessage.warning('没有可下载的Markdown报告');
+          return;
+        }
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report_${new Date().getTime()}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        ElMessage.success('Markdown报告下载成功');
+      };
+
+      // 下载 HTML 报告
+      const downloadHtmlReport = (content: string) => {
+        if (!content) {
+          ElMessage.warning('没有可下载的HTML报告');
+          return;
+        }
+        const html = markdownToHtml(content);
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report_${new Date().getTime()}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        ElMessage.success('HTML报告下载成功');
+      };
+
+      // 全屏查看报告
+      const openReportFullscreen = (content: string) => {
+        fullscreenReportContent.value = content;
+        showReportFullscreen.value = true;
+      };
+
+      const closeReportFullscreen = () => {
+        showReportFullscreen.value = false;
+        fullscreenReportContent.value = '';
+      };
+
       const scrollToBottom = () => {
         if (chatContainer.value) {
           chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
         }
-      };
-
-      const formatMessage = (content: string) => {
-        return content.replace(/\n/g, '<br>');
       };
 
       onMounted(async () => {
@@ -367,6 +547,12 @@
         inputMessage,
         sending,
         chatContainer,
+        reportFormat,
+        showReportFullscreen,
+        fullscreenReportContent,
+        options,
+        markdownToHtml,
+        formatMessage,
         handleSetCurrentSession,
         handleGetCurrentSession,
         selectSession,
@@ -378,7 +564,10 @@
         loadSessions,
         sendMessage,
         handleEnterKey,
-        formatMessage,
+        downloadMarkdownReport,
+        downloadHtmlReport,
+        openReportFullscreen,
+        closeReportFullscreen,
       };
     },
   };
@@ -494,5 +683,146 @@
   .hint {
     font-size: 12px;
     color: #909399;
+  }
+
+  /* Markdown报告消息样式 - 与 AgentRun.vue 保持一致 */
+  .markdown-report-message {
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .markdown-report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .markdown-report-content {
+    margin-top: 16px;
+  }
+
+  .report-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #409eff;
+    font-size: 16px;
+    font-weight: 500;
+  }
+
+  .report-format-inline {
+    margin-left: 8px;
+  }
+
+  /* 报告全屏样式 */
+  .report-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .report-fullscreen-container {
+    width: 100%;
+    max-width: 1200px;
+    height: 90vh;
+    background: white;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .report-fullscreen-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e8e8e8;
+    background: #f8f9fa;
+    flex-shrink: 0;
+  }
+
+  .report-fullscreen-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .report-fullscreen-close {
+    flex-shrink: 0;
+  }
+
+  .report-fullscreen-content {
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+  }
+
+  .report-fullscreen-body {
+    min-height: 100%;
+  }
+
+  /* Markdown报告容器 - 与 AgentRun.vue 保持一致 */
+  .markdown-report-content {
+    line-height: 1.6;
+    color: #1f2933;
+  }
+
+  /* Markdown样式重置 - 与 AgentRun.vue 保持一致 */
+  .markdown-report-content .markdown-container {
+    line-height: 1.4;
+    white-space: normal;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+      Arial, sans-serif;
+  }
+
+  .markdown-report-content pre {
+    background: #f6f8fa;
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow: auto;
+    margin: 0;
+    border: none;
+  }
+
+  .markdown-report-content code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    background: transparent;
+    padding: 0;
+  }
+
+  /* 全屏报告 Markdown 样式 */
+  .report-fullscreen-body .markdown-container {
+    line-height: 1.4;
+    white-space: normal;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+      Arial, sans-serif;
+  }
+
+  .report-fullscreen-body pre {
+    background: #f6f8fa;
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow: auto;
+    margin: 0;
+    border: none;
+  }
+
+  .report-fullscreen-body code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    background: transparent;
+    padding: 0;
   }
 </style>

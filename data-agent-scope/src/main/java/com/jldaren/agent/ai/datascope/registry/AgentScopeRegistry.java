@@ -17,17 +17,18 @@ package com.jldaren.agent.ai.datascope.registry;
 
 import com.jldaren.agent.ai.datascope.config.AgentScopeConfig;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
+import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 
-import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +51,7 @@ public class AgentScopeRegistry {
 
     private final AgentScopeConfig agentScopeConfig;
     private final LongTermMemoryConfig memoryConfig;
+    private final DirectResponseHook directResponseHook;
 
     /** 缓存条目：记录最后访问时间用于 TTL 淘汰 */
     private static class CachedAgent {
@@ -67,9 +69,11 @@ public class AgentScopeRegistry {
     }
 
     public AgentScopeRegistry(AgentScopeConfig agentScopeConfig,
-                              LongTermMemoryConfig memoryConfig) {
+                              LongTermMemoryConfig memoryConfig,
+                              DirectResponseHook directResponseHook) {
         this.agentScopeConfig = agentScopeConfig;
         this.memoryConfig = memoryConfig;
+        this.directResponseHook = directResponseHook;
     }
 
     /**
@@ -138,7 +142,7 @@ public class AgentScopeRegistry {
             return null;
         }
 
-        String sysPrompt = baseAgent.getSysPrompt();
+        String sysPrompt = appendMandatoryRules(baseAgent.getSysPrompt());
 
         ReActAgent agentWithMemory = agentScopeConfig.createAgentWithLongTermMemory(
                 baseAgent.getName(),
@@ -199,15 +203,14 @@ public class AgentScopeRegistry {
     private ReActAgent createReActAgent(AgentScopeAgent agent) {
         String name = agent.getName() != null ? agent.getName() : "Agent_" + agent.getId();
         String prompt = agent.getPrompt();
-        if (prompt == null || prompt.isBlank()) {
-            prompt = getDefaultPrompt();
-        }
+        // 强制追加工具使用规则
+        prompt = appendMandatoryRules(prompt);
 
         Memory memory = new InMemoryMemory();
-//        PlanNotebook planNotebook = PlanNotebook.builder()
-//                .storage(agentScopeConfig.getPlanStorage())
-//                .maxSubtasks(15)
-//                .build();
+       /* PlanNotebook planNotebook = PlanNotebook.builder()
+               .storage(agentScopeConfig.getPlanStorage())
+               .maxSubtasks(15)
+               .build();*/
 
         // 按 Agent 配置的工具名称构建 Toolkit
         Toolkit toolkit = agentScopeConfig.getToolkit(agent.getToolNames());
@@ -221,8 +224,9 @@ public class AgentScopeRegistry {
                 .memory(memory)
                 .toolkit(toolkit)
                 //.planNotebook(planNotebook)
-                .maxIters(10)
-                .checkRunning(true);
+                .maxIters(5)  // DirectResponseHook 会在工具返回后直接终止循环
+                .checkRunning(true)
+                .hooks(List.of(directResponseHook));
 
         log.info("Created ReActAgent: name={}, tools={}", name,
                 agent.getToolNames() != null ? agent.getToolNames() : "ALL");
@@ -230,6 +234,13 @@ public class AgentScopeRegistry {
         return builder.build();
     }
 
+    private static final String MANDATORY_RULES = """
+                
+                ## 强制规则（最高优先级）
+                - 【关键】当 get_zqsj_agent 工具返回后，【必须】将返回的 Markdown 报告内容【原封不动】地作为最终回答，【禁止】添加任何前缀、后缀、总结或解释
+                - 工具返回的内容即是最终答案，直接输出即可
+                """;
+    
     private String getDefaultPrompt() {
         return """
                 你是一个专业的企业智能助手。
@@ -238,9 +249,23 @@ public class AgentScopeRegistry {
                 
                 ## 工具使用规则（最高优先级）
                 - 当用户的问题可以通过调用可用工具解决时，必须直接调用工具，不要自行编造答案
-                - 工具返回的已经是最终分析结果，直接整理转述给用户即可，不要重复分析或二次加工
+                - 【关键】get_zqsj_agent 工具返回的已是完整的最终分析结果（Markdown格式），请直接展示给用户，【禁止】做任何总结、提炼或二次加工
                 - 如果调用了工具但未查询到结果或工具返回空数据，则根据你的知识自由作答，并说明该信息来自你的知识而非实时数据
                 """;
+    }
+    
+    /**
+     * 强制追加工具使用规则到 prompt
+     */
+    private String appendMandatoryRules(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return getDefaultPrompt();
+        }
+        // 如果 prompt 中已包含 mandatory rules，跳过
+        if (prompt.contains("get_zqsj")) {
+            return prompt;
+        }
+        return prompt + MANDATORY_RULES;
     }
 
     public void clear() {

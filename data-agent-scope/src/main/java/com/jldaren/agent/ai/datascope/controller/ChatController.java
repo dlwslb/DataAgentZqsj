@@ -8,7 +8,10 @@ import com.jldaren.agent.ai.datascope.hook.HitlHook;
 import com.jldaren.agent.ai.datascope.multiagent.DataAnalystAgent;
 import com.jldaren.agent.ai.datascope.multiagent.ReportGeneratorAgent;
 import com.jldaren.agent.ai.datascope.service.ChatService;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -45,8 +48,33 @@ public class ChatController {
 
     @PostMapping
     @Operation(summary = "非流式聊天", description = "一次性返回完整回复")
-    public Mono<Msg> chat(@RequestBody ChatRequest request) {
-        return chatService.chat(request);
+    public Mono<String> chat(@RequestBody ChatRequest request) {
+        return chatService.chat(request)
+                .map(this::extractText);
+    }
+
+    /**
+     * 从 Msg 中提取文本内容
+     * 优先取顶层 TextBlock，若为空则从 ToolResultBlock.output 中提取
+     */
+    private String extractText(Msg msg) {
+        String text = msg.getTextContent();
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+        // 从 ToolResultBlock.output 中提取
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ToolResultBlock toolResult) {
+                for (ContentBlock out : toolResult.getOutput()) {
+                    if (out instanceof TextBlock tb) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(tb.getText());
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     /**

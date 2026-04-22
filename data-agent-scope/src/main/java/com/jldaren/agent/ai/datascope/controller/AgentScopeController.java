@@ -25,11 +25,13 @@ import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
 import com.jldaren.agent.ai.datascope.service.AgentScopeAgentManager;
 import com.jldaren.agent.ai.datascope.vo.ApiResponse;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -331,22 +333,81 @@ public class AgentScopeController {
         Msg userMsgForAgent = Msg.builder().textContent(message).build();
         log.info("📨 [Chat] Agent收到消息: agentId={}, message={}", id, message);
         Msg response = Mono.fromFuture(agent.call(userMsgForAgent).toFuture()).block();
-        log.info("📨 [Chat] Agent回复完成: agentId={}, response长度={}", id, response.getTextContent() != null ? response.getTextContent().length() : 0);
+        String responseContent = extractResponseText(response);
+        log.info("📨 [Chat] Agent回复完成: agentId={}, response长度={}", id, responseContent != null ? responseContent.length() : 0);
+        String messageType = detectMessageType(responseContent);
 
         ChatMessage assistantMsg = ChatMessage.builder()
                 .sessionId(sessionId)
                 .agentId(id)
                 .role("assistant")
-                .content(response.getTextContent())
-                .messageType("text")
+                .content(responseContent)
+                .messageType(messageType)
                 .build();
         chatMessageMapper.insert(assistantMsg);
 
         return ApiResponse.success("发送成功", Map.of(
                 "sessionId", sessionId,
-                "message", response.getTextContent(),
-                "messageId", assistantMsg.getId()
+                "message", responseContent,
+                "messageId", assistantMsg.getId(),
+                "messageType", messageType
         ));
+    }
+
+    /**
+     * 从 Agent 响应 Msg 中提取文本内容
+     * 
+     * <p>当 stopAgent() 被调用后，工具结果存储在 ToolResultBlock 中，
+     * getTextContent() 只提取顶层 TextBlock，无法获取 ToolResultBlock.output 中的文本。
+     * 此方法递归提取所有层级的文本内容。
+     */
+    private String extractResponseText(Msg response) {
+        if (response == null) return "";
+
+        // 优先使用顶层 TextBlock
+        String textContent = response.getTextContent();
+        if (textContent != null && !textContent.isBlank()) {
+            return textContent;
+        }
+
+        // 从 ToolResultBlock.output 中提取文本
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof ToolResultBlock toolResult) {
+                for (ContentBlock outputBlock : toolResult.getOutput()) {
+                    if (outputBlock instanceof TextBlock textBlock) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(textBlock.getText());
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 根据返回内容检测消息类型
+     */
+    private String detectMessageType(String content) {
+        if (content == null || content.isEmpty()) {
+            return "text";
+        }
+        // 工具返回格式: $$$markdown-report# 或 report content: $$$markdown-report
+        if (content.contains("$$$markdown-report") || content.contains("report content:")) {
+            return "markdown-report";
+        }
+        if (content.contains("$$$html-report") || content.contains("report content: $$$html")) {
+            return "html-report";
+        }
+        // 检测 Markdown 特征
+        if (content.contains("# ") || content.contains("## ") || content.contains("```")) {
+            return "markdown-report";
+        }
+        // 检测 HTML 特征
+        if (content.contains("<html") || content.contains("</div>") || content.contains("</")) {
+            return "html-report";
+        }
+        return "text";
     }
 
     /**
