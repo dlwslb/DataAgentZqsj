@@ -44,10 +44,11 @@ agentscope:
     enabled: false
   # A2A Protocol A2A 协议
   a2a:
-    remote-agent-url: http://localhost:8080
+    remote-agent-url: http://192.168.3.177:58065
 
 logging:
   level:
     com.alibaba.cloud.ai.datascope: DEBUG
-    io.agentscope: INFO
+    com.jldaren.agent.ai.datascope: DEBUG
+    io.agentscope: DEBUG
     org.springframework.web.servlet.resource.ResourceHttpRequestHandler: ERROR  # 忽略静态资源找不到的警告

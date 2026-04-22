@@ -107,6 +107,37 @@
                 </div>
               </el-col>
             </el-row>
+
+            <!-- 工具选择 -->
+            <div class="form-item">
+              <div class="tool-section-header">
+                <label>工具选择</label>
+                <el-button size="small" :icon="Refresh" @click="loadAvailableTools" :loading="toolsLoading">刷新</el-button>
+              </div>
+              <p class="tool-hint">选择智能体可调用的工具，未选择时默认使用全部工具</p>
+              <div v-if="availableTools.length === 0" class="tool-empty">
+                <el-tag type="info">暂无可用工具</el-tag>
+              </div>
+              <el-checkbox-group v-else v-model="selectedTools" class="tool-checkbox-group">
+                <el-checkbox
+                  v-for="tool in availableTools"
+                  :key="tool.name"
+                  :label="tool.name"
+                  :value="tool.name"
+                  border
+                  class="tool-checkbox-item"
+                >
+                  <div class="tool-info">
+                    <div class="tool-header">
+                      <span class="tool-name">{{ tool.name }}</span>
+                      <el-tag size="small" type="info">{{ tool.provider }}</el-tag>
+                      <el-tag size="small" type="success">{{ tool.params.length }} 参数</el-tag>
+                    </div>
+                    <div class="tool-desc">{{ tool.description }}</div>
+                  </div>
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
           </div>
         </div>
 
@@ -132,19 +163,23 @@
   import { ElMessage } from 'element-plus';
   import { Plus, Refresh, Upload, Loading } from '@element-plus/icons-vue';
   import BaseLayout from '@/layouts/BaseLayout.vue';
-  import { agentScopeApi } from '@/services/agentScope';
+  import { agentScopeApi, ToolMeta } from '@/services/agentScope';
   import { fileUploadApi } from '@/services/fileUpload';
 
   export default defineComponent({
     name: 'AgentScopeCreate',
     components: {
       BaseLayout,
+      Refresh,
     },
     setup() {
       const router = useRouter();
       const loading = ref(false);
       const fileInput = ref<HTMLInputElement | null>(null);
       const uploading = ref(false);
+      const availableTools = ref<ToolMeta[]>([]);
+      const selectedTools = ref<string[]>([]);
+      const toolsLoading = ref(false);
 
       const agentForm = reactive({
         name: '',
@@ -156,8 +191,21 @@
         status: 'draft',
       });
 
+      const loadAvailableTools = async () => {
+        toolsLoading.value = true;
+        try {
+          const response = await agentScopeApi.listTools();
+          availableTools.value = response.data?.data || response.data || [];
+        } catch (error) {
+          console.error('加载工具列表失败:', error);
+        } finally {
+          toolsLoading.value = false;
+        }
+      };
+
       onMounted(() => {
         agentForm.avatar = generateFallbackAvatar();
+        loadAvailableTools();
       });
 
       const generateFallbackAvatar = (): string => {
@@ -257,6 +305,7 @@
             category: agentForm.category.trim(),
             tags: agentForm.tags.trim(),
             prompt: agentForm.prompt.trim(),
+            toolNames: selectedTools.value.join(','),
             status: agentForm.status,
           };
 
@@ -281,6 +330,9 @@
         loading,
         fileInput,
         uploading,
+        availableTools,
+        selectedTools,
+        toolsLoading,
         goBack,
         regenerateAvatar,
         triggerFileUpload,
@@ -379,6 +431,73 @@
     font-weight: 500;
     font-size: 15px;
     color: #374151;
+  }
+
+  .tool-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .tool-section-header label {
+    margin-bottom: 0;
+  }
+
+  .tool-hint {
+    font-size: 13px;
+    color: #909399;
+    margin: 0 0 12px 0;
+  }
+
+  .tool-empty {
+    padding: 12px 0;
+  }
+
+  .tool-checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .tool-checkbox-group .el-checkbox {
+    margin-right: 0;
+  }
+
+  .tool-checkbox-item {
+    height: auto !important;
+    padding: 12px 16px !important;
+  }
+
+  .tool-checkbox-item :deep(.el-checkbox__label) {
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .tool-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .tool-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .tool-name {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .tool-desc {
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.4;
+    word-break: break-word;
   }
 
   .form-actions {

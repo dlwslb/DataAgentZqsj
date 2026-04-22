@@ -329,7 +329,9 @@ public class AgentScopeController {
         chatSessionMapper.updateTime(sessionId);
 
         Msg userMsgForAgent = Msg.builder().textContent(message).build();
+        log.info("📨 [Chat] Agent收到消息: agentId={}, message={}", id, message);
         Msg response = Mono.fromFuture(agent.call(userMsgForAgent).toFuture()).block();
+        log.info("📨 [Chat] Agent回复完成: agentId={}, response长度={}", id, response.getTextContent() != null ? response.getTextContent().length() : 0);
 
         ChatMessage assistantMsg = ChatMessage.builder()
                 .sessionId(sessionId)

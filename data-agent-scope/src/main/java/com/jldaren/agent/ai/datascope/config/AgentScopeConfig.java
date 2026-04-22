@@ -24,7 +24,7 @@ import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.service.LongTermMemoryService;
 import com.jldaren.agent.ai.datascope.plan.DatabasePlanStorage;
-import com.jldaren.agent.ai.datascope.tool.WeatherTool;
+import com.jldaren.agent.ai.datascope.tool.ToolRegistry;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
@@ -65,23 +65,23 @@ public class AgentScopeConfig {
     private final JdbcTemplate jdbcTemplate;
     private final LongTermMemoryService longTermMemoryService;
     private final LongTermMemoryConfig memoryConfig;
+    private final ToolRegistry toolRegistry;
 
     /** 缓存 ChatModel 实例，避免每次调用都查数据库+new Builder */
     private volatile DashScopeChatModel cachedChatModel;
     private volatile long chatModelCacheTime = 0;
     private static final long CHAT_MODEL_CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(5);
 
-    /** 缓存 Toolkit 实例，避免每次调用都 new Toolkit() + new WeatherTool() */
-    private volatile Toolkit cachedToolkit;
-
     public AgentScopeConfig(ModelConfigMapper modelConfigMapper,
                            JdbcTemplate jdbcTemplate,
                            @Autowired(required = false) LongTermMemoryService longTermMemoryService,
-                           @Autowired(required = false) LongTermMemoryConfig memoryConfig) {
+                           @Autowired(required = false) LongTermMemoryConfig memoryConfig,
+                           ToolRegistry toolRegistry) {
         this.modelConfigMapper = modelConfigMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.longTermMemoryService = longTermMemoryService;
         this.memoryConfig = memoryConfig;
+        this.toolRegistry = toolRegistry;
     }
 
     /**
@@ -155,21 +155,25 @@ public class AgentScopeConfig {
     }
 
     /**
-     * 获取 Toolkit 实例
-     * 供 AgentScopeRegistry 动态创建 Agent 使用
-     * 单例缓存，避免每次调用都 new Toolkit() + new WeatherTool()
+     * 获取 Toolkit 实例（全量工具）
+     * 供无 toolNames 配置的 Agent 使用
+     * 不缓存 Toolkit，因为工具可能动态变化
      */
     public Toolkit getToolkit() {
-        if (cachedToolkit == null) {
-            synchronized (this) {
-                if (cachedToolkit == null) {
-                    Toolkit toolkit = new Toolkit();
-                    toolkit.registerTool(new WeatherTool());
-                    cachedToolkit = toolkit;
-                }
-            }
+        return toolRegistry.buildFullToolkit();
+    }
+
+    /**
+     * 按 Agent 粒度构建 Toolkit
+     * 只注册 Agent 配置中指定的工具
+     *
+     * @param toolNames 工具名称（逗号分隔），为空则使用全量工具
+     */
+    public Toolkit getToolkit(String toolNames) {
+        if (toolNames == null || toolNames.isBlank()) {
+            return getToolkit();
         }
-        return cachedToolkit;
+        return toolRegistry.buildToolkit(toolNames);
     }
 
     /**

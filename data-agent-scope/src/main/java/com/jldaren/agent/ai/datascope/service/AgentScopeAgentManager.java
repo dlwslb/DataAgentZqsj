@@ -18,10 +18,11 @@ package com.jldaren.agent.ai.datascope.service;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
 import com.jldaren.agent.ai.datascope.mapper.AgentScopeAgentMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -40,9 +41,10 @@ public class AgentScopeAgentManager {
     private final AgentScopeRegistry agentRegistry;
 
     /**
-     * 启动时加载所有已发布的 Agent
+     * 应用启动完成后加载所有已发布的 Agent
+     * 使用 ApplicationReadyEvent 确保所有 Bean（包括 ToolRegistry 扫描的工具）都已初始化
      */
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
     public void init() {
         log.info("=== ✅初始化 AgentScope Agent ===");
         try {

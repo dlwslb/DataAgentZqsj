@@ -27,7 +27,7 @@ import org.apache.ibatis.annotations.Select;
 public interface ModelConfigMapper {
 
     @Select("""
-            SELECT id, provider, base_url as baseUrl, api_key as apiKey, model_name as modelName, 
+            SELECT id, provider, REPLACE(base_url,'/compatible-mode','') as baseUrl, api_key as apiKey, model_name as modelName, 
                    temperature, is_active as isActive, max_tokens as maxTokens,
                    model_type as modelType, completions_path as completionsPath, 
                    embeddings_path as embeddingsPath

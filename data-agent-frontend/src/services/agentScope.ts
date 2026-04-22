@@ -18,12 +18,27 @@ export interface AgentScope {
   prompt: string;
   category: string;
   tags: string;
+  toolNames?: string;
   apiKey?: string;
   apiKeyEnabled?: number;
   a2aEnabled?: number;
   adminId?: number;
   createTime: string;
   updateTime: string;
+}
+
+export interface ToolMeta {
+  name: string;
+  description: string;
+  provider: string;
+  params: ToolParamMeta[];
+}
+
+export interface ToolParamMeta {
+  name: string;
+  description: string;
+  required: boolean;
+  type: string;
 }
 
 export interface ChatSession {
@@ -226,6 +241,17 @@ export const agentScopeApi = {
    */
   toggleApiKey: (agentId: number, enabled: boolean) => {
     return agentScopeClient.put(`/api/scope/agent/${agentId}/api-key/toggle?enabled=${enabled}`);
+  },
+
+  // ==================== 知识库管理 ====================
+
+  // ==================== 工具管理 ====================
+
+  /**
+   * 获取所有已注册工具列表
+   */
+  listTools: () => {
+    return agentScopeClient.get<ToolMeta[]>('/api/scope/tool/list');
   },
 
   // ==================== 知识库管理 ====================

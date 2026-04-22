@@ -71,6 +71,10 @@
                 <el-icon><Document /></el-icon>
                 智能体知识配置
               </el-menu-item>
+              <el-menu-item index="tools">
+                <el-icon><SetUp /></el-icon>
+                工具配置
+              </el-menu-item>
             </el-menu-item-group>
             <el-menu-item-group title="操作">
               <el-menu-item index="go-run">
@@ -109,6 +113,14 @@
             :agent-id="agent.id"
           />
 
+          <!-- 工具配置 -->
+          <ToolConfig
+            v-else-if="activeMenuIndex === 'tools'"
+            :agent-id="agent.id"
+            :tool-names="agent.toolNames || ''"
+            @save="handleToolSave"
+          />
+
           <!-- 访问API -->
           <AgentScopeAccessApi
             v-else-if="activeMenuIndex === 'access-api'"
@@ -129,13 +141,14 @@
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { ElMessage } from 'element-plus';
-  import { ArrowLeft, InfoFilled, ChatLineSquare, VideoPlay, Connection, Document } from '@element-plus/icons-vue';
+  import { ArrowLeft, InfoFilled, ChatLineSquare, VideoPlay, Connection, Document, SetUp } from '@element-plus/icons-vue';
   import BaseLayout from '@/layouts/BaseLayout.vue';
   import AgentBaseSetting from '@/components/agent/BaseSetting.vue';
   import AgentPromptConfig from '@/components/agent/PromptConfig.vue';
   import AgentAccessApi from '@/components/agent/AccessApi.vue';
   import AgentScopeAccessApi from '@/components/agent/AgentScopeAccessApi.vue';
   import AgentScopeKnowledgeConfig from '@/components/agent/AgentScopeKnowledgeConfig.vue';
+  import ToolConfig from '@/components/agent/ToolConfig.vue';
   import { agentScopeApi, AgentScope } from '@/services/agentScope';
 
   export default {
@@ -147,12 +160,14 @@
       AgentAccessApi,
       AgentScopeAccessApi,
       AgentScopeKnowledgeConfig,
+      ToolConfig,
       ArrowLeft,
       InfoFilled,
       ChatLineSquare,
       VideoPlay,
       Connection,
       Document,
+      SetUp,
     },
     setup() {
       const router = useRouter();
@@ -243,6 +258,11 @@
         }
       };
 
+      const handleToolSave = async (toolNames: string) => {
+        agent.value.toolNames = toolNames;
+        await loadAgent();
+      };
+
       const goBack = () => {
         router.push('/agent-scope');
       };
@@ -267,6 +287,7 @@
         handlePublish,
         handleOffline,
         handleRepublish,
+        handleToolSave,
         getStatusType,
         getStatusText,
       };

@@ -60,6 +60,13 @@ public class AgentScopeAgent {
 
     private String tags;
 
+    /**
+     * 启用的工具名称（逗号分隔）
+     * 对应 @Tool 注解的 name 属性
+     * 为空时使用默认工具集
+     */
+    private String toolNames;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private LocalDateTime createTime;
 
