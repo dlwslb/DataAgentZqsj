@@ -12,17 +12,17 @@ spring:
       api-key: ${DASHSCOPE_API_KEY:sk-26979f34a1a64da2ad4e695b5f4e9d6a}
       embedding:
         options:
-          model: text-embedding-v3  # 使用通义千问的文本嵌入模型
+          model: text-embedding-v4  # 使用通义千问的文本嵌入模型 v4(性能更强)
     vectorstore:
       type: oceanbase  # 开发环境用OceanBase向量
       oceanbase:
         initialize-schema: true  # 表已存在,禁用自动初始化
         distance-type: COSINE
-        embedding-dimension: 1536
+        embedding-dimension: 1024  # text-embedding-v3 模型生成 1024 维向量
         index-type: HNSW
         hnsw-m: 16
         hnsw-ef-construction: 64
-        table-name: agentscope_vector_store  # AgentScope向量存储表名
+        table-name: agent_scope_vector_store  # AgentScope向量存储表名
         datasource:
           url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://39.102.200.143:2881/tender_data_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
           username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
@@ -56,3 +56,25 @@ mybatis:
 logging:
   level:
     org.springframework.jdbc: debug
+
+# 开发环境限流配置（宽松）
+app:
+  rate-limit:
+    enabled: true
+    max-requests-per-minute: 60
+    llm-paths: /api/v1/chat,/api/scope/agent
+
+# AgentScope 长期记忆配置
+agentscope:
+  memory:
+    enabled: true  # 是否启用长期记忆
+    similarity-threshold: 0.4  # 相似度阈值(COSINE距离范围[0,2],降低阈值提高召回率)
+    default-topk: 10  # 默认检索数量
+    max-topk: 50  # 最大检索数量
+    retention-days: 365  # 默认保留天数
+    auto-record-threshold: 0.7  # 自动记录重要性阈值
+    auto-record-enabled: true  # 是否启用自动记录
+    memory-type: semantic  # 默认记忆类型: semantic-语义, episodic-情景, procedural-程序性
+    cleanup-cron: "0 0 2 * * ?"  # 清理过期任务 cron 表达式 (每天凌晨2点)
+    cleanup-enabled: true  # 是否启用定时清理
+    max-content-length: 2000  # 向量存储时最大内容长度(避免token超限)

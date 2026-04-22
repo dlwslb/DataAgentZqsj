@@ -11,17 +11,17 @@ spring:
       api-key: ${DASHSCOPE_API_KEY}
       embedding:
         options:
-          model: text-embedding-v3  # 使用通义千问的文本嵌入模型
+          model: text-embedding-v4  # 使用通义千问的文本嵌入模型
     vectorstore:
       type: oceanbase  # 生产环境用OceanBase向量
       oceanbase:
         initialize-schema: false  # 生产环境不自动初始化
         distance-type: COSINE
-        embedding-dimension: 1536
+        embedding-dimension: 1024  # text-embedding-v3 模型生成 1024 维向量
         index-type: HNSW
         hnsw-m: 16
         hnsw-ef-construction: 64
-        table-name: agentscope_vector_store  # AgentScope向量存储表名
+        table-name: agent_scope_vector_store  # AgentScope向量存储表名
         datasource:
           url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
           username: ${DATA_AGENT_DATASOURCE_USERNAME:root}
@@ -58,6 +58,20 @@ spring:
           public-key: ${LANGFUSE_PUBLIC_KEY:}
           secret-key: ${LANGFUSE_SECRET_KEY:}
 
+# 生产环境禁用 Swagger
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# 生产环境限流配置
+app:
+  rate-limit:
+    enabled: true
+    max-requests-per-minute: 20
+    llm-paths: /api/v1/chat,/api/scope/agent
+
 mybatis:
   configuration:
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
@@ -66,3 +80,18 @@ logging:
   level:
     root: info
     com.alibaba.cloud.ai.dataagent: info
+
+# AgentScope 长期记忆配置
+agentscope:
+  memory:
+    enabled: true  # 是否启用长期记忆
+    similarity-threshold: 0.4  # 相似度阈值
+    default-topk: 10  # 默认检索数量
+    max-topk: 50  # 最大检索数量
+    retention-days: 365  # 默认保留天数
+    auto-record-threshold: 0.7  # 自动记录重要性阈值
+    auto-record-enabled: true  # 是否启用自动记录
+    memory-type: semantic  # 默认记忆类型: semantic-语义, episodic-情景, procedural-程序性
+    cleanup-cron: "0 0 3 * * ?"  # 清理过期任务 cron 表达式 (生产环境凌晨3点)
+    cleanup-enabled: true  # 是否启用定时清理
+    max-content-length: 2000  # 向量存储时最大内容长度(避免token超限)

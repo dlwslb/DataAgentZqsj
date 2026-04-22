@@ -1,8 +1,22 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jldaren.agent.ai.datascope.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jldaren.agent.ai.datascope.controller.bean.ChatRequest;
-import com.jldaren.agent.ai.datascope.mapper.AgentScopeAgentMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
@@ -11,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,19 +36,33 @@ public class ChatService {
 
     private final AgentScopeRegistry registry;
     private final RagService ragService;
-    private final AgentScopeAgentMapper agentMapper;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     private static final int RAG_TOP_K = 3; // 检索相关知识的数量
 
     public Mono<Msg> chat(ChatRequest request) {
         Long agentId = request.getAgentId();
-        ReActAgent agent = registry.getAgent(agentId);
-        if (agent == null) {
-            return Mono.error(new IllegalArgumentException("Agent not found: " + agentId));
+        String userId = request.getUserId();
+        String tenantId = request.getTenantId();
+        
+        // 如果提供了 userId 和 tenantId，使用带长期记忆的 Agent
+        ReActAgent agent;
+        if (userId != null && tenantId != null) {
+            agent = registry.getAgentWithLongTermMemory(agentId, userId, tenantId);
+            if (agent == null) {
+                return Mono.error(new IllegalArgumentException("ReActAgent not found: " + agentId));
+            }
+            log.debug("Using ReActAgent with long-term memory: agentId={}, userId={}, tenantId={}", agentId, userId, tenantId);
+        } else {
+            // 降级：使用普通 Agent（不带长期记忆）
+            agent = registry.getAgent(agentId);
+            if (agent == null) {
+                return Mono.error(new IllegalArgumentException("ReActAgent not found: " + agentId));
+            }
+            log.debug("Using ReActAgent without long-term memory: agentId={}", agentId);
         }
 
-        // RAG: 检索相关知识并增强上下文
+        // RAG 增强（检索相关知识）
         String enhancedMessage = enhanceWithRag(agentId, request.getMessage());
 
         Msg userMsg = Msg.builder().textContent(enhancedMessage).build();
@@ -55,6 +84,8 @@ public class ChatService {
     /**
      * 使用 RAG 增强用户消息
      * 检索相关知识并注入到上下文中
+     * 注意：长期记忆增强已由 ReActAgent 的 longTermMemoryMode=BOTH 自动处理，
+     * 框架会在 agent.call() 时自动调用 retrieve() 和 record()，无需在此手动增强
      */
     private String enhanceWithRag(Long agentId, String userMessage) {
         try {
@@ -91,7 +122,7 @@ public class ChatService {
                     userMessage
             );
 
-            log.info("🔍 RAG 增强: agentId={}, 检索到 {} 条知识", agentId, relatedKnowledge.size());
+            log.debug("RAG enhanced: agentId={}, retrieved {} knowledge docs", agentId, relatedKnowledge.size());
             return enhancedMessage;
 
         } catch (Exception e) {
@@ -100,4 +131,5 @@ public class ChatService {
             return userMessage;
         }
     }
+
 }

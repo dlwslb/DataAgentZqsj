@@ -1,15 +1,34 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jldaren.agent.ai.datascope.registry;
 
 import com.jldaren.agent.ai.datascope.config.AgentScopeConfig;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
+import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.plan.PlanNotebook;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * AgentScope Agent 注册表
@@ -21,10 +40,34 @@ public class AgentScopeRegistry {
 
     private final Map<Long, ReActAgent> agentMap = new ConcurrentHashMap<>();
 
-    private final AgentScopeConfig agentScopeConfig;
+    /**
+     * 缓存带长期记忆的 Agent: key = "agentId_userId_tenantId"
+     * 带 TTL 过期机制：长期不活跃的 Agent 自动淘汰释放内存
+     */
+    private final Map<String, CachedAgent> longTermMemoryAgentCache = new ConcurrentHashMap<>();
 
-    public AgentScopeRegistry(AgentScopeConfig agentScopeConfig) {
+    private final AgentScopeConfig agentScopeConfig;
+    private final LongTermMemoryConfig memoryConfig;
+
+    /** 缓存条目：记录最后访问时间用于 TTL 淘汰 */
+    private static class CachedAgent {
+        final ReActAgent agent;
+        volatile long lastAccessTime;
+
+        CachedAgent(ReActAgent agent) {
+            this.agent = agent;
+            this.lastAccessTime = System.currentTimeMillis();
+        }
+
+        void touch() {
+            this.lastAccessTime = System.currentTimeMillis();
+        }
+    }
+
+    public AgentScopeRegistry(AgentScopeConfig agentScopeConfig,
+                              LongTermMemoryConfig memoryConfig) {
         this.agentScopeConfig = agentScopeConfig;
+        this.memoryConfig = memoryConfig;
     }
 
     /**
@@ -32,24 +75,22 @@ public class AgentScopeRegistry {
      */
     public void register(AgentScopeAgent agent) {
         if (agent == null || agent.getId() == null) {
-            log.warn("✅注册 Agent 失败: agent 或 agent.id 为空");
+            log.warn("注册 Agent 失败: agent 或 agent.id 为空");
             return;
         }
 
         try {
-            // 如果已存在，先注销
             if (agentMap.containsKey(agent.getId())) {
                 log.info("Agent {} 已存在，先注销", agent.getId());
                 unregister(agent.getId());
             }
 
-            // 创建新的 Agent 实例
             ReActAgent reActAgent = createReActAgent(agent);
             agentMap.put(agent.getId(), reActAgent);
 
-            log.info("✅ Agent 注册成功: id={}, name={}", agent.getId(), agent.getName());
+            log.info("Agent 注册成功: id={}, name={}", agent.getId(), agent.getName());
         } catch (Exception e) {
-            log.error("❌ Agent 注册失败: id={}, error={}", agent.getId(), e.getMessage(), e);
+            log.error("Agent 注册失败: id={}, error={}", agent.getId(), e.getMessage(), e);
         }
     }
 
@@ -59,9 +100,10 @@ public class AgentScopeRegistry {
     public void unregister(Long agentId) {
         ReActAgent agent = agentMap.remove(agentId);
         if (agent != null) {
-            log.info("✅ Agent 注销成功: id={}", agentId);
+            longTermMemoryAgentCache.entrySet().removeIf(entry -> entry.getKey().startsWith(agentId + "_"));
+            log.info("Agent 注销成功: id={}", agentId);
         } else {
-            log.warn("⚠️ Agent 不存在或已注销: id={}", agentId);
+            log.warn("Agent 不存在或已注销: id={}", agentId);
         }
     }
 
@@ -70,6 +112,69 @@ public class AgentScopeRegistry {
      */
     public ReActAgent getAgent(Long agentId) {
         return agentMap.get(agentId);
+    }
+
+    /**
+     * 获取带长期记忆的智能体 (用于聊天场景)
+     * 带 TTL 缓存：超过 agentCacheTtlMinutes 不活跃的 Agent 自动淘汰
+     */
+    public synchronized ReActAgent getAgentWithLongTermMemory(Long agentId, String userId, String tenantId) {
+        String cacheKey = agentId + "_" + (userId != null ? userId : "anonymous")
+                         + "_" + (tenantId != null ? tenantId : "default");
+
+        // 优先从缓存获取
+        CachedAgent cached = longTermMemoryAgentCache.get(cacheKey);
+        if (cached != null) {
+            cached.touch(); // 刷新最后访问时间
+            log.debug("Using cached Agent with long-term memory: key={}", cacheKey);
+            return cached.agent;
+        }
+
+        ReActAgent baseAgent = agentMap.get(agentId);
+        if (baseAgent == null) {
+            log.warn("Agent not found: id={}", agentId);
+            return null;
+        }
+
+        String sysPrompt = baseAgent.getSysPrompt();
+
+        ReActAgent agentWithMemory = agentScopeConfig.createAgentWithLongTermMemory(
+                baseAgent.getName(),
+                userId != null ? userId : "anonymous",
+                tenantId != null ? tenantId : "default",
+                sysPrompt
+        );
+
+        if (agentWithMemory != null) {
+            longTermMemoryAgentCache.put(cacheKey, new CachedAgent(agentWithMemory));
+            log.info("Created and cached Agent with long-term memory: key={}", cacheKey);
+        }
+
+        return agentWithMemory;
+    }
+
+    /**
+     * 定时淘汰 TTL 过期的缓存 Agent
+     * 每分钟检查一次，超过 agentCacheTtlMinutes 不活跃的 Agent 被淘汰
+     */
+    @Scheduled(fixedRate = 60_000)
+    public void evictExpiredCache() {
+        if (longTermMemoryAgentCache.isEmpty()) return;
+
+        long ttlMillis = memoryConfig != null
+                ? TimeUnit.MINUTES.toMillis(memoryConfig.getAgentCacheTtlMinutes())
+                : TimeUnit.MINUTES.toMillis(30); // 默认 30 分钟
+        long now = System.currentTimeMillis();
+
+        longTermMemoryAgentCache.entrySet().removeIf(entry -> {
+            boolean expired = (now - entry.getValue().lastAccessTime) > ttlMillis;
+            if (expired) {
+                log.info("TTL evicting cached Agent: key={}, idleMinutes={}",
+                        entry.getKey(),
+                        (now - entry.getValue().lastAccessTime) / 60_000);
+            }
+            return expired;
+        });
     }
 
     /**
@@ -96,13 +201,13 @@ public class AgentScopeRegistry {
             prompt = getDefaultPrompt();
         }
 
-        Memory memory = new InMemoryMemory();// 短期记忆（当前会话）
+        Memory memory = new InMemoryMemory();
         PlanNotebook planNotebook = PlanNotebook.builder()
                 .storage(agentScopeConfig.getPlanStorage())
-                .maxSubtasks(15)// 限制最大子任务数，防止无限递归
+                .maxSubtasks(15)
                 .build();
 
-        return ReActAgent.builder()
+        ReActAgent.Builder builder = ReActAgent.builder()
                 .name(name)
                 .sysPrompt(prompt)
                 .model(agentScopeConfig.getChatModel())
@@ -110,13 +215,11 @@ public class AgentScopeRegistry {
                 .toolkit(agentScopeConfig.getToolkit())
                 .planNotebook(planNotebook)
                 .maxIters(10)
-                .checkRunning(true)
-                .build();
+                .checkRunning(true);
+
+        return builder.build();
     }
 
-    /**
-     * 获取默认 Prompt
-     */
     private String getDefaultPrompt() {
         return """
                 你是一个专业的企业智能助手。
@@ -125,19 +228,13 @@ public class AgentScopeRegistry {
                 """;
     }
 
-    /**
-     * 清空所有注册
-     */
     public void clear() {
         agentMap.clear();
-        log.info("🗑️ AgentScopeRegistry 已清空");
+        longTermMemoryAgentCache.clear();
+        log.info("AgentScopeRegistry 已清空");
     }
 
-    /**
-     * 获取所有已注册的 Agent ID
-     */
     public Map<Long, ReActAgent> getAllAgents() {
         return new ConcurrentHashMap<>(agentMap);
     }
-
 }

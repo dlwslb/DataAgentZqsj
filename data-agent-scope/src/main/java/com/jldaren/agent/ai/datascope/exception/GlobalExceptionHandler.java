@@ -18,11 +18,14 @@ package com.jldaren.agent.ai.datascope.exception;
 import com.jldaren.agent.ai.datascope.vo.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.BindException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 /**
  * 全局异常处理器
@@ -45,11 +48,38 @@ public class GlobalExceptionHandler {
 		return ApiResponse.error(e.getMessage());
 	}
 
+	@ExceptionHandler(MethodArgumentNotValidException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Object> handleValidationException(MethodArgumentNotValidException e) {
+		String message = e.getBindingResult().getFieldErrors().stream()
+				.map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+				.collect(Collectors.joining("; "));
+		log.warn("Validation error: {}", message);
+		return ApiResponse.error("参数校验失败: " + message);
+	}
+
+	@ExceptionHandler(BindException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Object> handleBindException(BindException e) {
+		String message = e.getBindingResult().getFieldErrors().stream()
+				.map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+				.collect(Collectors.joining("; "));
+		log.warn("Bind error: {}", message);
+		return ApiResponse.error("参数绑定失败: " + message);
+	}
+
 	@ExceptionHandler(TimeoutException.class)
 	@ResponseStatus(HttpStatus.GATEWAY_TIMEOUT)
 	public ApiResponse<Object> handleTimeout(TimeoutException e) {
 		log.warn("请求超时: {}", e.getMessage());
 		return ApiResponse.error("请求超时，请稍后重试");
+	}
+
+	@ExceptionHandler(IllegalArgumentException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Object> handleIllegalArgument(IllegalArgumentException e) {
+		log.warn("Illegal argument: {}", e.getMessage());
+		return ApiResponse.error(e.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)

@@ -50,3 +50,4 @@ logging:
   level:
     com.alibaba.cloud.ai.datascope: DEBUG
     io.agentscope: INFO
+    org.springframework.web.servlet.resource.ResourceHttpRequestHandler: ERROR  # 忽略静态资源找不到的警告

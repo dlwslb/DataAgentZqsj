@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jldaren.agent.ai.datascope.memory.mapper.LongTermMemoryMapper">
+
+    <!-- 基础结果映射 -->
+    <resultMap id="BaseResultMap" type="com.jldaren.agent.ai.datascope.memory.entity.MemoryRecord">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="user_id" property="userId"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="memory_type" property="memoryType"/>
+        <result column="content" property="content"/>
+        <result column="content_vector_id" property="contentVectorId"/>
+        <result column="metadata_json" property="metadata" typeHandler="com.jldaren.agent.ai.datascope.memory.typehandler.JsonMapTypeHandler"/>
+        <result column="importance_score" property="importanceScore"/>
+        <result column="is_auto" property="isAuto"/>
+        <result column="expire_time" property="expireTime"/>
+        <result column="access_count" property="accessCount"/>
+        <result column="last_access_time" property="lastAccessTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 搜索结果映射 -->
+    <resultMap id="SearchResultMap" type="com.jldaren.agent.ai.datascope.memory.entity.MemorySearchResult">
+        <id column="id" property="id"/>
+        <result column="content" property="content"/>
+        <result column="memory_type" property="memoryType"/>
+        <result column="similarity_score" property="similarityScore"/>
+        <result column="importance_score" property="importanceScore"/>
+        <result column="metadata_json" property="metadata" typeHandler="com.jldaren.agent.ai.datascope.memory.typehandler.JsonMapTypeHandler"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="is_auto" property="isAuto"/>
+    </resultMap>
+
+    <!-- 配置结果映射 -->
+    <resultMap id="ConfigResultMap" type="com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig">
+        <id column="id" property="id"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="enabled" property="enabled"/>
+        <result column="similarity_threshold" property="similarityThreshold"/>
+        <result column="default_topk" property="defaultTopk"/>
+        <result column="max_topk" property="maxTopk"/>
+        <result column="retention_days" property="retentionDays"/>
+        <result column="auto_record_threshold" property="autoRecordThreshold"/>
+        <result column="auto_record_enabled" property="autoRecordEnabled"/>
+        <result column="memory_type" property="memoryType"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 插入语句 -->
+    <insert id="insert" parameterType="com.jldaren.agent.ai.datascope.memory.entity.MemoryRecord">
+        INSERT INTO long_term_memory (
+            id, tenant_id, agent_name, user_id, session_id, memory_type,
+            content, content_vector_id, metadata_json, importance_score,
+            is_auto, expire_time, access_count, last_access_time, is_deleted
+        ) VALUES (
+            #{id}, #{tenantId}, #{agentName}, #{userId}, #{sessionId}, #{memoryType},
+            #{content}, #{contentVectorId}, #{metadata,typeHandler=com.jldaren.agent.ai.datascope.memory.typehandler.JsonMapTypeHandler},
+            #{importanceScore}, #{isAuto}, #{expireTime}, #{accessCount}, #{lastAccessTime}, #{isDeleted}
+        )
+    </insert>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE id = #{id} AND is_deleted = 0
+    </select>
+
+    <!-- 根据向量ID查询 -->
+    <select id="selectByVectorId" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE content_vector_id = #{vectorId} AND is_deleted = 0
+    </select>
+
+    <!-- 通过向量相似度搜索 (使用 OceanBase/Mysql 向量检索) -->
+    <!-- OceanBase COSINE 距离范围 [0, 2]，归一化为相似度: 1 - distance/2 -->
+    <!-- 使用 GROUP BY content 去重，避免返回完全相同的记忆 -->
+    <select id="searchByVector" resultMap="SearchResultMap">
+        SELECT
+            m.id,
+            m.content,
+            m.memory_type,
+            m.importance_score,
+            m.metadata_json,
+            m.session_id,
+            m.create_time,
+            m.is_auto,
+            MAX(1 - v.distance / 2) AS similarity_score
+        FROM long_term_memory m
+        INNER JOIN agent_scope_vector_store v ON m.content_vector_id = v.id
+        WHERE m.is_deleted = 0
+          AND m.agent_name = #{agentName}
+          <if test="userId != null">
+              AND m.user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND m.tenant_id = #{tenantId}
+          </if>
+          <if test="memoryType != null">
+              AND m.memory_type = #{memoryType}
+          </if>
+          <if test="threshold != null">
+              AND (1 - v.distance / 2) >= #{threshold}
+          </if>
+        GROUP BY m.content
+        ORDER BY similarity_score DESC, m.importance_score DESC
+        LIMIT #{topK}
+    </select>
+
+    <!-- 关键词搜索 -->
+    <select id="searchByKeyword" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          <if test="userId != null">
+              AND user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+          <if test="memoryType != null">
+              AND memory_type = #{memoryType}
+          </if>
+          AND content LIKE CONCAT('%', #{keyword}, '%')
+        ORDER BY importance_score DESC, create_time DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 获取用户记忆列表 -->
+    <select id="selectByUser" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          <if test="userId != null">
+              AND user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+          <if test="memoryType != null">
+              AND memory_type = #{memoryType}
+          </if>
+        ORDER BY importance_score DESC, create_time DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 获取会话相关记忆 -->
+    <select id="selectBySession" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          AND session_id = #{sessionId}
+          <if test="userId != null">
+              AND user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+        ORDER BY create_time ASC
+    </select>
+
+    <!-- 更新访问信息 -->
+    <update id="updateAccessInfo">
+        UPDATE long_term_memory
+        SET access_count = access_count + 1,
+            last_access_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 批量更新访问信息 -->
+    <update id="batchUpdateAccessInfo">
+        UPDATE long_term_memory
+        SET access_count = access_count + 1,
+            last_access_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 更新记忆内容（Mem0 式记忆更新） -->
+    <update id="updateContent">
+        UPDATE long_term_memory
+        SET content = #{content},
+            importance_score = #{importanceScore},
+            update_time = NOW()
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+    <!-- 软删除 -->
+    <update id="delete">
+        UPDATE long_term_memory
+        SET is_deleted = 1,
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 批量软删除 -->
+    <update id="batchDelete">
+        UPDATE long_term_memory
+        SET is_deleted = 1,
+            update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 清理过期记忆 -->
+    <update id="cleanExpired">
+        UPDATE long_term_memory
+        SET is_deleted = 1,
+            update_time = NOW()
+        WHERE is_deleted = 0
+          AND expire_time IS NOT NULL
+          AND expire_time &lt; NOW()
+    </update>
+
+    <!-- 统计用户记忆数量 -->
+    <select id="countByUser" resultType="int">
+        SELECT COUNT(*) FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          <if test="userId != null">
+              AND user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+    </select>
+
+    <!-- 检查是否已存在相同内容的记忆（去重用） -->
+    <select id="existsByContent" resultType="int">
+        SELECT COUNT(*) FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          AND user_id = #{userId}
+          AND content = #{content}
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+        LIMIT 1
+    </select>
+
+    <!-- 查找包含指定关键词的第一条记忆（矛盾检测/记忆更新） -->
+    <select id="selectFirstByContentLike" resultMap="BaseResultMap">
+        SELECT * FROM long_term_memory
+        WHERE is_deleted = 0
+          AND agent_name = #{agentName}
+          AND user_id = #{userId}
+          AND content LIKE CONCAT('%', #{keyword}, '%')
+          <if test="tenantId != null">
+              AND tenant_id = #{tenantId}
+          </if>
+        ORDER BY create_time DESC
+        LIMIT 1
+    </select>
+
+    <!-- 获取全局配置 -->
+    <select id="selectGlobalConfig" resultMap="ConfigResultMap">
+        SELECT * FROM long_term_memory_config
+        WHERE agent_id IS NULL AND tenant_id IS NULL
+        LIMIT 1
+    </select>
+
+    <!-- 获取智能体配置（优先匹配 agent_name，其次全局配置） -->
+    <select id="selectAgentConfig" resultMap="ConfigResultMap">
+        SELECT * FROM long_term_memory_config
+        WHERE agent_name = #{agentName}
+          <choose>
+              <when test="tenantId != null">
+                  AND tenant_id = #{tenantId}
+              </when>
+              <otherwise>
+                  AND tenant_id IS NULL
+              </otherwise>
+          </choose>
+        LIMIT 1
+    </select>
+
+    <!-- 更新配置 -->
+    <update id="updateConfig" parameterType="com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig">
+        UPDATE long_term_memory_config
+        SET enabled = #{enabled},
+            similarity_threshold = #{similarityThreshold},
+            default_topk = #{defaultTopk},
+            max_topk = #{maxTopk},
+            retention_days = #{retentionDays},
+            auto_record_threshold = #{autoRecordThreshold},
+            auto_record_enabled = #{autoRecordEnabled},
+            memory_type = #{memoryType},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 插入配置 -->
+    <insert id="insertConfig" parameterType="com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig">
+        INSERT INTO long_term_memory_config (
+            agent_name, tenant_id, enabled, similarity_threshold,
+            default_topk, max_topk, retention_days, auto_record_threshold,
+            auto_record_enabled, memory_type
+        ) VALUES (
+            #{agentName}, #{tenantId}, #{enabled}, #{similarityThreshold},
+            #{defaultTopk}, #{maxTopk}, #{retentionDays}, #{autoRecordThreshold},
+            #{autoRecordEnabled}, #{memoryType}
+        )
+    </insert>
+
+</mapper>

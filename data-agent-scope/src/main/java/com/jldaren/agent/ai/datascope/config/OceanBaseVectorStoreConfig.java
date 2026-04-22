@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jldaren.agent.ai.datascope.config;
 
 import com.alibaba.druid.pool.DruidDataSource;
@@ -17,7 +32,7 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(name = "spring.ai.vectorstore.type", havingValue = "oceanbase")
 public class OceanBaseVectorStoreConfig {
 
-    @Value("${spring.ai.vectorstore.oceanbase.table-name:agentscope_vector_store}")
+    @Value("${spring.ai.vectorstore.oceanbase.table-name:agent_scope_vector_store}")
     private String tableName;
 
     @Value("${spring.ai.vectorstore.oceanbase.initialize-schema:false}")
@@ -62,7 +77,7 @@ public class OceanBaseVectorStoreConfig {
 
         try {
             dataSource.init();
-            log.info("OceanBase VectorStore DataSource initialized successfully");
+            log.info("✅OceanBase VectorStore DataSource initialized successfully");
         } catch (Exception e) {
             log.error("Failed to initialize OceanBase VectorStore DataSource", e);
             throw new RuntimeException("Failed to initialize DataSource", e);
@@ -77,7 +92,7 @@ public class OceanBaseVectorStoreConfig {
             )
                     .build();
             
-            log.info("OceanBase VectorStore created successfully with table: {}", tableName);
+            log.info("✅OceanBase VectorStore created successfully with table: {}", tableName);
             return vectorStore;
         } catch (Exception e) {
             log.error("Failed to create OceanBaseVectorStore", e);

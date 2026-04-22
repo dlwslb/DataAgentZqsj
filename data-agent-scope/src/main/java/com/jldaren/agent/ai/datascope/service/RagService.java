@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jldaren.agent.ai.datascope.service;
 
 import com.alibaba.cloud.ai.vectorstore.oceanbase.OceanBaseVectorStore;
@@ -57,23 +72,33 @@ public class RagService {
 
     /**
      * 检索相关知识
+     * 使用 filterExpression 在向量库层面过滤 agentId，避免全量搜索后内存过滤
      */
     public List<Document> searchRelatedKnowledge(Long agentId, String query, int topK) {
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(query)
                 .topK(topK)
+                .filterExpression(String.format("agentId == '%s'", agentId))
                 .build();
 
-        List<Document> documents = vectorStore.similaritySearch(searchRequest);
-        
-        // 手动过滤 agentId
-        return documents.stream()
-                .filter(doc -> {
-                    Object docAgentId = doc.getMetadata().get("agentId");
-                    return docAgentId != null && docAgentId.equals(agentId);
-                })
-                .limit(topK)
-                .collect(Collectors.toList());
+        try {
+            return vectorStore.similaritySearch(searchRequest);
+        } catch (Exception e) {
+            log.warn("Vector search with filter failed, falling back to post-filter: {}", e.getMessage());
+            // 降级：不过滤搜索后手动过滤
+            SearchRequest fallbackRequest = SearchRequest.builder()
+                    .query(query)
+                    .topK(topK * 3)
+                    .build();
+            List<Document> documents = vectorStore.similaritySearch(fallbackRequest);
+            return documents.stream()
+                    .filter(doc -> {
+                        Object docAgentId = doc.getMetadata().get("agentId");
+                        return docAgentId != null && docAgentId.equals(agentId);
+                    })
+                    .limit(topK)
+                    .collect(Collectors.toList());
+        }
     }
 
     /**

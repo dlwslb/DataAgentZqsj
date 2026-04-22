@@ -54,6 +54,18 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope</artifactId>
             <version>${agentscope.version}</version>
+            <exclusions>
+                <!-- 排除 Jackson 3.x,使用 Spring Boot 的 Jackson 2.x -->
+                <exclusion>
+                    <groupId>tools.jackson.core</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <!-- 排除 json-schema-validator (它依赖 Jackson 3.x) -->
+                <exclusion>
+                    <groupId>com.networknt</groupId>
+                    <artifactId>json-schema-validator</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- AgentScope AG-UI Extension -->
@@ -61,6 +73,12 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-agui</artifactId>
             <version>${agentscope.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>tools.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- AgentScope AG-UI Spring Boot Starter -->
@@ -68,6 +86,12 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-agui-spring-boot-starter</artifactId>
             <version>${agentscope.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>tools.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- AgentScope A2A Protocol -->
@@ -75,6 +99,12 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
             <version>${agentscope.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>tools.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Spring AI Alibaba DashScope (包含 EmbeddingModel 自动配置) -->
@@ -116,7 +146,13 @@
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>3.0.3</version>
+        </dependency>
+
+        <!-- JSON Schema Validator (使用 2.x 版本以兼容 AgentScope 1.0.11) -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>2.0.0</version>  <!-- 升级到 2.x 以解决 SpecificationVersion 类缺失问题 -->
         </dependency>
 
     </dependencies>
