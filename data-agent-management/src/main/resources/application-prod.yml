@@ -48,3 +48,17 @@ logging:
   level:
     root: info
     com.alibaba.cloud.ai.dataagent: info
+
+# 生产环境禁用 Swagger
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# 生产环境限流配置
+app:
+  rate-limit:
+    enabled: true
+    max-requests-per-minute: 20
+    llm-paths: /api/agent,/api/conversation

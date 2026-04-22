@@ -83,7 +83,7 @@ public class OceanBaseVectorStore implements VectorStore {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void add(List<Document> documents) {
 		if (documents == null || documents.isEmpty()) {
 			return;
@@ -139,7 +139,7 @@ public class OceanBaseVectorStore implements VectorStore {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void delete(List<String> idList) {
 		if (idList == null || idList.isEmpty()) {
 			return;
@@ -158,7 +158,7 @@ public class OceanBaseVectorStore implements VectorStore {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void delete(Filter.Expression filterExpression) {
 		Assert.notNull(filterExpression, "Filter expression must not be null");
 		WhereClauseResult where = buildWhereClause(filterExpression);

@@ -60,7 +60,7 @@ public class AgentKnowledgeServiceImpl implements AgentKnowledgeService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public AgentKnowledgeVO createKnowledge(CreateKnowledgeDTO createKnowledgeDto) {
 		String storagePath = null;
 		checkCreateKnowledgeDto(createKnowledgeDto);
@@ -112,7 +112,7 @@ public class AgentKnowledgeServiceImpl implements AgentKnowledgeService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public AgentKnowledgeVO updateKnowledge(Integer id, UpdateKnowledgeDTO updateKnowledgeDto) {
 		// 基础校验：根据 id 查询数据库
 		AgentKnowledge existingKnowledge = agentKnowledgeMapper.selectById(id);
@@ -138,7 +138,7 @@ public class AgentKnowledgeServiceImpl implements AgentKnowledgeService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public boolean deleteKnowledge(Integer id) {
 		// 先获取知识信息，用于后续删除文件和向量数据
 		AgentKnowledge knowledge = agentKnowledgeMapper.selectById(id);
@@ -199,7 +199,7 @@ public class AgentKnowledgeServiceImpl implements AgentKnowledgeService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void retryEmbedding(Integer id) {
 		AgentKnowledge knowledge = agentKnowledgeMapper.selectById(id);
 		if (knowledge.getEmbeddingStatus().equals(EmbeddingStatus.PROCESSING)) {

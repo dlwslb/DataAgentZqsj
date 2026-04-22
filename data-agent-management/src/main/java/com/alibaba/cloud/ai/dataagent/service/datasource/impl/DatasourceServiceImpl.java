@@ -136,7 +136,7 @@ public class DatasourceServiceImpl implements DatasourceService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void deleteDatasource(Integer id) {
 		// First, delete the associations
 		agentDatasourceMapper.deleteAllByDatasourceId(id);
@@ -376,7 +376,7 @@ public class DatasourceServiceImpl implements DatasourceService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public List<LogicalRelation> saveLogicalRelations(Integer datasourceId, List<LogicalRelation> logicalRelations) {
 		log.info("Saving {} logical relations for datasource: {}", logicalRelations.size(), datasourceId);
 

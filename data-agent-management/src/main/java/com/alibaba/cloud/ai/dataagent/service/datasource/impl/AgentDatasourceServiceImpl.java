@@ -103,7 +103,7 @@ public class AgentDatasourceServiceImpl implements AgentDatasourceService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public AgentDatasource addDatasourceToAgent(Long agentId, Integer datasourceId) {
 		// First, disable other data sources for this agent (an agent can only have one
 		// enabled data source)
@@ -161,7 +161,7 @@ public class AgentDatasourceServiceImpl implements AgentDatasourceService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void updateDatasourceTables(Long agentId, Integer datasourceId, List<String> tables) {
 		if (agentId == null || datasourceId == null || tables == null) {
 			throw new IllegalArgumentException("参数不能为空");

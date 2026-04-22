@@ -38,3 +38,10 @@ mybatis:
 logging:
   level:
     org.springframework.jdbc: debug
+
+# 开发环境限流配置（宽松）
+app:
+  rate-limit:
+    enabled: true
+    max-requests-per-minute: 60
+    llm-paths: /api/agent,/api/conversation

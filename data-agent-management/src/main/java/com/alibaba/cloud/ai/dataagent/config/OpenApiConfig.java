@@ -20,11 +20,15 @@ import io.swagger.v3.oas.models.info.Info;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 /**
  * OpenAPI/Swagger 配置。
+ * <p>
+ * 仅在 dev/test 环境启用，生产环境自动禁用，避免接口暴露。
  */
 @Configuration
+@Profile({"dev", "test", "h2"})
 public class OpenApiConfig {
 
 	@Bean
