@@ -73,6 +73,7 @@ public class A2ARemoteCallTool {
                             .path("/api/stream/search")
                             .queryParam("agentId", remoteAgentId)
                             .queryParam("query", question)
+                            .queryParam("userRole", "user")
                             .build())
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
