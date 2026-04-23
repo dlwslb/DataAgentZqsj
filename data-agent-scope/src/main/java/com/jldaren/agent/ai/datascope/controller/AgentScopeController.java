@@ -292,17 +292,20 @@ public class AgentScopeController {
     public ApiResponse<Map<String, Object>> chat(
             @PathVariable Long id,
             @RequestBody Map<String, Object> request) {
-        ReActAgent agent = agentRegistry.getAgent(id);
-        if (agent == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found or not published: " + id);
-        }
-
         String message = (String) request.get("message");
         if (message == null || message.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
         }
 
         String sessionId = request.get("sessionId") != null ? ((String) request.get("sessionId")) : null;
+        String userId = request.get("userId") != null ? (String) request.get("userId") : "anonymous";
+        String tenantId = request.get("tenantId") != null ? (String) request.get("tenantId") : "default";
+
+        // 使用带 sessionId 隔离的 Agent（每个会话独立的 InMemoryMemory）
+        ReActAgent agent = agentRegistry.getAgentWithLongTermMemory(id, userId, sessionId, tenantId);
+        if (agent == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found or not published: " + id);
+        }
 
         // 提取控制参数，编码到消息中传递给 Agent/Tool
         String userRole = request.get("userRole") != null ? (String) request.get("userRole") : "user";

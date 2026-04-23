@@ -113,6 +113,42 @@
         LIMIT #{topK}
     </select>
 
+    <!-- 通过向量相似度搜索（带会话隔离） -->
+    <select id="searchByVectorWithSession" resultMap="SearchResultMap">
+        SELECT
+            m.id,
+            m.content,
+            m.memory_type,
+            m.importance_score,
+            m.metadata_json,
+            m.session_id,
+            m.create_time,
+            m.is_auto,
+            MAX(1 - v.distance / 2) AS similarity_score
+        FROM long_term_memory m
+        INNER JOIN agent_scope_vector_store v ON m.content_vector_id = v.id
+        WHERE m.is_deleted = 0
+          AND m.agent_name = #{agentName}
+          <if test="userId != null">
+              AND m.user_id = #{userId}
+          </if>
+          <if test="tenantId != null">
+              AND m.tenant_id = #{tenantId}
+          </if>
+          <if test="sessionId != null and sessionId != ''">
+              AND m.session_id = #{sessionId}
+          </if>
+          <if test="memoryType != null">
+              AND m.memory_type = #{memoryType}
+          </if>
+          <if test="threshold != null">
+              AND (1 - v.distance / 2) >= #{threshold}
+          </if>
+        GROUP BY m.content
+        ORDER BY similarity_score DESC, m.importance_score DESC
+        LIMIT #{topK}
+    </select>
+
     <!-- 关键词搜索 -->
     <select id="searchByKeyword" resultMap="BaseResultMap">
         SELECT * FROM long_term_memory

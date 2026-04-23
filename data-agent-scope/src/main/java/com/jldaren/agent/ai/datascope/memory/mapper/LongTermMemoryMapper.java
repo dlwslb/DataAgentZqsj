@@ -67,6 +67,20 @@ public interface LongTermMemoryMapper {
     );
 
     /**
+     * 通过向量相似度搜索记忆（带会话隔离）
+     */
+    List<MemorySearchResult> searchByVectorWithSession(
+            @Param("agentName") String agentName,
+            @Param("userId") String userId,
+            @Param("tenantId") String tenantId,
+            @Param("query") String query,
+            @Param("threshold") Double threshold,
+            @Param("topK") Integer topK,
+            @Param("memoryType") String memoryType,
+            @Param("sessionId") String sessionId
+    );
+
+    /**
      * 关键词搜索记忆
      */
     List<MemoryRecord> searchByKeyword(

@@ -114,7 +114,7 @@ public class LongTermMemoryService {
         }
 
         try {
-            String vectorId = storeVector(content, metadata, agentName, userId, tenantId, memoryId);
+            String vectorId = storeVector(content, metadata, agentName, userId, sessionId, tenantId, memoryId);
 
             MemoryRecord record = MemoryRecord.builder()
                     .id(memoryId)
@@ -208,6 +208,17 @@ public class LongTermMemoryService {
 
     public List<MemorySearchResult> retrieveMemories(String agentName, String userId,
                                                      String query, Integer topK, String tenantId) {
+        return retrieveMemories(agentName, userId, query, topK, tenantId, null);
+    }
+
+    /**
+     * 检索相关记忆（带会话隔离）
+     * 当 sessionId 不为空时，只检索该会话的记忆；
+     * 当 sessionId 为空时，检索该用户所有会话的记忆
+     */
+    public List<MemorySearchResult> retrieveMemories(String agentName, String userId,
+                                                     String query, Integer topK, String tenantId,
+                                                     String sessionId) {
         if (!isEnabled(agentName, tenantId)) {
             return Collections.emptyList();
         }
@@ -218,24 +229,33 @@ public class LongTermMemoryService {
 
         try {
             if (vectorStore != null && embeddingModel != null) {
-                return retrieveViaVectorStore(agentName, userId, query, limit, threshold, config);
+                return retrieveViaVectorStore(agentName, userId, query, limit, threshold, config, sessionId);
             } else if (memoryMapper != null) {
-                return memoryMapper.searchByVector(agentName, userId, tenantId, query, threshold, limit, config.getMemoryType());
+                if (sessionId != null && !sessionId.isEmpty()) {
+                    return memoryMapper.searchByVectorWithSession(agentName, userId, tenantId, query, threshold, limit, config.getMemoryType(), sessionId);
+                } else {
+                    return memoryMapper.searchByVector(agentName, userId, tenantId, query, threshold, limit, config.getMemoryType());
+                }
             } else {
                 log.warn("Both vectorStore and memoryMapper are unavailable");
                 return Collections.emptyList();
             }
         } catch (Exception e) {
-            log.error("Failed to retrieve memories: agent={}, user={}", agentName, userId, e);
+            log.error("Failed to retrieve memories: agent={}, user={}, session={}", agentName, userId, sessionId, e);
             return Collections.emptyList();
         }
     }
 
     private List<MemorySearchResult> retrieveViaVectorStore(String agentName, String userId,
                                                             String query, int limit, double threshold,
-                                                            MemoryConfig config) {
+                                                            MemoryConfig config, String sessionId) {
         // 使用 filterExpression 在向量库层面过滤，避免全量搜索后内存过滤
-        String filterExpr = String.format("agentName == '%s' && userId == '%s'", agentName, userId);
+        StringBuilder filterBuilder = new StringBuilder();
+        filterBuilder.append(String.format("agentName == '%s' && userId == '%s'", agentName, userId));
+        if (sessionId != null && !sessionId.isEmpty()) {
+            filterBuilder.append(String.format(" && sessionId == '%s'", sessionId));
+        }
+        String filterExpr = filterBuilder.toString();
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(query)
                 .topK(limit)
@@ -258,7 +278,12 @@ public class LongTermMemoryService {
                     .filter(doc -> {
                         String docAgentName = (String) doc.getMetadata().get("agentName");
                         String docUserId = (String) doc.getMetadata().get("userId");
-                        return Objects.equals(agentName, docAgentName) && Objects.equals(userId, docUserId);
+                        boolean match = Objects.equals(agentName, docAgentName) && Objects.equals(userId, docUserId);
+                        if (match && sessionId != null && !sessionId.isEmpty()) {
+                            String docSessionId = (String) doc.getMetadata().get("sessionId");
+                            match = sessionId.equals(docSessionId);
+                        }
+                        return match;
                     })
                     .limit(limit)
                     .collect(Collectors.toList());
@@ -411,7 +436,8 @@ public class LongTermMemoryService {
     // ========== 向量存储 ==========
 
     private String storeVector(String content, Map<String, Object> metadata,
-                                String agentName, String userId, String tenantId, String memoryId) {
+                                String agentName, String userId, String sessionId,
+                                String tenantId, String memoryId) {
         if (vectorStore == null || embeddingModel == null) {
             log.debug("VectorStore or EmbeddingModel is null, skipping vector storage");
             return null;
@@ -422,6 +448,9 @@ public class LongTermMemoryService {
             docMetadata.put("agentName", agentName);
             docMetadata.put("userId", userId);
             docMetadata.put("tenantId", tenantId);
+            if (sessionId != null && !sessionId.isEmpty()) {
+                docMetadata.put("sessionId", sessionId);
+            }
             if (metadata != null) {
                 docMetadata.putAll(metadata);
             }

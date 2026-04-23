@@ -177,10 +177,10 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
             return Mono.just("");
         }
 
-        log.debug("Retrieving memories: agent={}, user={}, queryLen={}", agentName, userId, query.length());
+        log.debug("Retrieving memories: agent={}, user={}, session={}, queryLen={}", agentName, userId, sessionId, query.length());
 
         List<MemorySearchResult> results = memoryService.retrieveMemories(
-                agentName, userId, query, retrieveCount, tenantId
+                agentName, userId, query, retrieveCount, tenantId, sessionId
         );
 
         String retrievedContent = results.stream()
@@ -280,7 +280,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
         if (!enabled || memoryService == null) {
             return Collections.emptyList();
         }
-        return memoryService.retrieveMemories(agentName, userId, query, count, tenantId);
+        return memoryService.retrieveMemories(agentName, userId, query, count, tenantId, sessionId);
     }
 
     public void clear() {
@@ -313,6 +313,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
 
     public OceanBaseLongTermMemory agentName(String agentName) { this.agentName = agentName; return this; }
     public OceanBaseLongTermMemory userId(String userId) { this.userId = userId; return this; }
+    public OceanBaseLongTermMemory sessionId(String sessionId) { this.sessionId = sessionId; return this; }
     public OceanBaseLongTermMemory tenantId(String tenantId) { this.tenantId = tenantId; return this; }
     public OceanBaseLongTermMemory retrieveCount(int retrieveCount) { this.retrieveCount = retrieveCount; return this; }
     public OceanBaseLongTermMemory similarityThreshold(double threshold) { this.similarityThreshold = threshold; return this; }
@@ -326,6 +327,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
         Map<String, String> metadata = new HashMap<>();
         metadata.put("agentName", agentName);
         metadata.put("userId", userId);
+        metadata.put("sessionId", sessionId);
         metadata.put("tenantId", tenantId);
         metadata.put("memoryType", memoryType);
         metadata.put("enabled", String.valueOf(enabled));
@@ -353,7 +355,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
         String rawQuery = msg != null ? msg.getTextContent() : "";
         String query = extractCleanQuery(rawQuery);
 
-        List<MemorySearchResult> results = memoryService.retrieveMemories(agentName, userId, query, count, tenantId);
+        List<MemorySearchResult> results = memoryService.retrieveMemories(agentName, userId, query, count, tenantId, sessionId);
         return results.stream()
                 .filter(r -> r.getSimilarityScore() >= similarityThreshold)
                 .map(MemorySearchResult::getContent)
