@@ -19,6 +19,7 @@ import com.jldaren.agent.ai.datascope.compression.CompressingHttpTransport;
 import com.jldaren.agent.ai.datascope.compression.CompressionConfig;
 import com.jldaren.agent.ai.datascope.entity.ModelConfig;
 import com.jldaren.agent.ai.datascope.mapper.ModelConfigMapper;
+import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
 import com.jldaren.agent.ai.datascope.memory.OceanBaseLongTermMemory;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig;
@@ -26,7 +27,6 @@ import com.jldaren.agent.ai.datascope.memory.service.LongTermMemoryService;
 import com.jldaren.agent.ai.datascope.plan.DatabasePlanStorage;
 import com.jldaren.agent.ai.datascope.tool.ToolRegistry;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -238,7 +238,7 @@ public class AgentScopeConfig {
         // 获取基础组件
         DashScopeChatModel chatModel = getChatModel();
         Toolkit toolkit = getToolkit();
-        InMemoryMemory shortTermMemory = new InMemoryMemory();
+        BoundedInMemoryMemory shortTermMemory = new BoundedInMemoryMemory();
 
         // 构建 Agent
         ReActAgent.Builder builder = ReActAgent.builder()

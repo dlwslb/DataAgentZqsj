@@ -18,9 +18,9 @@ package com.jldaren.agent.ai.datascope.registry;
 import com.jldaren.agent.ai.datascope.config.AgentScopeConfig;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
 import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
+import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 
 import io.agentscope.core.plan.PlanNotebook;
@@ -209,7 +209,7 @@ public class AgentScopeRegistry {
         // 强制追加工具使用规则
         prompt = appendMandatoryRules(prompt);
 
-        Memory memory = new InMemoryMemory();
+        Memory memory = new BoundedInMemoryMemory();
         PlanNotebook planNotebook = PlanNotebook.builder()
                .storage(agentScopeConfig.getPlanStorage())
                .maxSubtasks(5)
