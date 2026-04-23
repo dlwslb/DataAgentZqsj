@@ -304,6 +304,22 @@ public class AgentScopeController {
 
         String sessionId = request.get("sessionId") != null ? ((String) request.get("sessionId")) : null;
 
+        // 提取控制参数，编码到消息中传递给 Agent/Tool
+        String userRole = request.get("userRole") != null ? (String) request.get("userRole") : "user";
+        Boolean nl2sqlOnly = (Boolean) request.get("nl2sqlOnly");
+        Boolean humanFeedback = (Boolean) request.get("humanFeedback");
+        Boolean showSqlResults = (Boolean) request.get("showSqlResults");
+        
+        // 将参数编码到消息末尾，Tool 会解析这些参数
+        StringBuilder encodedMessage = new StringBuilder(message);
+        encodedMessage.append("\n[OPTIONS: ");
+        encodedMessage.append("userRole=").append(userRole);
+        if (nl2sqlOnly != null) encodedMessage.append(", nl2sqlOnly=").append(nl2sqlOnly);
+        if (humanFeedback != null) encodedMessage.append(", humanFeedback=").append(humanFeedback);
+        if (showSqlResults != null) encodedMessage.append(", showSqlResults=").append(showSqlResults);
+        encodedMessage.append("]");
+        String finalMessage = encodedMessage.toString();
+
         ChatSession session;
         if (sessionId == null) {
             session = ChatSession.builder()
@@ -330,8 +346,9 @@ public class AgentScopeController {
         chatMessageMapper.insert(userMsg);
         chatSessionMapper.updateTime(sessionId);
 
-        Msg userMsgForAgent = Msg.builder().textContent(message).build();
-        log.debug("📨 [Chat] Agent收到消息: agentId={}, message={}", id, message);
+        // 使用编码后的消息传给 Agent
+        Msg userMsgForAgent = Msg.builder().textContent(finalMessage).build();
+        log.debug("📨 [Chat] Agent收到消息: agentId={}, message={}, userRole={}", id, message, userRole);
         Msg response = Mono.fromFuture(agent.call(userMsgForAgent).toFuture()).block();
         log.debug("📨 [Chat] Agent原始响应: agentId={}, role={}, contentType={}, getTextContent长度={}",
                 id, 

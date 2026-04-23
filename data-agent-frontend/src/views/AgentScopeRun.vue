@@ -118,27 +118,125 @@
         </div>
 
         <!-- 输入区域 -->
-        <div class="input-area">
-          <el-input
-            v-model="inputMessage"
-            type="textarea"
-            :rows="3"
-            placeholder="输入问题，按 Enter 发送..."
-            :disabled="!currentSession || sending"
-            @keyup.enter="handleEnterKey"
-          />
-          <div class="input-actions">
-            <span class="hint">Enter 发送，Shift+Enter 换行</span>
-            <el-button
-              type="primary"
-              :disabled="!inputMessage.trim() || !currentSession || sending"
-              :loading="sending"
-              @click="sendMessage"
+        <div class="input-area" v-if="currentSession">
+          <div class="input-controls">
+            <div
+              class="input-controls-header"
+              @click="inputControlsCollapsed = !inputControlsCollapsed"
             >
-              发送
+              <span class="input-controls-title">更多选项</span>
+              <el-button
+                type="primary"
+                size="small"
+                class="input-controls-toggle-btn"
+                :class="{ collapsed: inputControlsCollapsed }"
+              >
+                <el-icon class="input-controls-toggle-icon">
+                  <ArrowDown />
+                </el-icon>
+                {{ inputControlsCollapsed ? '展开' : '收起' }}
+              </el-button>
+            </div>
+            <div v-show="!inputControlsCollapsed" class="input-controls-body">
+              <div class="switch-group">
+                <div class="switch-item">
+                  <span class="switch-label">管理员模式</span>
+                  <el-switch
+                    v-model="isAdminMode"
+                    :disabled="sending || showHumanFeedback"
+                  />
+                </div>
+                <div class="switch-item">
+                  <span class="switch-label">人工反馈</span>
+                  <el-tooltip
+                    :disabled="!requestOptions.nl2sqlOnly"
+                    content="该功能在NL2SQL模式下不能使用"
+                    placement="top"
+                  >
+                    <el-switch
+                      v-model="requestOptions.humanFeedback"
+                      :disabled="requestOptions.nl2sqlOnly || sending || showHumanFeedback"
+                    />
+                  </el-tooltip>
+                </div>
+                <div class="switch-item">
+                  <span class="switch-label">仅NL2SQL</span>
+                  <el-switch
+                    v-model="requestOptions.nl2sqlOnly"
+                    :disabled="sending || showHumanFeedback"
+                    @change="handleNl2sqlOnlyChange"
+                  />
+                </div>
+                <div class="switch-item">
+                  <span class="switch-label">自动Scroll</span>
+                  <el-switch v-model="autoScroll" />
+                </div>
+                <div class="switch-item">
+                  <span class="switch-label">显示SQL结果</span>
+                  <el-tooltip
+                    content="启用本功能会将SQL查询结果存储到DataAgent项目的数据库中，如果数据量较大不建议开启本功能"
+                    placement="top"
+                  >
+                    <el-switch
+                      v-model="resultSetDisplayConfig.showSqlResults"
+                      :disabled="sending || showHumanFeedback"
+                    />
+                  </el-tooltip>
+                </div>
+                <div class="switch-item">
+                  <span class="switch-label">每页数量</span>
+                  <el-select
+                    v-model="resultSetDisplayConfig.pageSize"
+                    :disabled="sending || showHumanFeedback"
+                    style="width: 80px"
+                  >
+                    <el-option label="5" :value="5" />
+                    <el-option label="10" :value="10" />
+                    <el-option label="20" :value="20" />
+                    <el-option label="50" :value="50" />
+                    <el-option label="100" :value="100" />
+                  </el-select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-container">
+            <el-input
+              v-model="inputMessage"
+              type="textarea"
+              :rows="3"
+              placeholder="输入问题，按 Enter 发送..."
+              :disabled="!currentSession || sending"
+              @keydown.enter.exact.prevent="handleEnterKey"
+            />
+            <el-button
+              v-if="!sending"
+              type="primary"
+              @click="sendMessage"
+              :disabled="showHumanFeedback || !inputMessage.trim()"
+              circle
+              class="send-button"
+            >
+              <el-icon><Promotion /></el-icon>
+            </el-button>
+            <el-button
+              v-else
+              type="danger"
+              @click="stopStreaming"
+              circle
+              class="send-button stop-button-inline"
+            >
+              <el-icon><CircleClose /></el-icon>
             </el-button>
           </div>
         </div>
+
+        <!-- 人类反馈区域 -->
+        <HumanFeedback
+          v-if="showHumanFeedback"
+          :request="lastRequest"
+          :handleFeedback="handleHumanFeedback"
+        />
       </el-main>
     </el-container>
 
@@ -186,13 +284,14 @@
   import { ref, onMounted, nextTick, computed } from 'vue';
   import { useRouter } from 'vue-router';
   import { ElMessage } from 'element-plus';
-  import { Loading, Document, Download, FullScreen, Close } from '@element-plus/icons-vue';
+  import { Loading, Document, Download, FullScreen, Close, ArrowDown, Promotion, CircleClose } from '@element-plus/icons-vue';
   import { marked } from 'marked';
   import DOMPurify from 'dompurify';
   import BaseLayout from '@/layouts/BaseLayout.vue';
   import ChatSessionSidebar from '@/components/run/ChatSessionSidebar.vue';
   import MarkdownAgentContainer from '@/components/run/markdown';
   import ReportHtmlView from '@/components/run/ReportHtmlView.vue';
+  import HumanFeedback from '@/components/run/HumanFeedback.vue';
   import { agentScopeApi, AgentScope, ChatSession, ChatMessage } from '@/services/agentScope';
 
   export default {
@@ -205,8 +304,12 @@
       Download,
       FullScreen,
       Close,
+      ArrowDown,
+      Promotion,
+      CircleClose,
       MarkdownAgentContainer,
       ReportHtmlView,
+      HumanFeedback,
     },
     setup() {
       const router = useRouter();
@@ -231,6 +334,40 @@
       const reportFormat = ref<'markdown' | 'html'>('markdown');
       const showReportFullscreen = ref(false);
       const fullscreenReportContent = ref('');
+      const inputControlsCollapsed = ref(false);
+      const autoScroll = ref(true);
+
+      // 人工反馈相关数据
+      const showHumanFeedback = ref(false);
+      const lastRequest = ref<any>(null);
+
+      // 结果集显示配置
+      const resultSetDisplayConfig = ref({
+        showSqlResults: false,
+        pageSize: 20,
+      });
+
+      const requestOptions = ref({
+        userRole: 'user' as 'user' | 'admin',
+        humanFeedback: false,
+        nl2sqlOnly: false,
+      });
+
+      // 管理员模式开关（双向绑定到 requestOptions.userRole）
+      const isAdminMode = computed({
+        get: () => requestOptions.value.userRole === 'admin',
+        set: (val: boolean) => {
+          requestOptions.value.userRole = val ? 'admin' : 'user';
+        },
+      });
+
+      // 监听NL2SQL开关变化
+      const handleNl2sqlOnlyChange = (value: boolean) => {
+        if (value) {
+          requestOptions.value.humanFeedback = false;
+        }
+      };
+
       const options = ref({
         markdownIt: {
           linkify: true,
@@ -464,11 +601,31 @@
 
         inputMessage.value = '';
         sending.value = true;
+        lastRequest.value = {
+          agentId: agent.value.id,
+          query: userMessage,
+          humanFeedback: requestOptions.value.humanFeedback,
+          nl2sqlOnly: requestOptions.value.nl2sqlOnly,
+          rejectedPlan: false,
+          humanFeedbackContent: null,
+          userRole: requestOptions.value.userRole,
+          showSqlResults: resultSetDisplayConfig.value.showSqlResults,
+        };
         await nextTick();
         scrollToBottom();
 
         try {
-          const response = await agentScopeApi.chat(agent.value.id, userMessage, currentSession.value.id);
+          const response = await agentScopeApi.chat(
+            agent.value.id,
+            userMessage,
+            currentSession.value.id,
+            requestOptions.value.userRole,
+            requestOptions.value.nl2sqlOnly,
+            requestOptions.value.humanFeedback,
+            false,
+            undefined,
+            resultSetDisplayConfig.value.showSqlResults
+          );
           const data = response.data?.data || response.data;
           currentMessages.value.push({
             id: data.messageId,
@@ -479,11 +636,58 @@
             messageType: data.messageType || 'text',
             createTime: new Date().toLocaleString(),
           });
-
-          // 更新会话列表
         } catch (error: any) {
           ElMessage.error(error.response?.data?.message || '发送失败');
           currentMessages.value.pop();
+        } finally {
+          sending.value = false;
+          await nextTick();
+          scrollToBottom();
+        }
+      };
+
+      // 停止流式响应
+      const stopStreaming = () => {
+        sending.value = false;
+        ElMessage.success('已停止对话');
+      };
+
+      // 处理人工反馈
+      const handleHumanFeedback = async (request: any, rejectedPlan: boolean, content: string) => {
+        content = content.trim() || 'Accept';
+        showHumanFeedback.value = false;
+        const newRequest = { ...request };
+        newRequest.rejectedPlan = rejectedPlan;
+        newRequest.humanFeedbackContent = content;
+        lastRequest.value = newRequest;
+        sending.value = true;
+        await nextTick();
+        scrollToBottom();
+
+        try {
+          const response = await agentScopeApi.chat(
+            agent.value.id,
+            newRequest.query,
+            currentSession.value.id,
+            newRequest.userRole,
+            newRequest.nl2sqlOnly,
+            newRequest.humanFeedback,
+            newRequest.rejectedPlan,
+            newRequest.humanFeedbackContent,
+            newRequest.showSqlResults
+          );
+          const data = response.data?.data || response.data;
+          currentMessages.value.push({
+            id: data.messageId,
+            sessionId: currentSession.value.id,
+            agentId: agent.value.id,
+            role: 'assistant',
+            content: data.message,
+            messageType: data.messageType || 'text',
+            createTime: new Date().toLocaleString(),
+          });
+        } catch (error: any) {
+          ElMessage.error(error.response?.data?.message || '处理失败');
         } finally {
           sending.value = false;
           await nextTick();
@@ -540,7 +744,7 @@
       };
 
       const scrollToBottom = () => {
-        if (chatContainer.value) {
+        if (autoScroll.value && chatContainer.value) {
           chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
         }
       };
@@ -586,6 +790,16 @@
         downloadHtmlReport,
         openReportFullscreen,
         closeReportFullscreen,
+        inputControlsCollapsed,
+        autoScroll,
+        showHumanFeedback,
+        lastRequest,
+        resultSetDisplayConfig,
+        requestOptions,
+        isAdminMode,
+        handleNl2sqlOnlyChange,
+        stopStreaming,
+        handleHumanFeedback,
       };
     },
   };
@@ -687,8 +901,85 @@
   }
 
   .input-area {
-    padding: 16px 20px;
-    border-top: 1px solid #e4e7ed;
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid #e8e8e8;
+  }
+
+  .input-controls {
+    margin-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .input-controls-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    cursor: pointer;
+    user-select: none;
+    color: #606266;
+    font-size: 14px;
+  }
+
+  .input-controls-header:hover {
+    color: #409eff;
+  }
+
+  .input-controls-title {
+    font-weight: 500;
+  }
+
+  .input-controls-toggle-btn {
+    flex-shrink: 0;
+  }
+
+  .input-controls-toggle-btn .input-controls-toggle-icon {
+    margin-right: 4px;
+    transition: transform 0.2s ease;
+  }
+
+  .input-controls-toggle-btn.collapsed .input-controls-toggle-icon {
+    transform: rotate(-90deg);
+  }
+
+  .input-controls-body {
+    padding-bottom: 12px;
+  }
+
+  .switch-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .switch-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .switch-label {
+    font-size: 14px;
+    color: #606266;
+  }
+
+  .send-button {
+    width: 48px;
+    height: 48px;
+  }
+
+  .stop-button-inline {
+    width: 48px;
+    height: 48px;
+  }
+
+  .input-container {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
   }
 
   .input-actions {

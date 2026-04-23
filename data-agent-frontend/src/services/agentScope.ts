@@ -143,8 +143,27 @@ export const agentScopeApi = {
   /**
    * 与 Agent 聊天（支持会话）
    */
-  chat: (agentId: number, message: string, sessionId?: number) => {
-    return agentScopeClient.post(`/api/scope/agent/${agentId}/chat`, { message, sessionId });
+  chat: (
+    agentId: number,
+    message: string,
+    sessionId?: number,
+    userRole?: 'user' | 'admin',
+    nl2sqlOnly?: boolean,
+    humanFeedback?: boolean,
+    rejectedPlan?: boolean,
+    humanFeedbackContent?: string,
+    showSqlResults?: boolean
+  ) => {
+    return agentScopeClient.post(`/api/scope/agent/${agentId}/chat`, {
+      message,
+      sessionId,
+      userRole,
+      nl2sqlOnly,
+      humanFeedback,
+      rejectedPlan,
+      humanFeedbackContent,
+      showSqlResults,
+    });
   },
 
 

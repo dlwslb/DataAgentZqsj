@@ -59,11 +59,47 @@ public class A2ARemoteCallTool {
         log.info("✅Remote agent HTTP client initialized, url={}, agentId={}", remoteAgentUrl, remoteAgentId);
     }
 
-    @Tool(name = "get_zqsj_agent", description = "商机查询智能体：查询中标数据、招标信息、采购信息、企业商机、项目动态等商业信息。当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。工具返回的即是最终分析结果，请直接整理后回复用户，不要重复分析。")
+    @Tool(name = "get_zqsj_agent", description = "商机查询智能体：当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。")
     public String callRemoteAgent(
             @ToolParam(name = "question", description = "问题内容", required = true) String question) {
 
-        log.info("🔧 [远程智能体调用] get_zqsj_agent 被调用, question={}", question);
+        // 解析消息中的参数标记 [OPTIONS: userRole=admin, showSqlResults=true]
+        String actualQuestion = question;
+        String userRole = "user";
+        Boolean showSqlResults = false;
+        Boolean nl2sqlOnly = false;
+        
+        int optionsStart = question.lastIndexOf("[OPTIONS:");
+        if (optionsStart >= 0) {
+            int optionsEnd = question.indexOf("]", optionsStart);
+            if (optionsEnd > optionsStart) {
+                String optionsStr = question.substring(optionsStart + 9, optionsEnd); // 跳过 "[OPTIONS: " 
+                actualQuestion = question.substring(0, optionsStart).trim();
+                
+                // 解析各个参数
+                for (String opt : optionsStr.split(",")) {
+                    String[] kv = opt.trim().split("=");
+                    if (kv.length == 2) {
+                        String key = kv[0].trim();
+                        String value = kv[1].trim();
+                        switch (key) {
+                            case "userRole" -> userRole = value;
+                            case "showSqlResults" -> showSqlResults = "true".equalsIgnoreCase(value);
+                            case "nl2sqlOnly" -> nl2sqlOnly = "true".equalsIgnoreCase(value);
+                        }
+                    }
+                }
+            }
+        }
+
+        log.info("🔧 [远程智能体调用] get_zqsj_agent 被调用, question={}, userRole={}, showSqlResults={}", 
+                actualQuestion, userRole, showSqlResults);
+
+        // 保存为 final 变量供 lambda 使用
+        final String finalQuestion = actualQuestion;
+        final String finalUserRole = userRole;
+        final Boolean finalNl2sqlOnly = nl2sqlOnly;
+        final Boolean finalShowSqlResults = showSqlResults;
 
         try {
             // 使用 SSE 专用解码器，直接接收 ServerSentEvent 对象
@@ -71,8 +107,10 @@ public class A2ARemoteCallTool {
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/stream/search")
                             .queryParam("agentId", remoteAgentId)
-                            .queryParam("query", question)
-                            .queryParam("userRole", "user")
+                            .queryParam("query", finalQuestion)
+                            .queryParam("userRole", finalUserRole)
+                            .queryParam("nl2sqlOnly", finalNl2sqlOnly)
+                            .queryParam("showSqlResults", finalShowSqlResults)
                             .build())
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
@@ -87,7 +125,7 @@ public class A2ARemoteCallTool {
                     .block();
 
             if (fullResponse == null || fullResponse.isBlank()) {
-                log.warn("⚠️ [远程智能体调用] 返回为空, question={}", question);
+                log.warn("⚠️ [远程智能体调用] 返回为空, question={}", actualQuestion);
                 return "远程商机智能体无响应";
             }
 
@@ -102,7 +140,7 @@ public class A2ARemoteCallTool {
             return finalResult;
 
         } catch (Exception e) {
-            log.error("❌ [远程智能体调用] 调用失败, question={}, error={}", question, e.getMessage(), e);
+            log.error("❌ [远程智能体调用] 调用失败, question={}, error={}", actualQuestion, e.getMessage(), e);
             return "远程商机智能体调用失败: " + e.getMessage();
         }
     }
