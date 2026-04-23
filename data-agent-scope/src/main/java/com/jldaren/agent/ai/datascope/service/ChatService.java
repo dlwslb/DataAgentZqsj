@@ -43,16 +43,17 @@ public class ChatService {
     public Mono<Msg> chat(ChatRequest request) {
         Long agentId = request.getAgentId();
         String userId = request.getUserId();
+        String sessionId = request.getSessionId();
         String tenantId = request.getTenantId();
         
         // 如果提供了 userId 和 tenantId，使用带长期记忆的 Agent
         ReActAgent agent;
         if (userId != null && tenantId != null) {
-            agent = registry.getAgentWithLongTermMemory(agentId, userId, tenantId);
+            agent = registry.getAgentWithLongTermMemory(agentId, userId, sessionId, tenantId);
             if (agent == null) {
                 return Mono.error(new IllegalArgumentException("ReActAgent not found: " + agentId));
             }
-            log.debug("Using ReActAgent with long-term memory: agentId={}, userId={}, tenantId={}", agentId, userId, tenantId);
+            log.debug("Using ReActAgent with long-term memory: agentId={}, userId={}, sessionId={}, tenantId={}", agentId, userId, sessionId, tenantId);
         } else {
             // 降级：使用普通 Agent（不带长期记忆）
             agent = registry.getAgent(agentId);

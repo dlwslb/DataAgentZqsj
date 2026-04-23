@@ -57,6 +57,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
     private LongTermMemoryService memoryService;
     private String agentName = "default";
     private String userId;
+    private String sessionId;
     private String tenantId;
     private int retrieveCount = 5;
     private double similarityThreshold = 0.4;
@@ -150,7 +151,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
             }
 
             memoryService.recordMemory(
-                    agentName, userId, null, content, importance, null, tenantId, true
+                    agentName, userId, this.sessionId, content, importance, null, tenantId, true
             );
             log.debug("Recorded memory: agent={}, user={}, importance={}, len={}",
                     agentName, userId, String.format("%.2f", importance), content.length());
@@ -337,6 +338,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
         OceanBaseLongTermMemory forked = new OceanBaseLongTermMemory(this.memoryService);
         forked.agentName = this.agentName;
         forked.userId = this.userId;
+        forked.sessionId = this.sessionId;
         forked.tenantId = this.tenantId;
         forked.retrieveCount = this.retrieveCount;
         forked.similarityThreshold = this.similarityThreshold;
@@ -359,8 +361,8 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
     }
 
     public void setUserId(String userId) { this.userId = userId; }
-    public void setSessionId(String sessionId) { /* 长期记忆不绑定会话 */ }
-    public String getSessionId() { return null; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getSessionId() { return this.sessionId; }
 
     // ---- Builder ----
 
@@ -373,6 +375,7 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
 
         public Builder agentName(String agentName) { instance.agentName(agentName); return this; }
         public Builder userId(String userId) { instance.userId(userId); return this; }
+        public Builder sessionId(String sessionId) { instance.sessionId = sessionId; return this; }
         public Builder tenantId(String tenantId) { instance.tenantId(tenantId); return this; }
         public Builder retrieveCount(int count) { instance.retrieveCount(count); return this; }
         public Builder similarityThreshold(double threshold) { instance.similarityThreshold(threshold); return this; }

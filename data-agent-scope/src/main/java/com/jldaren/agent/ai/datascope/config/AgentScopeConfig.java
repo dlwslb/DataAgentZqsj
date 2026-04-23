@@ -202,7 +202,7 @@ public class AgentScopeConfig {
      * 创建长期记忆实例 (供 AgentScopeRegistry 使用)
      * 优先从 DB long_term_memory_config 表读取配置，yml 配置作为兜底
      */
-    public LongTermMemory createLongTermMemory(String agentName, String userId, String tenantId) {
+    public LongTermMemory createLongTermMemory(String agentName, String userId, String sessionId, String tenantId) {
         if (!isLongTermMemoryEnabled() || longTermMemoryService == null) {
             return null;
         }
@@ -212,6 +212,7 @@ public class AgentScopeConfig {
         return OceanBaseLongTermMemory.builder()
                 .agentName(agentName)
                 .userId(userId)
+                .sessionId(sessionId)
                 .tenantId(tenantId)
                 .retrieveCount(dbConfig.getDefaultTopk())
                 .similarityThreshold(dbConfig.getSimilarityThreshold().doubleValue())
@@ -227,11 +228,12 @@ public class AgentScopeConfig {
      *
      * @param agentName   Agent名称
      * @param userId      用户ID (用于多租户隔离)
+     * @param sessionId   会话ID
      * @param tenantId    租户ID
      * @param sysPrompt   系统提示词
      * @return ReActAgent 实例
      */
-    public ReActAgent createAgentWithLongTermMemory(String agentName, String userId, 
+    public ReActAgent createAgentWithLongTermMemory(String agentName, String userId, String sessionId,
                                                    String tenantId, String sysPrompt) {
         // 获取基础组件
         DashScopeChatModel chatModel = getChatModel();
@@ -256,6 +258,7 @@ public class AgentScopeConfig {
             OceanBaseLongTermMemory longTermMemory = OceanBaseLongTermMemory.builder()
                     .agentName(agentName)
                     .userId(userId)
+                    .sessionId(sessionId)
                     .tenantId(tenantId)
                     .retrieveCount(dbConfig.getDefaultTopk())
                     .similarityThreshold(dbConfig.getSimilarityThreshold().doubleValue())

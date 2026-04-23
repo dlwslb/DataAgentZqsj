@@ -125,8 +125,9 @@ public class AgentScopeRegistry {
      * 获取带长期记忆的智能体 (用于聊天场景)
      * 带 TTL 缓存：超过 agentCacheTtlMinutes 不活跃的 Agent 自动淘汰
      */
-    public synchronized ReActAgent getAgentWithLongTermMemory(Long agentId, String userId, String tenantId) {
+    public synchronized ReActAgent getAgentWithLongTermMemory(Long agentId, String userId, String sessionId, String tenantId) {
         String cacheKey = agentId + "_" + (userId != null ? userId : "anonymous")
+                         + "_" + (sessionId != null ? sessionId : "no_session")
                          + "_" + (tenantId != null ? tenantId : "default");
 
         // 优先从缓存获取
@@ -148,6 +149,7 @@ public class AgentScopeRegistry {
         ReActAgent agentWithMemory = agentScopeConfig.createAgentWithLongTermMemory(
                 baseAgent.getName(),
                 userId != null ? userId : "anonymous",
+                sessionId,
                 tenantId != null ? tenantId : "default",
                 sysPrompt
         );
