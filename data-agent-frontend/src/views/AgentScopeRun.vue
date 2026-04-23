@@ -63,20 +63,20 @@
                     <el-button-group size="large">
                       <el-button
                         type="primary"
-                        @click="downloadMarkdownReport(msg.content)"
+                        @click="downloadMarkdownReport(stripReportPrefix(msg.content))"
                       >
                         <el-icon><Download /></el-icon>
                         下载Markdown报告
                       </el-button>
                       <el-button
                         type="success"
-                        @click="downloadHtmlReport(msg.content)"
+                        @click="downloadHtmlReport(stripReportPrefix(msg.content))"
                       >
                         <el-icon><Download /></el-icon>
                         下载HTML报告
                       </el-button>
                       <el-tooltip content="全屏查看报告" placement="top">
-                        <el-button type="info" @click="openReportFullscreen(msg.content)">
+                        <el-button type="info" @click="openReportFullscreen(stripReportPrefix(msg.content))">
                           <el-icon><FullScreen /></el-icon>
                           全屏
                         </el-button>
@@ -87,10 +87,10 @@
                     <MarkdownAgentContainer
                       v-if="reportFormat === 'markdown'"
                       class="md-body"
-                      :content="msg.content"
+                      :content="stripReportPrefix(msg.content)"
                       :options="options"
                     />
-                    <ReportHtmlView v-else :content="msg.content" />
+                    <ReportHtmlView v-else :content="stripReportPrefix(msg.content)" />
                   </div>
                 </div>
                 <!-- 普通文本消息 -->
@@ -251,13 +251,30 @@
         return DOMPurify.sanitize(rawHtml);
       };
 
+      // 清理报告内容：去掉 $$$markdown-report 前缀和 报告生成完成 后缀
+      const stripReportPrefix = (content: string): string => {
+        if (!content) return content;
+        let cleaned = content;
+        // 去掉 $$$markdown-report 前缀
+        if (cleaned.startsWith('$$$markdown-report')) {
+          cleaned = cleaned.substring('$$$markdown-report'.length);
+        }
+        // 去掉 $$$html-report 前缀
+        if (cleaned.startsWith('$$$html-report')) {
+          cleaned = cleaned.substring('$$$html-report'.length);
+        }
+        // 去掉 报告生成完成 后缀
+        cleaned = cleaned.replace(/报告生成完成！?\s*$/, '');
+        return cleaned.trim();
+      };
+
       // 格式化消息内容，根据类型选择渲染方式
       const formatMessage = (content: string, messageType?: string) => {
         if (messageType === 'markdown-report' || messageType === 'markdown') {
-          return markdownToHtml(content);
+          return markdownToHtml(stripReportPrefix(content));
         }
         if (messageType === 'html-report' || messageType === 'html') {
-          return content;
+          return stripReportPrefix(content);
         }
         return content.replace(/\n/g, '<br>');
       };
@@ -553,6 +570,7 @@
         options,
         markdownToHtml,
         formatMessage,
+        stripReportPrefix,
         handleSetCurrentSession,
         handleGetCurrentSession,
         selectSession,

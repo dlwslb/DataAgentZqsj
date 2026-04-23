@@ -15,7 +15,6 @@
  */
 package com.jldaren.agent.ai.datascope.tool;
 
-import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import lombok.extern.slf4j.Slf4j;
@@ -61,7 +60,7 @@ public class A2ARemoteCallTool {
     }
 
     @Tool(name = "get_zqsj_agent", description = "商机查询智能体：查询中标数据、招标信息、采购信息、企业商机、项目动态等商业信息。当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。工具返回的即是最终分析结果，请直接整理后回复用户，不要重复分析。")
-    public Msg callRemoteAgent(
+    public String callRemoteAgent(
             @ToolParam(name = "question", description = "问题内容", required = true) String question) {
 
         log.info("🔧 [远程智能体调用] get_zqsj_agent 被调用, question={}", question);
@@ -89,40 +88,91 @@ public class A2ARemoteCallTool {
 
             if (fullResponse == null || fullResponse.isBlank()) {
                 log.warn("⚠️ [远程智能体调用] 返回为空, question={}", question);
-                return Msg.builder().textContent("远程商机智能体无响应").build();
+                return "远程商机智能体无响应";
             }
+
+            log.debug("🔍 [远程智能体调用] 原始拼接结果前100字符: [{}]", fullResponse.substring(0, Math.min(100, fullResponse.length())));
+            log.debug("🔍 [远程智能体调用] 原始拼接结果首字符=[{}], 尾字符=[{}]]",
+                    fullResponse.isEmpty() ? "空" : (int) fullResponse.charAt(0),
+                    fullResponse.isEmpty() ? "空" : (int) fullResponse.charAt(fullResponse.length() - 1));
 
             // 提取最终报告部分，过滤掉中间处理步骤（意图识别、SQL生成等）
             String finalResult = extractFinalReport(fullResponse);
             log.info("✅ [远程智能体调用] 返回成功, 原始长度={}, 提取后长度={}", fullResponse.length(), finalResult.length());
-            return Msg.builder().textContent(finalResult).build();
+            return finalResult;
 
         } catch (Exception e) {
             log.error("❌ [远程智能体调用] 调用失败, question={}, error={}", question, e.getMessage(), e);
-            return Msg.builder().textContent("远程商机智能体调用失败: " + e.getMessage()).build();
+            return "远程商机智能体调用失败: " + e.getMessage();
         }
     }
 
     /**
      * 从远程智能体完整输出中提取最终报告
-     * 远程智能体输出格式：中间过程（意图识别、SQL等）+ 最终报告（以 # 开头的 markdown）
+     * 远程端 SSE 输出格式：
+     *   - 中间过程（意图识别、SQL等）
+     *   - $$$markdown-report 报告内容 $$$/markdown-report
+     *   - $$$/markdown-report（结束标记）
+     *   - 报告生成完成！
      */
     private String extractFinalReport(String fullResponse) {
-        // 尝试找到报告开头的 markdown 标题（如 "# 吉林省2026年4月内中标项目分析报告"）
-        int reportStart = fullResponse.indexOf("\n# ");
-        if (reportStart >= 0) {
-            // 保留 $$$markdown-report 标签
-            String report = "$$$markdown-report" + fullResponse.substring(reportStart + 1).trim();
-            if (!report.isBlank()) {
-                return report;
+        String report = fullResponse;
+
+        // 清理：先去掉整体被双引号包裹的情况（远程端可能把整个报告序列化为JSON字符串）
+        if (report.startsWith("\"") && report.endsWith("\"")) {
+            try {
+                // 尝试作为JSON字符串反序列化，正确处理转义字符（\n, \", \\等）
+                report = new com.fasterxml.jackson.databind.ObjectMapper().readValue(report, String.class);
+            } catch (Exception e) {
+                // JSON解析失败则手动去掉首尾引号
+                log.warn("⚠️ [extractFinalReport] JSON反序列化失败，手动去引号: {}", e.getMessage());
+                while (report.startsWith("\"") && report.endsWith("\"") && report.length() > 1) {
+                    report = report.substring(1, report.length() - 1);
+                }
             }
         }
-        // 如果没有找到 markdown 报告，尝试找 SQL 查询结果之后的内容
-        int sqlResultEnd = fullResponse.indexOf("报告生成完成");
-        if (sqlResultEnd >= 0) {
-            return fullResponse.substring(0, sqlResultEnd).trim();
+
+        // 优先提取 $$$markdown-report ... $$$/markdown-report 之间的内容
+        int startTag = report.indexOf("$$$markdown-report");
+        int endTag = report.indexOf("$$$/markdown-report");
+        if (startTag >= 0 && endTag > startTag) {
+            report = report.substring(startTag + "$$$markdown-report".length(), endTag).trim();
+        } else if (startTag >= 0) {
+            // 有开始标记但没结束标记，取开始标记之后的内容
+            report = report.substring(startTag + "$$$markdown-report".length()).trim();
+        } else {
+            // 没有 $$$ 标记，回退到找 markdown 标题
+            int reportStart = report.indexOf("\n# ");
+            if (reportStart >= 0) {
+                report = report.substring(reportStart + 1).trim();
+            }
         }
-        // 都没找到则返回原始内容（兜底）
-        return fullResponse;
+
+        // 清理：去掉结尾的"报告生成完成！"
+        report = report.replaceAll("报告生成完成！?\\s*$", "");
+        // 清理：确保 echarts 代码块有 markdown 围栏
+        report = fixEchartsCodeBlock(report);
+
+        return report;
+    }
+
+    /**
+     * 修复 echarts 代码块格式
+     * 远程端可能输出裸 echarts JSON 而没有 ```echarts ``` 围栏
+     */
+    private String fixEchartsCodeBlock(String report) {
+        // 匹配：换行 + echarts + 换行 + { ... }（到字符串结尾）
+        // 替换为：换行 + ```echarts + 换行 + { ... } + 换行 + ```
+        String pattern = "(\\n)echarts\\s*(\\n\\s*\\{)";
+        if (java.util.regex.Pattern.compile(pattern).matcher(report).find()) {
+            report = report.replaceAll(pattern, "$1```echarts$2");
+            // 在 echarts JSON 结尾的 } 后补 ```（如果还没有的话）
+            // 找最后一个 ```echarts 之后到结尾，确保闭合
+            int echartsStart = report.lastIndexOf("```echarts");
+            if (echartsStart >= 0 && !report.trim().endsWith("```")) {
+                report = report.stripTrailing() + "\n```";
+            }
+        }
+        return report;
     }
 }

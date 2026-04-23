@@ -331,10 +331,16 @@ public class AgentScopeController {
         chatSessionMapper.updateTime(sessionId);
 
         Msg userMsgForAgent = Msg.builder().textContent(message).build();
-        log.info("📨 [Chat] Agent收到消息: agentId={}, message={}", id, message);
+        log.debug("📨 [Chat] Agent收到消息: agentId={}, message={}", id, message);
         Msg response = Mono.fromFuture(agent.call(userMsgForAgent).toFuture()).block();
+        log.debug("📨 [Chat] Agent原始响应: agentId={}, role={}, contentType={}, getTextContent长度={}",
+                id, 
+                response != null ? response.getRole() : "null",
+                response != null && response.getContent() != null && !response.getContent().isEmpty() 
+                        ? response.getContent().get(0).getClass().getSimpleName() : "empty",
+                response != null && response.getTextContent() != null ? response.getTextContent().length() : 0);
         String responseContent = extractResponseText(response);
-        log.info("📨 [Chat] Agent回复完成: agentId={}, response长度={}", id, responseContent != null ? responseContent.length() : 0);
+        log.debug("📨 [Chat] Agent回复完成: agentId={}, response长度={}", id, responseContent != null ? responseContent.length() : 0);
         String messageType = detectMessageType(responseContent);
 
         ChatMessage assistantMsg = ChatMessage.builder()
@@ -367,6 +373,7 @@ public class AgentScopeController {
         // 优先使用顶层 TextBlock
         String textContent = response.getTextContent();
         if (textContent != null && !textContent.isBlank()) {
+            log.debug("📨 [extractResponseText] 通过getTextContent提取成功, 长度={}", textContent.length());
             return textContent;
         }
 
@@ -382,7 +389,9 @@ public class AgentScopeController {
                 }
             }
         }
-        return sb.toString();
+        String result = sb.toString();
+        log.debug("📨 [extractResponseText] 通过ToolResultBlock提取, 长度={}", result.length());
+        return result;
     }
 
     /**

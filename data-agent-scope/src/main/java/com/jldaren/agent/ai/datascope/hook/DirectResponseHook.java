@@ -27,6 +27,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * 工具返回直出 Hook - 防止 ReActAgent 二次总结
  * 
@@ -47,6 +49,7 @@ public class DirectResponseHook implements Hook {
         return Mono.fromCallable(() -> {
             if (event instanceof PostActingEvent postActingEvent) {
                 String toolName = postActingEvent.getToolUse().getName();
+                log.info("🔍 [DirectResponse] PostActingEvent触发: toolName={}", toolName);
                 
                 if ("get_zqsj_agent".equals(toolName)) {
                     // 从 ToolResultBlock.output 中提取实际文本
@@ -60,8 +63,8 @@ public class DirectResponseHook implements Hook {
                             .build();
                     postActingEvent.setToolResultMsg(directMsg);
                     
-                    log.info("🚀 [DirectResponse] get_zqsj_agent 返回完成，文本长度={}，请求终止循环，直接输出结果",
-                            resultText != null ? resultText.length() : 0);
+                    log.info("🚀 [DirectResponse] get_zqsj_agent 返回完成，文本长度={}，新Msg.role={}，请求终止循环，直接输出结果",
+                            resultText != null ? resultText.length() : 0, directMsg.getRole());
                     postActingEvent.stopAgent();
                 }
             }
@@ -69,8 +72,12 @@ public class DirectResponseHook implements Hook {
         });
     }
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     /**
      * 从 PostActingEvent 的 ToolResultBlock.output 中提取文本内容
+     * 注意：框架将 String 返回值放入 TextBlock 时可能做了 JSON 序列化（加引号+转义），
+     * 需要反序列化还原为原始文本。
      */
     private String extractToolResultText(PostActingEvent event) {
         ToolResultBlock toolResult = event.getToolResult();
@@ -82,7 +89,11 @@ public class DirectResponseHook implements Hook {
         for (ContentBlock block : toolResult.getOutput()) {
             if (block instanceof TextBlock textBlock) {
                 if (sb.length() > 0) sb.append("\n");
-                sb.append(textBlock.getText());
+                String blockText = textBlock.getText();
+                // 框架可能将 String 工具返回值 JSON 序列化后存入 TextBlock，
+                // 导致文本被双引号包裹且换行变为 \n，需要反序列化还原
+                blockText = unwrapJsonString(blockText);
+                sb.append(blockText);
             }
         }
 
@@ -95,6 +106,20 @@ public class DirectResponseHook implements Hook {
                 if (msgText != null && !msgText.isBlank()) {
                     return msgText;
                 }
+            }
+        }
+        return text;
+    }
+
+    /**
+     * 如果文本被 JSON 序列化（首尾有引号），反序列化还原为原始字符串
+     */
+    private String unwrapJsonString(String text) {
+        if (text != null && text.startsWith("\"") && text.endsWith("\"")) {
+            try {
+                return OBJECT_MAPPER.readValue(text, String.class);
+            } catch (Exception e) {
+                log.warn("⚠️ [DirectResponse] JSON反序列化TextBlock失败，保持原文: {}", e.getMessage());
             }
         }
         return text;

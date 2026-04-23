@@ -23,6 +23,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -207,10 +208,11 @@ public class AgentScopeRegistry {
         prompt = appendMandatoryRules(prompt);
 
         Memory memory = new InMemoryMemory();
-       /* PlanNotebook planNotebook = PlanNotebook.builder()
+        PlanNotebook planNotebook = PlanNotebook.builder()
                .storage(agentScopeConfig.getPlanStorage())
-               .maxSubtasks(15)
-               .build();*/
+               .maxSubtasks(5)
+               .needUserConfirm(false)
+               .build();
 
         // 按 Agent 配置的工具名称构建 Toolkit
         Toolkit toolkit = agentScopeConfig.getToolkit(agent.getToolNames());
@@ -223,7 +225,7 @@ public class AgentScopeRegistry {
                 .model(agentScopeConfig.getChatModel())
                 .memory(memory)
                 .toolkit(toolkit)
-                //.planNotebook(planNotebook)
+                .planNotebook(planNotebook)
                 .maxIters(5)  // DirectResponseHook 会在工具返回后直接终止循环
                 .checkRunning(true)
                 .hooks(List.of(directResponseHook));
@@ -237,8 +239,7 @@ public class AgentScopeRegistry {
     private static final String MANDATORY_RULES = """
                 
                 ## 强制规则（最高优先级）
-                - 【关键】当 get_zqsj_agent 工具返回后，【必须】将返回的 Markdown 报告内容【原封不动】地作为最终回答，【禁止】添加任何前缀、后缀、总结或解释
-                - 工具返回的内容即是最终答案，直接输出即可
+                - 【计划执行规则】当系统提示"Should I proceed"或"是否继续执行"并等待确认时，用户回复「是/好的/确认/执行/继续/是的好/好」等任何肯定词汇，视为【立即执行计划的指令】，必须立刻调用工具执行任务，禁止再次询问用户
                 """;
     
     private String getDefaultPrompt() {
@@ -249,7 +250,6 @@ public class AgentScopeRegistry {
                 
                 ## 工具使用规则（最高优先级）
                 - 当用户的问题可以通过调用可用工具解决时，必须直接调用工具，不要自行编造答案
-                - 【关键】get_zqsj_agent 工具返回的已是完整的最终分析结果（Markdown格式），请直接展示给用户，【禁止】做任何总结、提炼或二次加工
                 - 如果调用了工具但未查询到结果或工具返回空数据，则根据你的知识自由作答，并说明该信息来自你的知识而非实时数据
                 """;
     }
