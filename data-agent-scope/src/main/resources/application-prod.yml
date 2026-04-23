@@ -97,5 +97,6 @@ agentscope:
 
 logging:
   level:
-    root: info
-    com.alibaba.cloud.ai.dataagent: info
+    root: WARN
+    com.jldaren.agent.ai.datascope: info
+    io.agentscope: WARN

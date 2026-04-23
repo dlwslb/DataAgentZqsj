@@ -45,7 +45,4 @@ agentscope:
 
 logging:
   level:
-    com.alibaba.cloud.ai.datascope: DEBUG
-    com.jldaren.agent.ai.datascope: DEBUG
-    io.agentscope: DEBUG
     org.springframework.web.servlet.resource.ResourceHttpRequestHandler: ERROR  # 忽略静态资源找不到的警告

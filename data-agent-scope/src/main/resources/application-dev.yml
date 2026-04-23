@@ -82,3 +82,6 @@ agentscope:
 logging:
   level:
     org.springframework.jdbc: debug
+    com.alibaba.cloud.ai.datascope: DEBUG
+    com.jldaren.agent.ai.datascope: DEBUG
+    io.agentscope: DEBUG
