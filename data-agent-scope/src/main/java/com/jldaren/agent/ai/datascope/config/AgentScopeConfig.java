@@ -18,6 +18,8 @@ package com.jldaren.agent.ai.datascope.config;
 import com.jldaren.agent.ai.datascope.compression.CompressingHttpTransport;
 import com.jldaren.agent.ai.datascope.compression.CompressionConfig;
 import com.jldaren.agent.ai.datascope.entity.ModelConfig;
+import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
+import com.jldaren.agent.ai.datascope.hook.TokenUsageHook;
 import com.jldaren.agent.ai.datascope.mapper.ModelConfigMapper;
 import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
 import com.jldaren.agent.ai.datascope.memory.OceanBaseLongTermMemory;
@@ -40,6 +42,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -67,6 +70,8 @@ public class AgentScopeConfig {
     private final LongTermMemoryService longTermMemoryService;
     private final LongTermMemoryConfig memoryConfig;
     private final ToolRegistry toolRegistry;
+    private final DirectResponseHook directResponseHook;
+    private final TokenUsageHook tokenUsageHook;
 
     /** 缓存 ChatModel 实例，避免每次调用都查数据库+new Builder */
     private volatile DashScopeChatModel cachedChatModel;
@@ -77,12 +82,16 @@ public class AgentScopeConfig {
                            JdbcTemplate jdbcTemplate,
                            @Autowired(required = false) LongTermMemoryService longTermMemoryService,
                            @Autowired(required = false) LongTermMemoryConfig memoryConfig,
-                           ToolRegistry toolRegistry) {
+                           ToolRegistry toolRegistry,
+                           DirectResponseHook directResponseHook,
+                           TokenUsageHook tokenUsageHook) {
         this.modelConfigMapper = modelConfigMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.longTermMemoryService = longTermMemoryService;
         this.memoryConfig = memoryConfig;
         this.toolRegistry = toolRegistry;
+        this.directResponseHook = directResponseHook;
+        this.tokenUsageHook = tokenUsageHook;
     }
 
     /**
@@ -256,7 +265,10 @@ public class AgentScopeConfig {
                 .name(agentName)
                 .model(chatModel)
                 .memory(shortTermMemory)
-                .toolkit(toolkit);
+                //.maxIters(5)
+                .toolkit(toolkit)
+                //.hooks(List.of(tokenUsageHook));
+                .hooks(List.of(directResponseHook, tokenUsageHook));
 
         if (sysPrompt != null && !sysPrompt.isEmpty()) {
             builder.sysPrompt(sysPrompt);
@@ -278,7 +290,7 @@ public class AgentScopeConfig {
                     .memoryService(longTermMemoryService)
                     .build();
 
-            builder.longTermMemory((LongTermMemory) longTermMemory)
+            builder.longTermMemory(longTermMemory)
                    .longTermMemoryMode(LongTermMemoryMode.BOTH);
 
             log.info("Agent {} integrated with LongTermMemory(BOTH mode): userId={}, tenantId={}, threshold={}",
