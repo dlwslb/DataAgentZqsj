@@ -143,7 +143,7 @@ public class AgentScopeConfig {
                 .modelName(modelName)
                 // 🔑 生成参数通过 GenerateOptions 设置
                 .defaultOptions(GenerateOptions.builder()  // ← 通过此方法注入生成参数
-                        .temperature(temperature)
+                        //.temperature(temperature)
                         .topP(0.9)
                         .maxTokens(maxTokens)
                         .build())
