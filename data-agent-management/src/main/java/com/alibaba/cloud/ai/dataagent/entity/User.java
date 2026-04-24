@@ -46,6 +46,8 @@ public class User {
 
 	private Integer status;
 
+	private Long tenantId;
+
 	private LocalDateTime createTime;
 
 	private LocalDateTime updateTime;

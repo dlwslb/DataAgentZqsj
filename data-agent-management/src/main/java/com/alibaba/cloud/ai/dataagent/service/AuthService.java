@@ -67,6 +67,7 @@ public class AuthService {
 				.email(user.getEmail())
 				.avatar(user.getAvatar())
 				.role(user.getRole())
+				.tenantId(user.getTenantId())
 				.build();
 
 		return LoginResponse.builder()
