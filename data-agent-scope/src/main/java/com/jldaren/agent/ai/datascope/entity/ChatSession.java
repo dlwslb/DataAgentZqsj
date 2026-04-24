@@ -38,6 +38,8 @@ public class ChatSession {
 
     private Long userId;
 
+    private Long tenantId;
+
     private String title;
 
     // active-活跃, finished-已完成

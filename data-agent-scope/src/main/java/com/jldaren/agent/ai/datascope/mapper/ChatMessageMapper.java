@@ -34,8 +34,8 @@ public interface ChatMessageMapper {
 
     @Insert("""
             INSERT INTO agent_scope_chat_message 
-            (session_id, agent_id, user_id, role, content, message_type, create_time)
-            VALUES (#{sessionId}, #{agentId}, #{userId}, #{role}, #{content}, #{messageType}, NOW())
+            (session_id, agent_id, user_id, tenant_id, role, content, message_type, create_time)
+            VALUES (#{sessionId}, #{agentId}, #{userId}, #{tenantId}, #{role}, #{content}, #{messageType}, NOW())
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(ChatMessage message);

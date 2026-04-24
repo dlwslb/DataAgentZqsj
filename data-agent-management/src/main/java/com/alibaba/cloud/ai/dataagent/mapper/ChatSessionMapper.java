@@ -38,6 +38,20 @@ public interface ChatSessionMapper {
 	List<ChatSession> selectByAgentId(@Param("agentId") Integer agentId, @Param("userId") Long userId);
 
 	/**
+	 * Query session list by agent ID and tenant ID (多租户隔离)
+	 */
+	@Select("""
+			<script>
+			SELECT * FROM chat_session
+			WHERE agent_id = #{agentId} AND status != 'deleted'
+			<if test="userId != null">AND user_id = #{userId}</if>
+			<if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+			ORDER BY is_pinned DESC, update_time DESC
+			</script>
+			""")
+	List<ChatSession> selectByAgentIdAndTenantId(@Param("agentId") Integer agentId, @Param("userId") Long userId, @Param("tenantId") Long tenantId);
+
+	/**
 	 * Query session details by session ID
 	 */
 	@Select("""
@@ -73,6 +87,21 @@ public interface ChatSessionMapper {
 			WHERE agent_id = #{agentId}
 			""")
 	int softDeleteByAgentId(@Param("agentId") Integer agentId, @Param("updateTime") LocalDateTime updateTime);
+
+	/**
+	 * Soft delete all sessions for an agent with user and tenant filtering (多租户隔离)
+	 */
+	@Update("""
+			<script>
+			UPDATE chat_session
+			SET status = 'deleted', update_time = #{updateTime}
+			WHERE agent_id = #{agentId}
+			<if test="userId != null">AND user_id = #{userId}</if>
+			<if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+			</script>
+			""")
+	int softDeleteByAgentIdAndTenant(@Param("agentId") Integer agentId, @Param("userId") Long userId, 
+			@Param("tenantId") Long tenantId, @Param("updateTime") LocalDateTime updateTime);
 
 	/**
 	 * Update session time
@@ -119,8 +148,8 @@ public interface ChatSessionMapper {
 	int softDeleteById(@Param("sessionId") String sessionId, @Param("updateTime") LocalDateTime updateTime);
 
 	@Insert("""
-			INSERT INTO chat_session (id, agent_id, title, status, is_pinned, user_id, create_time, update_time)
-			VALUES (#{id}, #{agentId}, #{title}, #{status}, #{isPinned}, #{userId}, #{createTime}, #{updateTime})
+			INSERT INTO chat_session (id, agent_id, title, status, is_pinned, user_id, tenant_id, create_time, update_time)
+			VALUES (#{id}, #{agentId}, #{title}, #{status}, #{isPinned}, #{userId}, #{tenantId}, #{createTime}, #{updateTime})
 			""")
 	int insert(ChatSession session);
 

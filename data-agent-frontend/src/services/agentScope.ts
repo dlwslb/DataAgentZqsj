@@ -9,6 +9,37 @@ const agentScopeClient = axios.create({
   baseURL: import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064',
 });
 
+// 请求拦截器 - 自动添加用户信息（与 common.ts 保持一致）
+agentScopeClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    // 从 localStorage 获取用户信息并添加到请求头
+    const userInfoStr = localStorage.getItem('userInfo');
+    if (userInfoStr) {
+      try {
+        const userInfo = JSON.parse(userInfoStr);
+        if (userInfo.id) {
+          config.headers['User-ID'] = String(userInfo.id);
+        }
+        if (userInfo.tenantId) {
+          config.headers['Tenant-ID'] = String(userInfo.tenantId);
+        }
+      } catch (error) {
+        console.error('Failed to parse user info:', error);
+      }
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export interface AgentScope {
   id: number;
   name: string;
@@ -146,7 +177,7 @@ export const agentScopeApi = {
   chat: (
     agentId: number,
     message: string,
-    sessionId?: number,
+    sessionId?: string,
     userRole?: 'user' | 'admin',
     nl2sqlOnly?: boolean,
     humanFeedback?: boolean,
@@ -156,7 +187,7 @@ export const agentScopeApi = {
   ) => {
     return agentScopeClient.post(`/api/scope/agent/${agentId}/chat`, {
       message,
-      sessionId,
+      sessionId: sessionId || undefined,
       userRole,
       nl2sqlOnly,
       humanFeedback,

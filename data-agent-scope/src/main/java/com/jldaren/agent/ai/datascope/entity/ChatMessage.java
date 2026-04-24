@@ -40,6 +40,8 @@ public class ChatMessage {
 
     private Long userId;
 
+    private Long tenantId;
+
     // user-用户, assistant-助手
     private String role;
 

@@ -38,13 +38,30 @@ const apiClient = axios.create({
   baseURL: import.meta.env.BASE_URL || '/',
 });
 
-// 请求拦截器 - 自动添加认证令牌
+// 请求拦截器 - 自动添加认证令牌和用户信息
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // 从 localStorage 获取用户信息并添加到请求头
+    const userInfoStr = localStorage.getItem('userInfo');
+    if (userInfoStr) {
+      try {
+        const userInfo = JSON.parse(userInfoStr);
+        if (userInfo.id) {
+          config.headers['User-ID'] = String(userInfo.id);
+        }
+        if (userInfo.tenantId) {
+          config.headers['Tenant-ID'] = String(userInfo.tenantId);
+        }
+      } catch (error) {
+        console.error('Failed to parse user info:', error);
+      }
+    }
+    
     return config;
   },
   (error) => {

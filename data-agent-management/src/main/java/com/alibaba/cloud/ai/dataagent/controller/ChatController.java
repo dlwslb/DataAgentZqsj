@@ -60,7 +60,8 @@ public class ChatController {
 	 */
 	@GetMapping("/agent/{id}/sessions")
 	public ResponseEntity<List<ChatSession>> getAgentSessions(@PathVariable(value = "id") Integer id,
-			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		Long userId = null;
 		if (userIdHeader != null && !userIdHeader.isEmpty()) {
 			try {
@@ -70,7 +71,22 @@ public class ChatController {
 			}
 		}
 		
-		List<ChatSession> sessions = chatSessionService.findByAgentId(id, userId);
+		Long tenantId = null;
+		if (tenantIdHeader != null && !tenantIdHeader.isEmpty()) {
+			try {
+				tenantId = Long.parseLong(tenantIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid Tenant-ID header: {}", tenantIdHeader);
+			}
+		}
+		
+		// 如果提供了tenantId，使用多租户隔离查询；否则使用原有逻辑
+		List<ChatSession> sessions;
+		if (tenantId != null) {
+			sessions = chatSessionService.findByAgentIdAndTenantId(id, userId, tenantId);
+		} else {
+			sessions = chatSessionService.findByAgentId(id, userId);
+		}
 		return ResponseEntity.ok(sessions);
 	}
 
@@ -80,7 +96,8 @@ public class ChatController {
 	@PostMapping("/agent/{id}/sessions")
 	public ResponseEntity<ChatSession> createSession(@PathVariable(value = "id") Integer id,
 			@RequestBody(required = false) Map<String, Object> request,
-			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		String title = request != null ? (String) request.get("title") : null;
 		
 		// 优先从header获取userId，如果没有则从request body获取
@@ -100,8 +117,19 @@ public class ChatController {
 				userId = ((Number) userIdFromBody).longValue();
 			}
 		}
+		
+		// 从header获取tenantId
+		Long tenantId = null;
+		if (tenantIdHeader != null && !tenantIdHeader.isEmpty()) {
+			try {
+				tenantId = Long.parseLong(tenantIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid Tenant-ID header: {}", tenantIdHeader);
+			}
+		}
 
-		ChatSession session = chatSessionService.createSession(id, title, userId);
+		// 使用带tenantId的方法创建会话
+		ChatSession session = chatSessionService.createSession(id, title, userId, tenantId);
 		return ResponseEntity.ok(session);
 	}
 
@@ -109,8 +137,34 @@ public class ChatController {
 	 * Clear all sessions for an agent
 	 */
 	@DeleteMapping("/agent/{id}/sessions")
-	public ResponseEntity<ApiResponse> clearAgentSessions(@PathVariable(value = "id") Integer id) {
-		chatSessionService.clearSessionsByAgentId(id);
+	public ResponseEntity<ApiResponse> clearAgentSessions(@PathVariable(value = "id") Integer id,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
+		Long userId = null;
+		if (userIdHeader != null && !userIdHeader.isEmpty()) {
+			try {
+				userId = Long.parseLong(userIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid User-ID header: {}", userIdHeader);
+			}
+		}
+		
+		Long tenantId = null;
+		if (tenantIdHeader != null && !tenantIdHeader.isEmpty()) {
+			try {
+				tenantId = Long.parseLong(tenantIdHeader);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid Tenant-ID header: {}", tenantIdHeader);
+			}
+		}
+		
+		// 如果提供了userId或tenantId，使用多租户隔离删除；否则使用原有逻辑
+		if (userId != null || tenantId != null) {
+			chatSessionService.clearSessionsByAgentIdAndTenant(id, userId, tenantId);
+		} else {
+			chatSessionService.clearSessionsByAgentId(id);
+		}
+		
 		return ResponseEntity.ok(ApiResponse.success("会话已清空"));
 	}
 
@@ -118,7 +172,10 @@ public class ChatController {
 	 * Get message list for a session
 	 */
 	@GetMapping("/sessions/{sessionId}/messages")
-	public ResponseEntity<List<ChatMessage>> getSessionMessages(@PathVariable(value = "sessionId") String sessionId) {
+	public ResponseEntity<List<ChatMessage>> getSessionMessages(@PathVariable(value = "sessionId") String sessionId,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
+		// TODO: 可以添加权限验证，确保 sessionId 属于当前用户和租户
 		List<ChatMessage> messages = chatMessageService.findBySessionId(sessionId);
 		return ResponseEntity.ok(messages);
 	}
@@ -129,7 +186,8 @@ public class ChatController {
 	@PostMapping("/sessions/{sessionId}/messages")
 	public ResponseEntity<ChatMessage> saveMessage(@PathVariable(value = "sessionId") String sessionId,
 			@RequestBody ChatMessageDTO request,
-			@RequestHeader(value = "User-ID", required = false) String userIdHeader) {
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		try {
 			if (request == null) {
 				return ResponseEntity.badRequest().build();
@@ -144,6 +202,15 @@ public class ChatController {
 				}
 			}
 			
+			Long tenantId = null;
+			if (tenantIdHeader != null && !tenantIdHeader.isEmpty()) {
+				try {
+					tenantId = Long.parseLong(tenantIdHeader);
+				} catch (NumberFormatException e) {
+					log.warn("Invalid Tenant-ID header: {}", tenantIdHeader);
+				}
+			}
+			
 			ChatMessage message = ChatMessage.builder()
 				.sessionId(sessionId)
 				.role(request.getRole())
@@ -151,6 +218,7 @@ public class ChatController {
 				.messageType(request.getMessageType())
 				.metadata(request.getMetadata())
 				.userId(userId)
+				.tenantId(tenantId)
 				.build();
 
 			ChatMessage savedMessage = chatMessageService.saveMessage(message);
@@ -175,8 +243,11 @@ public class ChatController {
 	 */
 	@PutMapping("/sessions/{sessionId}/pin")
 	public ResponseEntity<ApiResponse> pinSession(@PathVariable(value = "sessionId") String sessionId,
-			@RequestParam(value = "isPinned") Boolean isPinned) {
+			@RequestParam(value = "isPinned") Boolean isPinned,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		try {
+			// TODO: 可以添加权限验证，确保 sessionId 属于当前用户和租户
 			chatSessionService.pinSession(sessionId, isPinned);
 			String message = isPinned ? "会话已置顶" : "会话已取消置顶";
 			return ResponseEntity.ok(ApiResponse.success(message));
@@ -192,12 +263,15 @@ public class ChatController {
 	 */
 	@PutMapping("/sessions/{sessionId}/rename")
 	public ResponseEntity<ApiResponse> renameSession(@PathVariable(value = "sessionId") String sessionId,
-			@RequestParam(value = "title") String title) {
+			@RequestParam(value = "title") String title,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		try {
 			if (!StringUtils.hasText(title)) {
 				return ResponseEntity.badRequest().body(ApiResponse.error("标题不能为空"));
 			}
 
+			// TODO: 可以添加权限验证，确保 sessionId 属于当前用户和租户
 			chatSessionService.renameSession(sessionId, title.trim());
 			return ResponseEntity.ok(ApiResponse.success("会话已重命名"));
 		}
@@ -211,8 +285,11 @@ public class ChatController {
 	 * Delete a single session
 	 */
 	@DeleteMapping("/sessions/{sessionId}")
-	public ResponseEntity<ApiResponse> deleteSession(@PathVariable(value = "sessionId") String sessionId) {
+	public ResponseEntity<ApiResponse> deleteSession(@PathVariable(value = "sessionId") String sessionId,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 		try {
+			// TODO: 可以添加权限验证，确保 sessionId 属于当前用户和租户
 			chatSessionService.deleteSession(sessionId);
 			return ResponseEntity.ok(ApiResponse.success("会话已删除"));
 		}

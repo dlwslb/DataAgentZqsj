@@ -37,8 +37,8 @@ public interface ChatSessionMapper {
 
     @Insert("""
             INSERT INTO agent_scope_chat_session 
-            (id,agent_id, user_id, title, status, create_time, update_time)
-            VALUES (#{id},#{agentId}, #{userId}, #{title}, 'active', NOW(), NOW())
+            (id,agent_id, user_id, tenant_id, title, status, create_time, update_time)
+            VALUES (#{id},#{agentId}, #{userId}, #{tenantId}, #{title}, 'active', NOW(), NOW())
             """)
     int insert(ChatSession session);
 

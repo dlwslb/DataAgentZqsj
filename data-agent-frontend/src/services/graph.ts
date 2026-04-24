@@ -80,6 +80,22 @@ class GraphService {
       params.append('humanFeedbackContent', request.humanFeedbackContent);
     }
 
+    // 从 localStorage 获取用户信息并添加到URL参数
+    const userInfoStr = localStorage.getItem('userInfo');
+    if (userInfoStr) {
+      try {
+        const userInfo = JSON.parse(userInfoStr);
+        if (userInfo.id) {
+          params.append('userId', String(userInfo.id));
+        }
+        if (userInfo.tenantId) {
+          params.append('tenantId', String(userInfo.tenantId));
+        }
+      } catch (error) {
+        console.error('Failed to parse user info:', error);
+      }
+    }
+
     const url = `${API_BASE_URL}/stream/search?${params.toString()}`;
 
     const eventSource = new EventSource(url);

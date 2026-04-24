@@ -43,6 +43,8 @@ public class ChatSession {
 
 	private Long userId;
 
+	private Long tenantId;
+
 	private LocalDateTime createTime;
 
 	private LocalDateTime updateTime;

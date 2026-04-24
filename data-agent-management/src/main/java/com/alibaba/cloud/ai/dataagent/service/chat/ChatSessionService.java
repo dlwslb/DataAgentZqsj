@@ -30,9 +30,19 @@ public interface ChatSessionService {
 	List<ChatSession> findByAgentId(Integer agentId, Long userId);
 
 	/**
+	 * Get session list by agent ID and tenant ID
+	 */
+	List<ChatSession> findByAgentIdAndTenantId(Integer agentId, Long userId, Long tenantId);
+
+	/**
 	 * Create a new session
 	 */
 	ChatSession createSession(Integer agentId, String title, Long userId);
+
+	/**
+	 * Create a new session with tenant ID
+	 */
+	ChatSession createSession(Integer agentId, String title, Long userId, Long tenantId);
 
 	/**
 	 * Find session by id.
@@ -43,6 +53,11 @@ public interface ChatSessionService {
 	 * Clear all sessions for an agent
 	 */
 	void clearSessionsByAgentId(Integer agentId);
+
+	/**
+	 * Clear all sessions for an agent with user and tenant filtering (多租户隔离)
+	 */
+	void clearSessionsByAgentIdAndTenant(Integer agentId, Long userId, Long tenantId);
 
 	/**
 	 * Update the last activity time of a session

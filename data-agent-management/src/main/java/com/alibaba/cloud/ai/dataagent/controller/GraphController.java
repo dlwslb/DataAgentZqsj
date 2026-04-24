@@ -51,6 +51,8 @@ public class GraphController {
 			@RequestParam(value = "rejectedPlan", required = false) boolean rejectedPlan,
 			@RequestParam(value = "nl2sqlOnly", required = false) boolean nl2sqlOnly,
 			@RequestParam(value = "userRole", required = false, defaultValue = "admin") String userRole,
+			@RequestParam(value = "userId", required = false) Long userId,
+			@RequestParam(value = "tenantId", required = false) Long tenantId,
 			ServerHttpResponse response) {
 		// Set SSE-related HTTP headers
 		response.getHeaders().add("Cache-Control", "no-cache");
@@ -68,6 +70,8 @@ public class GraphController {
 			.rejectedPlan(rejectedPlan)
 			.nl2sqlOnly(nl2sqlOnly)
 			.userRole(userRole)
+			.userId(userId)
+			.tenantId(tenantId)
 			.build();
 		graphService.graphStreamProcess(sink, request);
 

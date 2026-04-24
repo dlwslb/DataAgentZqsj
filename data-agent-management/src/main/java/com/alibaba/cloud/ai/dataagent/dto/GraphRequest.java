@@ -46,4 +46,8 @@ public class GraphRequest {
 	@Builder.Default
 	private String userRole = "admin";
 
+	private Long userId;
+
+	private Long tenantId;
+
 }

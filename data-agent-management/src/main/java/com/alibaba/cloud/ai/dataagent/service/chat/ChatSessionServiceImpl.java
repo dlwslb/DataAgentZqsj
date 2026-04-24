@@ -40,6 +40,14 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 		return chatSessionMapper.selectByAgentId(agentId, userId);
 	}
 
+	/**
+	 * Get session list by agent ID and tenant ID (多租户隔离)
+	 */
+	@Override
+	public List<ChatSession> findByAgentIdAndTenantId(Integer agentId, Long userId, Long tenantId) {
+		return chatSessionMapper.selectByAgentIdAndTenantId(agentId, userId, tenantId);
+	}
+
 	@Override
 	public ChatSession findBySessionId(String sessionId) {
 		return chatSessionMapper.selectBySessionId(sessionId);
@@ -50,12 +58,30 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 	 */
 	@Override
 	public ChatSession createSession(Integer agentId, String title, Long userId) {
-		String sessionId = UUID.randomUUID().toString();
+		return createSession(agentId, title, userId, null);
+	}
 
-		ChatSession session = new ChatSession(sessionId, agentId, title != null ? title : "新会话", "active", userId);
+	/**
+	 * Create a new session with tenant ID (多租户隔离)
+	 */
+	@Override
+	public ChatSession createSession(Integer agentId, String title, Long userId, Long tenantId) {
+		String sessionId = UUID.randomUUID().toString();
+		LocalDateTime now = LocalDateTime.now();
+
+		ChatSession session = new ChatSession();
+		session.setId(sessionId);
+		session.setAgentId(agentId);
+		session.setTitle(title != null ? title : "新会话");
+		session.setStatus("active");
+		session.setUserId(userId);
+		session.setTenantId(tenantId);
+		session.setIsPinned(false);
+		session.setCreateTime(now);
+		
 		chatSessionMapper.insert(session);
 
-		log.info("Created new chat session: {} for agent: {}", sessionId, agentId);
+		log.info("Created new chat session: {} for agent: {}, userId: {}, tenantId: {}", sessionId, agentId, userId, tenantId);
 		return session;
 	}
 
@@ -67,6 +93,16 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 		LocalDateTime now = LocalDateTime.now();
 		int updated = chatSessionMapper.softDeleteByAgentId(agentId, now);
 		log.info("Cleared {} sessions for agent: {}", updated, agentId);
+	}
+
+	/**
+	 * Clear all sessions for an agent with user and tenant filtering (多租户隔离)
+	 */
+	@Override
+	public void clearSessionsByAgentIdAndTenant(Integer agentId, Long userId, Long tenantId) {
+		LocalDateTime now = LocalDateTime.now();
+		int updated = chatSessionMapper.softDeleteByAgentIdAndTenant(agentId, userId, tenantId, now);
+		log.info("Cleared {} sessions for agent: {}, userId: {}, tenantId: {}", updated, agentId, userId, tenantId);
 	}
 
 	/**

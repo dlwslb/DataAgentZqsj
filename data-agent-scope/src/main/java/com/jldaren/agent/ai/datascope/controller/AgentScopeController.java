@@ -204,12 +204,35 @@ public class AgentScopeController {
     @Operation(summary = "创建会话", description = "创建新的聊天会话")
     public ApiResponse<ChatSession> createSession(
             @PathVariable Long agentId,
-            @RequestParam(required = false, defaultValue = "新会话") String title) {
+            @RequestParam(required = false, defaultValue = "新会话") String title,
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader,
+            @RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
         checkAgentExists(agentId);
+        
+        Long userId = null;
+        if (userIdHeader != null && !userIdHeader.isEmpty()) {
+            try {
+                userId = Long.parseLong(userIdHeader);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid User-ID header: {}", userIdHeader);
+            }
+        }
+        
+        Long tenantId = null;
+        if (tenantIdHeader != null && !tenantIdHeader.isEmpty()) {
+            try {
+                tenantId = Long.parseLong(tenantIdHeader);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid Tenant-ID header: {}", tenantIdHeader);
+            }
+        }
+        
         String sessionId = UUID.randomUUID().toString();
         ChatSession session = ChatSession.builder()
                 .id(sessionId)
                 .agentId(agentId)
+                .userId(userId)
+                .tenantId(tenantId)
                 .title(title)
                 .status("active")
                 .build();
@@ -291,15 +314,22 @@ public class AgentScopeController {
     @Operation(summary = "与Agent聊天", description = "向Agent发送消息并获取回复")
     public ApiResponse<Map<String, Object>> chat(
             @PathVariable Long id,
-            @RequestBody Map<String, Object> request) {
+            @RequestBody Map<String, Object> request,
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader,
+            @RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
         String message = (String) request.get("message");
         if (message == null || message.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
         }
 
-        String sessionId = request.get("sessionId") != null ? ((String) request.get("sessionId")) : null;
-        String userId = request.get("userId") != null ? (String) request.get("userId") : "anonymous";
-        String tenantId = request.get("tenantId") != null ? (String) request.get("tenantId") : "default";
+        String sessionId = request.get("sessionId") != null && !((String) request.get("sessionId")).isEmpty() 
+                ? (String) request.get("sessionId") : null;
+        
+        // 优先从请求头获取，其次从请求体获取
+        String userId = userIdHeader != null ? userIdHeader : 
+                       (request.get("userId") != null ? (String) request.get("userId") : "anonymous");
+        String tenantId = tenantIdHeader != null ? tenantIdHeader :
+                         (request.get("tenantId") != null ? (String) request.get("tenantId") : "default");
 
         // 使用带 sessionId 隔离的 Agent（每个会话独立的 InMemoryMemory）
         ReActAgent agent = agentRegistry.getAgentWithLongTermMemory(id, userId, sessionId, tenantId);
@@ -325,23 +355,45 @@ public class AgentScopeController {
 
         ChatSession session;
         if (sessionId == null) {
+            Long userIdLong = userId != null && !userId.equals("anonymous") ? Long.parseLong(userId) : null;
+            Long tenantIdLong = tenantId != null && !tenantId.equals("default") ? Long.parseLong(tenantId) : null;
+            sessionId = UUID.randomUUID().toString();
             session = ChatSession.builder()
+                    .id(sessionId)
                     .agentId(id)
+                    .userId(userIdLong)
+                    .tenantId(tenantIdLong)
                     .title(message.length() > 20 ? message.substring(0, 20) + "..." : message)
                     .status("active")
                     .build();
             chatSessionMapper.insert(session);
-            sessionId = session.getId();
         } else {
             session = chatSessionMapper.findById(sessionId);
             if (session == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + sessionId);
+                // Session not found, create a new one
+                log.warn("Session not found: {}, creating new session", sessionId);
+                Long userIdLong = userId != null && !userId.equals("anonymous") ? Long.parseLong(userId) : null;
+                Long tenantIdLong = tenantId != null && !tenantId.equals("default") ? Long.parseLong(tenantId) : null;
+                sessionId = UUID.randomUUID().toString();
+                session = ChatSession.builder()
+                        .id(sessionId)
+                        .agentId(id)
+                        .userId(userIdLong)
+                        .tenantId(tenantIdLong)
+                        .title(message.length() > 20 ? message.substring(0, 20) + "..." : message)
+                        .status("active")
+                        .build();
+                chatSessionMapper.insert(session);
             }
         }
 
+        Long userIdLong = userId != null && !userId.equals("anonymous") ? Long.parseLong(userId) : null;
+        Long tenantIdLong = tenantId != null && !tenantId.equals("default") ? Long.parseLong(tenantId) : null;
         ChatMessage userMsg = ChatMessage.builder()
                 .sessionId(sessionId)
                 .agentId(id)
+                .userId(userIdLong)
+                .tenantId(tenantIdLong)
                 .role("user")
                 .content(message)
                 .messageType("text")
@@ -366,6 +418,8 @@ public class AgentScopeController {
         ChatMessage assistantMsg = ChatMessage.builder()
                 .sessionId(sessionId)
                 .agentId(id)
+                .userId(userIdLong)
+                .tenantId(tenantIdLong)
                 .role("assistant")
                 .content(responseContent)
                 .messageType(messageType)

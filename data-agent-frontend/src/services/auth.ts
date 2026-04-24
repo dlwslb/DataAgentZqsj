@@ -28,6 +28,7 @@ export interface UserInfo {
   email: string;
   avatar: string;
   role: string;
+  tenantId: number;
 }
 
 export interface LoginResponse {

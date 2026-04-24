@@ -44,6 +44,8 @@ public class ChatMessage {
 
 	private Long userId; // 用户ID
 
+	private Long tenantId; // 租户ID
+
 	private LocalDateTime createTime;
 
 }

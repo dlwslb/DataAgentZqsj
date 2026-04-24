@@ -36,12 +36,16 @@ public class SessionEventController {
 
 	@GetMapping(value = "/agent/{agentId}/sessions/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	public Flux<ServerSentEvent<SessionUpdateEvent>> streamSessionUpdates(@PathVariable Integer agentId,
+			@RequestHeader(value = "User-ID", required = false) String userIdHeader,
+			@RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader,
 			ServerHttpResponse response) {
 		response.getHeaders().add("Cache-Control", "no-cache");
 		response.getHeaders().add("Connection", "keep-alive");
 		response.getHeaders().add("Access-Control-Allow-Origin", "*");
 
-		log.debug("Client subscribed to session update stream for agent {}", agentId);
+		// TODO: 可以添加权限验证，确保只订阅当前用户和租户的会话更新
+		log.debug("Client subscribed to session update stream for agent {}, userId: {}, tenantId: {}", 
+				agentId, userIdHeader, tenantIdHeader);
 		return sessionEventPublisher.register(agentId)
 			.doFinally(
 					signal -> log.debug("Session update stream finished for agent {} with signal {}", agentId, signal));
