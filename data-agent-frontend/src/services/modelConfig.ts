@@ -29,6 +29,7 @@ export interface ModelConfig {
   isActive?: boolean;
   completionsPath?: string; // 对话模型路径
   embeddingsPath?: string; // 嵌入模型路径
+  enableSearch?: boolean; // 联网搜索开关
   proxyEnabled?: boolean; //代理开关，默认为关闭（直连）
   proxyHost?: string;
   proxyPort?: number;

@@ -52,6 +52,8 @@ public class ModelConfigDTO {
 	// 仅当厂商路径非标准时填写
 	private String embeddingsPath;
 
+	private Boolean enableSearch = false;
+
 	private Double temperature = 0.0;
 
 	private Integer maxTokens = 2000;

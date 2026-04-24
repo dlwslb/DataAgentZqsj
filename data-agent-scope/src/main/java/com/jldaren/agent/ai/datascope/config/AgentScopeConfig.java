@@ -30,6 +30,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.plan.storage.PlanStorage;
 import io.agentscope.core.tool.Toolkit;
@@ -127,6 +128,9 @@ public class AgentScopeConfig {
         String apiKey = (dbConfig != null && dbConfig.getApiKey() != null) ? dbConfig.getApiKey() : defaultApiKey;
         String modelName = (dbConfig != null && dbConfig.getModelName() != null) ? dbConfig.getModelName() : defaultModelName;
         String baseUrl = (dbConfig != null && dbConfig.getBaseUrl() != null) ? dbConfig.getBaseUrl() : defaultBaseUrl;
+        Double temperature = (dbConfig != null && dbConfig.getTemperature() != null) ? dbConfig.getTemperature() : 0.7;
+        Integer maxTokens = (dbConfig != null && dbConfig.getMaxTokens() != null) ? dbConfig.getMaxTokens() : 4096;
+        Boolean enableSearch = (dbConfig != null && dbConfig.getEnableSearch() != null) ? dbConfig.getEnableSearch() : false;
 
         if (dbConfig != null) {
             log.info("Using database model config: provider={}, model={}", dbConfig.getProvider(), modelName);
@@ -136,7 +140,14 @@ public class AgentScopeConfig {
 
         DashScopeChatModel.Builder builder = DashScopeChatModel.builder()
                 .apiKey(apiKey)
-                .modelName(modelName);
+                .modelName(modelName)
+                // 🔑 生成参数通过 GenerateOptions 设置
+                .defaultOptions(GenerateOptions.builder()  // ← 通过此方法注入生成参数
+                        .temperature(temperature)
+                        .topP(0.9)
+                        .maxTokens(maxTokens)
+                        .build())
+                .enableSearch(enableSearch);//联网搜索按次计费（约 ¥4/1000 次），与模型 Token 费用分开计算
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
             builder.baseUrl(baseUrl);

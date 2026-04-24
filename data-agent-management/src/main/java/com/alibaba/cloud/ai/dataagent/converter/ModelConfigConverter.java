@@ -43,6 +43,7 @@ public class ModelConfigConverter {
 			.modelType(entity.getModelType().getCode())
 			.completionsPath(entity.getCompletionsPath())
 			.embeddingsPath(entity.getEmbeddingsPath())
+			.enableSearch(entity.getEnableSearch())
 			.proxyEnabled(entity.getProxyEnabled())
 			.proxyHost(entity.getProxyHost())
 			.proxyPort(entity.getProxyPort())
@@ -69,6 +70,7 @@ public class ModelConfigConverter {
 		entity.setModelType(ModelType.fromCode(dto.getModelType()));
 		entity.setCompletionsPath(dto.getCompletionsPath());
 		entity.setEmbeddingsPath(dto.getEmbeddingsPath());
+		entity.setEnableSearch(dto.getEnableSearch());
 		entity.setProxyEnabled(dto.getProxyEnabled());
 		entity.setProxyHost(dto.getProxyHost());
 		entity.setProxyPort(dto.getProxyPort());

@@ -118,6 +118,7 @@ public class ModelConfigDataServiceImpl implements ModelConfigDataService {
 		oldEntity.setMaxTokens(dto.getMaxTokens()); // 新增字段
 		oldEntity.setCompletionsPath(dto.getCompletionsPath()); // 路径字段
 		oldEntity.setEmbeddingsPath(dto.getEmbeddingsPath()); // 路径字段
+		oldEntity.setEnableSearch(dto.getEnableSearch());
 		oldEntity.setUpdatedTime(LocalDateTime.now()); // 更新时间
 		oldEntity.setProxyEnabled(dto.getProxyEnabled());
 		oldEntity.setProxyHost(dto.getProxyHost());

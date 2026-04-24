@@ -272,6 +272,13 @@
             />
             <div class="form-tip">控制生成文本的最大长度</div>
           </el-form-item>
+
+          <el-form-item label="联网搜索" v-if="formData.modelType === 'CHAT'">
+            <el-switch v-model="formData.enableSearch" />
+            <span class="form-tip" style="margin-left: 10px">
+              开启后模型可实时搜索网络信息（按次计费）
+            </span>
+          </el-form-item>
         </el-form>
 
         <el-divider content-position="left">网络代理配置</el-divider>
@@ -369,6 +376,7 @@
         completionsPath: '',
         embeddingsPath: '',
         isActive: false,
+        enableSearch: false,
         proxyEnabled: false,
         proxyHost: '',
         proxyPort: 7890, // 给个常用的默认端口
@@ -493,6 +501,7 @@
           completionsPath: '',
           embeddingsPath: '',
           isActive: false,
+          enableSearch: false,
         };
         dialogVisible.value = true;
       };

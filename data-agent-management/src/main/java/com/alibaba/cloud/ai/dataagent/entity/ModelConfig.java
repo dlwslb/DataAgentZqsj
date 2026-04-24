@@ -50,6 +50,8 @@ public class ModelConfig {
 
 	private String embeddingsPath;
 
+	private Boolean enableSearch;
+
 	@JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
 	private LocalDateTime createdTime;
 

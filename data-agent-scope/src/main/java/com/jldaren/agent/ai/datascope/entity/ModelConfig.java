@@ -33,4 +33,5 @@ public class ModelConfig {
     private String modelType;
     private String completionsPath;
     private String embeddingsPath;
+    private Boolean enableSearch;
 }
