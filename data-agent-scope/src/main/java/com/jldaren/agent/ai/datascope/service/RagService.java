@@ -70,6 +70,9 @@ public class RagService {
         }
     }
 
+    private static final int DEFAULT_TOP_K = 3;
+
+
     /**
      * 检索相关知识
      * 使用 filterExpression 在向量库层面过滤 agentId，避免全量搜索后内存过滤
@@ -98,6 +101,52 @@ public class RagService {
                     })
                     .limit(topK)
                     .collect(Collectors.toList());
+        }
+    }
+
+
+    /**
+     * 使用 RAG 增强用户消息（检索相关知识并注入到上下文中）
+     * 提供统一的 RAG 增强逻辑，供所有 Controller 使用
+     */
+    public String enhanceWithRag(Long agentId, String userMessage) {
+        return enhanceWithRag(agentId, userMessage, DEFAULT_TOP_K);
+    }
+
+    public String enhanceWithRag(Long agentId, String userMessage, int topK) {
+        try {
+            List<Document> relatedKnowledge = searchRelatedKnowledge(agentId, userMessage, topK);
+
+
+            if (relatedKnowledge.isEmpty()) {
+                log.debug("🔍 [RAG] 未检索到相关知识，使用原始消息");
+                return userMessage;
+            }
+
+            String knowledgeContext = relatedKnowledge.stream()
+                    .map(doc -> {
+                        Object title = doc.getMetadata().get("title");
+                        return String.format("- [%s] %s", title != null ? title : "未知", doc.getText());
+                    })
+                    .collect(Collectors.joining("\n"));
+
+            String enhancedMessage = String.format("""
+                    【相关知识参考】
+                    %s
+
+                    【用户问题】
+                    %s
+
+                    请结合上述相关知识回答问题。如果知识与问题无关，请忽略知识直接回答。
+                    """, knowledgeContext, userMessage);
+
+
+            log.debug("📚 [RAG] 知识库检索增强: agentId={}, 检索到 {} 条知识", agentId, relatedKnowledge.size());
+            return enhancedMessage;
+
+        } catch (Exception e) {
+            log.warn("⚠️ [RAG] 增强失败，使用原始消息: {}", e.getMessage());
+            return userMessage;
         }
     }
 

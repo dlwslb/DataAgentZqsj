@@ -23,6 +23,7 @@ import com.jldaren.agent.ai.datascope.mapper.ChatMessageMapper;
 import com.jldaren.agent.ai.datascope.mapper.ChatSessionMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
 import com.jldaren.agent.ai.datascope.service.AgentScopeAgentManager;
+import com.jldaren.agent.ai.datascope.service.RagService;
 import com.jldaren.agent.ai.datascope.vo.ApiResponse;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.ContentBlock;
@@ -67,7 +68,7 @@ public class AgentScopeController {
     private final AgentScopeAgentManager agentManager;
 
     private final AgentScopeRegistry agentRegistry;
-
+    private final RagService ragService;
     /**
      * 获取 Agent 列表
      */
@@ -401,10 +402,11 @@ public class AgentScopeController {
         chatMessageMapper.insert(userMsg);
         chatSessionMapper.updateTime(sessionId);
 
-        // 使用编码后的消息传给 Agent
-        Msg userMsgForAgent = Msg.builder().textContent(finalMessage).build();
+        // RAG 增强：检索相关知识并注入上下文
+        String ragEnhancedMessage = ragService.enhanceWithRag(id, message);
+        Msg ragEnhancedMsg = Msg.builder().textContent(ragEnhancedMessage).build();
         log.debug("📨 [Chat] Agent收到消息: agentId={}, message={}, userRole={}", id, message, userRole);
-        Msg response = Mono.fromFuture(agent.call(userMsgForAgent).toFuture()).block();
+        Msg response = Mono.fromFuture(agent.call(ragEnhancedMsg).toFuture()).block();
         log.debug("📨 [Chat] Agent原始响应: agentId={}, role={}, contentType={}, getTextContent长度={}",
                 id, 
                 response != null ? response.getRole() : "null",
