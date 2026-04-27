@@ -43,6 +43,23 @@ agentscope:
   compression:
     enabled: false
 
+sse:
+  timeout-ms: 180000          # SSE 连接超时 3 分钟
+  max-concurrent: 100         # 最大并发 SSE 连接数
+
+rag:
+  timeout-seconds: 2          # RAG 增强超时时间
+
+agent:
+  call:
+    timeout-seconds: 180      # Agent 调用总超时
+
+request:
+  max-message-length: 4000    # 单条消息最大长度
+
+heartbeat:
+  interval-seconds: 15        # 心跳间隔
+
 logging:
   level:
     org.springframework.web.servlet.resource.ResourceHttpRequestHandler: ERROR  # 忽略静态资源找不到的警告
