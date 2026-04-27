@@ -760,6 +760,9 @@
                       currentMessages.value[assistantMsgIndex].content += '\n' + dataStr + '\n';
                       nextTick().then(() => scrollToBottom());
                     } else if (eventType === 'message') {
+                      if (!dataStr) {
+                        return;  // 空数据直接跳过
+                      }
                       try {
                         const data = JSON.parse(dataStr);
                         if (data.content) {
@@ -772,18 +775,6 @@
                         console.error('Failed to parse message event:', e);
                       }
                     } else if (eventType === 'done') {
-                      // 保存助手消息到后端
-                      const assistantContent = currentMessages.value[assistantMsgIndex]?.content || '';
-                      const assistantMsgType = currentMessages.value[assistantMsgIndex]?.messageType || 'text';
-                      if (assistantContent) {
-                        agentScopeApi.saveMessage({
-                          sessionId: currentSession.value.id,
-                          agentId: agent.value.id,
-                          role: 'assistant',
-                          content: assistantContent,
-                          messageType: assistantMsgType,
-                        }).catch(err => console.error('Save assistant message failed:', err));
-                      }
                       sending.value = false;
                       nextTick().then(() => scrollToBottom());
                       resolve();

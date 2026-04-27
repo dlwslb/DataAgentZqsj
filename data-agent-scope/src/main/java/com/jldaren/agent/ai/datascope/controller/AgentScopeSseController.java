@@ -2,10 +2,9 @@ package com.jldaren.agent.ai.datascope.controller;
 
 import com.jldaren.agent.ai.datascope.controller.bean.StreamChatRequest;
 import com.jldaren.agent.ai.datascope.entity.ChatMessage;
-import com.jldaren.agent.ai.datascope.entity.ChatSession;
 import com.jldaren.agent.ai.datascope.mapper.ChatMessageMapper;
-import com.jldaren.agent.ai.datascope.mapper.ChatSessionMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
+import com.jldaren.agent.ai.datascope.service.ChatSessionService;
 import com.jldaren.agent.ai.datascope.service.RagService;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.Hook;
@@ -22,6 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -33,8 +35,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ScheduledFuture;
 
@@ -48,23 +51,29 @@ public class AgentScopeSseController {
     // 依赖注入
     private final AgentScopeRegistry agentRegistry;
     private final RagService ragService;
+    private final ChatSessionService chatSessionService;
     private final ChatMessageMapper chatMessageMapper;
-    private final ChatSessionMapper chatSessionMapper;
     private final ScheduledExecutorService HEARTBEAT_EXECUTOR;
     private final ExecutorService RAG_EXECUTOR;
+    private final ExecutorService CHAT_SAVE_EXECUTOR;
     private final Semaphore SSE_SEMAPHORE;
+    private final Counter sseStartCounter = Metrics.counter("sse.connection.started");
+    private final Counter saveFailedCounter = Metrics.counter("message.save.failed");
+    private final Timer requestDurationTimer = Metrics.timer("agent.request.duration");
 
     public AgentScopeSseController(AgentScopeRegistry agentRegistry, RagService ragService,
-                                   ChatMessageMapper chatMessageMapper, ChatSessionMapper chatSessionMapper,
+                                   ChatSessionService chatSessionService, ChatMessageMapper chatMessageMapper,
                                    @Qualifier("heartbeatExecutor") ScheduledExecutorService heartbeatExecutor,
                                    @Qualifier("ragExecutor") ExecutorService ragExecutor,
+                                   @Qualifier("chatSaveExecutor") ExecutorService chatSaveExecutor,
                                    @Value("${sse.max-concurrent:100}") int maxConcurrent) {
         this.agentRegistry = agentRegistry;
         this.ragService = ragService;
+        this.chatSessionService = chatSessionService;
         this.chatMessageMapper = chatMessageMapper;
-        this.chatSessionMapper = chatSessionMapper;
         this.HEARTBEAT_EXECUTOR = heartbeatExecutor;
         this.RAG_EXECUTOR = ragExecutor;
+        this.CHAT_SAVE_EXECUTOR = chatSaveExecutor;
         this.SSE_SEMAPHORE = new Semaphore(maxConcurrent);
     }
 
@@ -110,38 +119,19 @@ public class AgentScopeSseController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found or not published: " + id);
         }
 
-        // 📝 4. 会话管理 & 保存用户消息
-        String sessionId = request.getSessionId();
-        if (sessionId == null || sessionId.isBlank()) {
-            sessionId = UUID.randomUUID().toString();
-            ChatSession session = ChatSession.builder()
-                    .id(sessionId)
-                    .agentId(id)
-                    .userId(userId != null && !userId.equals("anonymous") ? Long.parseLong(userId) : null)
-                    .tenantId(tenantId != null && !tenantId.equals("default") ? Long.parseLong(tenantId) : null)
-                    .title(request.getMessage().length() > 20 ? request.getMessage().substring(0, 20) + "..." : request.getMessage())
-                    .status("active")
-                    .build();
-            chatSessionMapper.insert(session);
-        }
-        Long userIdLong = userId != null && !userId.equals("anonymous") ? Long.parseLong(userId) : null;
-        Long tenantIdLong = tenantId != null && !tenantId.equals("default") ? Long.parseLong(tenantId) : null;
-        ChatMessage userMsg = ChatMessage.builder()
-                .sessionId(sessionId)
-                .agentId(id)
-                .userId(userIdLong)
-                .tenantId(tenantIdLong)
-                .role("user")
-                .content(request.getMessage())
-                .messageType("text")
-                .build();
-        chatMessageMapper.insert(userMsg);
-        chatSessionMapper.updateTime(sessionId);
+        // 📝 4. 会话管理 & 保存用户消息（事务保证）
+        final String finalSessionId = chatSessionService.createSessionAndSaveUserMsg(
+                id, userId, tenantId, request.getSessionId(), request.getMessage());
+        Long userIdLong = parseLongSafe(userId, null);
+        Long tenantIdLong = parseLongSafe(tenantId, null);
 
         // 📡 4. 创建 SSE 发射器（180 秒超时，与 Agent 超时对齐）
         SseEmitter emitter = new SseEmitter(180000L);
+        sseStartCounter.increment();  // 监控：SSE 连接开始
         AtomicBoolean disconnected = new AtomicBoolean(false);
         AtomicBoolean semaphoreReleased = new AtomicBoolean(false);
+        List<String> responseFragments = Collections.synchronizedList(new ArrayList<>());  // 收集完整响应
+        long startTime = System.currentTimeMillis();  // 记录开始时间
 
         // 🔁 5. 统一的 semaphore 释放方法（CAS 防重复）
         Runnable releaseSemaphore = () -> {
@@ -221,8 +211,12 @@ public class AgentScopeSseController {
                 .timeout(Duration.ofSeconds(180),
                         Mono.just(Msg.builder().textContent("请求超时，请稍后重试").build()))
                 .subscribe(
-                        // ✅ onNext: 只处理完成信号
+                        // ✅ onNext: 收集响应并发送 done 信号
                         msg -> {
+                            // 累计完整响应
+                            if (msg != null && msg.getTextContent() != null) {
+                                responseFragments.add(msg.getTextContent());
+                            }
                             if (!disconnected.getAndSet(true)) {
                                 try {
                                     emitter.send(SseEmitter.event().name("done").data(""));
@@ -239,6 +233,8 @@ public class AgentScopeSseController {
                         // ❌ onError: 错误处理
                         error -> {
                             cancelHeartbeat.run();
+                            // 保存错误时的部分响应
+                            saveAssistantMessageAsync(id, userIdLong, tenantIdLong, finalSessionId, String.join("", new ArrayList<>(responseFragments)));
                             if (!disconnected.getAndSet(true)) {
                                 try {
                                     emitter.send(SseEmitter.event().name("error").data(error.getMessage()));
@@ -248,16 +244,53 @@ public class AgentScopeSseController {
                             releaseSemaphore.run();
                             log.error("SSE stream error: agentId={}", id, error);
                         },
-                        // 🎯 onComplete: 正常完成兜底（防 onNext 未触发）
+                        // 🎯 onComplete: 流正常结束，异步保存助手消息
                         () -> {
                             disconnected.set(true);
                             cancelHeartbeat.run();
                             releaseSemaphore.run();
-                            log.debug("SSE onComplete (fallback): agentId={}", id);
+                            // 异步落库（不阻塞 SSE）
+                            long latency = System.currentTimeMillis() - startTime;
+                            requestDurationTimer.record(latency, TimeUnit.MILLISECONDS);  // 监控：请求耗时
+                            saveAssistantMessageAsync(id, userIdLong, tenantIdLong, finalSessionId, String.join("", new ArrayList<>(responseFragments)));
+                            log.debug("SSE onComplete: agentId={}, latency={}ms", id, latency);
                         }
                 );
 
         return emitter;
+    }
+
+    /**
+     * 异步保存助手消息（不阻塞 SSE）
+     */
+    private void saveAssistantMessageAsync(Long agentId, Long userId, Long tenantId, String sessionId, String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        final String sid = sessionId;
+        try {
+            CHAT_SAVE_EXECUTOR.execute(() -> {
+                try {
+                    String messageType = detectMessageType(content);
+                    ChatMessage assistantMsg = ChatMessage.builder()
+                            .sessionId(sid)
+                            .agentId(agentId)
+                            .userId(userId)
+                            .tenantId(tenantId)
+                            .role("assistant")
+                            .content(content)
+                            .messageType(messageType)
+                            .build();
+                    chatMessageMapper.insert(assistantMsg);
+                    log.debug("Assistant message saved: agentId={}, contentLength={}", agentId, content.length());
+                } catch (Exception e) {
+                    saveFailedCounter.increment();  // 监控：消息保存失败
+                    log.error("Failed to save assistant message: agentId={}", agentId, e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("Save task rejected, executor may be full/shutdown: agentId={}", agentId, e);
+        }
     }
 
     // ========== 以下为复用方法（与 GET 版本相同） ==========
@@ -300,7 +333,20 @@ public class AgentScopeSseController {
         return "text";
     }
 
-    private static class StreamingHook implements Hook {
+    /**
+     * 安全解析 Long
+     */
+    private Long parseLongSafe(String str, Long defaultValue) {
+        if (str == null || str.isBlank()) return defaultValue;
+        try {
+            return Long.parseLong(str);
+        } catch (NumberFormatException e) {
+            log.warn("Failed to parse Long from '{}'", str);
+            return defaultValue;
+        }
+    }
+
+    private class StreamingHook implements Hook {  // 非静态，可访问 log
         private final SseEmitter emitter;
         private final AtomicBoolean disconnected;
         private static final Scheduler SSE_WRITE_SCHEDULER = Schedulers.single();

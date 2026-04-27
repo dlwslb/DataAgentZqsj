@@ -28,4 +28,13 @@ public class SseConfig {
                         .setDaemon(true)
                         .build());
     }
+
+    @Bean(name = "chatSaveExecutor", destroyMethod = "shutdown")
+    public ExecutorService chatSaveExecutor() {
+        return Executors.newFixedThreadPool(5,
+                new ThreadFactoryBuilder()
+                        .setNameFormat("chat-save-%d")
+                        .setDaemon(true)
+                        .build());
+    }
 }
