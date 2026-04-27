@@ -1381,15 +1381,25 @@ export default {
 
 /* 🔑 ========== 思考预览专用样式 ========== */
 .thinking-preview .markdown-container {
-  color: #606266;
-  white-space: pre-wrap;
+  color: #303133;  /* 🔑 与最终消息保持一致 */
+  white-space: normal;  /* 🔑 移除 pre-wrap，使用正常换行 */
+  font-size: 14px;  /* 🔑 明确字体大小 */
+  line-height: 1.6;  /* 🔑 与最终消息一致 */
 }
 .thinking-preview .markdown-container h1,
 .thinking-preview .markdown-container h2,
-.thinking-preview .markdown-container h3 {
-  margin: 8px 0 4px 0;
-  font-size: 1.1em;
+.thinking-preview .markdown-container h3,
+.thinking-preview .markdown-container h4,
+.thinking-preview .markdown-container h5,
+.thinking-preview .markdown-container h6 {
+  margin: 16px 0 8px 0;  /* 🔑 与最终消息一致 */
+  font-weight: 600;
+  line-height: 1.4;
 }
+.thinking-preview .markdown-container h1 { font-size: 1.5em; }
+.thinking-preview .markdown-container h2 { font-size: 1.3em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+.thinking-preview .markdown-container h3 { font-size: 1.2em; }
+.thinking-preview .markdown-container h4 { font-size: 1.1em; }
 
 /* ========== 输入区域样式 ========== */
 .input-area { background: white; border-radius: 8px; padding: 16px; border: 1px solid #e8e8e8; }
