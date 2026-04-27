@@ -44,22 +44,27 @@ agentscope:
     enabled: false
 
 sse:
-  timeout-ms: 180000          # SSE 连接超时 3 分钟
-  max-concurrent: 100         # 最大并发 SSE 连接数
+  timeout-ms: 180000          # SSE 连接超时（3分钟）
+  max-concurrent: 100         # 最大并发连接数
 
-rag:
-  timeout-seconds: 2          # RAG 增强超时时间
+heartbeat:
+  interval-seconds: 15        # 心跳间隔（需 < sse.timeout-ms/1000）
 
 agent:
   call:
-    timeout-seconds: 180      # Agent 调用总超时
+    timeout-seconds: 180      # Agent 调用超时
+  hook:
+    flush-delay-ms: 100       # Hook 事件刷新延迟（等待流式事件队列）
+
+rag:
+  timeout-seconds: 2          # RAG 增强超时
 
 request:
-  max-message-length: 4000    # 单条消息最大长度
-
-heartbeat:
-  interval-seconds: 15        # 心跳间隔
+  max-message-length: 4000    # 请求消息最大长度
 
 logging:
+  sse:
+    fragment:
+      sample-rate: 0.1        # 流式片段日志采样率（0.0~1.0）
   level:
     org.springframework.web.servlet.resource.ResourceHttpRequestHandler: ERROR  # 忽略静态资源找不到的警告
