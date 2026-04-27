@@ -197,6 +197,10 @@ export const agentScopeApi = {
     });
   },
 
+  /**
+   * 与 Agent 流式聊天（SSE）- 暂不使用，前端直接用fetch调用
+   */
+
 
   // ==================== 会话管理 ====================
 
@@ -240,6 +244,19 @@ export const agentScopeApi = {
    */
   getMessages: (sessionId: string) => {
     return agentScopeClient.get(`/api/scope/agent/sessions/${sessionId}/messages`);
+  },
+
+  /**
+   * 保存消息（SSE流式聊天后调用）
+   */
+  saveMessage: (message: {
+    sessionId: string;
+    agentId: number;
+    role: 'user' | 'assistant';
+    content: string;
+    messageType?: string;
+  }) => {
+    return agentScopeClient.post('/api/scope/agent/messages', message);
   },
 
   /**

@@ -140,6 +140,10 @@
             <div v-show="!inputControlsCollapsed" class="input-controls-body">
               <div class="switch-group">
                 <div class="switch-item">
+                  <span class="switch-label">SSE回答</span>
+                  <el-switch v-model="sseEnabled" />
+                </div>
+                <div class="switch-item">
                   <span class="switch-label">管理员模式</span>
                   <el-switch
                     v-model="isAdminMode"
@@ -346,6 +350,10 @@
         showSqlResults: false,
         pageSize: 20,
       });
+
+      // SSE回答开关
+      const sseEnabled = ref(false);
+      let eventSource: EventSource | null = null;
 
       const requestOptions = ref({
         userRole: 'user' as 'user' | 'admin',
@@ -615,35 +623,191 @@
         scrollToBottom();
 
         try {
-          const response = await agentScopeApi.chat(
-            agent.value.id,
-            userMessage,
-            currentSession.value.id,
-            requestOptions.value.userRole,
-            requestOptions.value.nl2sqlOnly,
-            requestOptions.value.humanFeedback,
-            false,
-            undefined,
-            resultSetDisplayConfig.value.showSqlResults
-          );
-          const data = response.data?.data || response.data;
+          if (sseEnabled.value) {
+            await sendStreamingMessage(userMessage);
+          } else {
+            await sendNormalMessage(userMessage);
+          }
+        } catch (error: any) {
+          ElMessage.error(error.response?.data?.message || error.message || '发送失败');
+          currentMessages.value.pop();
+        } finally {
+          if (!sseEnabled.value) {
+            sending.value = false;
+            await nextTick();
+            scrollToBottom();
+          }
+        }
+      };
+
+      const sendNormalMessage = async (userMessage: string) => {
+        const response = await agentScopeApi.chat(
+          agent.value.id,
+          userMessage,
+          currentSession.value.id,
+          requestOptions.value.userRole,
+          requestOptions.value.nl2sqlOnly,
+          requestOptions.value.humanFeedback,
+          false,
+          undefined,
+          resultSetDisplayConfig.value.showSqlResults
+        );
+        const data = response.data?.data || response.data;
+        currentMessages.value.push({
+          id: data.messageId,
+          sessionId: currentSession.value.id,
+          agentId: agent.value.id,
+          role: 'assistant',
+          content: data.message,
+          messageType: data.messageType || 'text',
+          createTime: new Date().toLocaleString(),
+        });
+      };
+
+      const sendStreamingMessage = async (userMessage: string) => {
+        return new Promise<void>((resolve, reject) => {
+          const token = localStorage.getItem('token');
+          const userInfoStr = localStorage.getItem('userInfo');
+          const extraHeaders: Record<string, string> = {};
+          if (token) {
+            extraHeaders['Authorization'] = `Bearer ${token}`;
+          }
+          if (userInfoStr) {
+            try {
+              const userInfo = JSON.parse(userInfoStr);
+              if (userInfo.id) {
+                extraHeaders['User-ID'] = String(userInfo.id);
+              }
+              if (userInfo.tenantId) {
+                extraHeaders['Tenant-ID'] = String(userInfo.tenantId);
+              }
+            } catch (e) {
+              console.error('Failed to parse user info:', e);
+            }
+          }
+
+          const body = JSON.stringify({
+            message: userMessage,
+            sessionId: currentSession.value.id,
+            userRole: requestOptions.value.userRole,
+            nl2sqlOnly: requestOptions.value.nl2sqlOnly,
+            humanFeedback: requestOptions.value.humanFeedback,
+            rejectedPlan: false,
+            humanFeedbackContent: undefined,
+            showSqlResults: resultSetDisplayConfig.value.showSqlResults,
+          });
+
+          const assistantMsgIndex = currentMessages.value.length;
           currentMessages.value.push({
-            id: data.messageId,
+            id: Date.now() + 1,
             sessionId: currentSession.value.id,
             agentId: agent.value.id,
             role: 'assistant',
-            content: data.message,
-            messageType: data.messageType || 'text',
+            content: '',
+            messageType: 'text',
             createTime: new Date().toLocaleString(),
           });
-        } catch (error: any) {
-          ElMessage.error(error.response?.data?.message || '发送失败');
-          currentMessages.value.pop();
-        } finally {
-          sending.value = false;
-          await nextTick();
-          scrollToBottom();
-        }
+
+          const baseUrl = import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064';
+          fetch(`${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...extraHeaders,
+            },
+            body,
+          }).then(async response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const reader = response.body?.getReader();
+            if (!reader) {
+              throw new Error('ReadableStream not supported');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let eventType = 'message';
+
+            const read = () => {
+              reader.read().then(({ done, value }) => {
+                if (done) {
+                  sending.value = false;
+                  nextTick().then(() => scrollToBottom());
+                  resolve();
+                  return;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                  if (!line.trim()) {
+                    eventType = 'message';
+                    continue;
+                  }
+                  if (line.startsWith('event:')) {
+                    eventType = line.substring(6).trim();
+                    continue;
+                  }
+                  if (line.startsWith('data:')) {
+                    const dataStr = line.substring(5).trim();
+                    if (eventType === 'reasoning' || eventType === 'summary') {
+                      currentMessages.value[assistantMsgIndex].content += dataStr;
+                      nextTick().then(() => scrollToBottom());
+                    } else if (eventType === 'acting') {
+                      currentMessages.value[assistantMsgIndex].content += '\n' + dataStr + '\n';
+                      nextTick().then(() => scrollToBottom());
+                    } else if (eventType === 'message') {
+                      try {
+                        const data = JSON.parse(dataStr);
+                        if (data.content) {
+                          currentMessages.value[assistantMsgIndex].content = data.content;
+                          currentMessages.value[assistantMsgIndex].messageType = data.messageType || 'text';
+                          currentMessages.value[assistantMsgIndex].id = data.messageId;
+                          nextTick().then(() => scrollToBottom());
+                        }
+                      } catch (e) {
+                        console.error('Failed to parse message event:', e);
+                      }
+                    } else if (eventType === 'done') {
+                      // 保存助手消息到后端
+                      const assistantContent = currentMessages.value[assistantMsgIndex]?.content || '';
+                      const assistantMsgType = currentMessages.value[assistantMsgIndex]?.messageType || 'text';
+                      if (assistantContent) {
+                        agentScopeApi.saveMessage({
+                          sessionId: currentSession.value.id,
+                          agentId: agent.value.id,
+                          role: 'assistant',
+                          content: assistantContent,
+                          messageType: assistantMsgType,
+                        }).catch(err => console.error('Save assistant message failed:', err));
+                      }
+                      sending.value = false;
+                      nextTick().then(() => scrollToBottom());
+                      resolve();
+                      return;
+                    } else if (eventType === 'error') {
+                      sending.value = false;
+                      reject(new Error(dataStr));
+                      return;
+                    }
+                    eventType = 'message';
+                  }
+                }
+                read();
+              }).catch(error => {
+                sending.value = false;
+                reject(error);
+              });
+            };
+            read();
+          }).catch(error => {
+            sending.value = false;
+            reject(error);
+          });
+        });
       };
 
       // 停止流式响应
@@ -797,6 +961,7 @@
         resultSetDisplayConfig,
         requestOptions,
         isAdminMode,
+        sseEnabled,
         handleNl2sqlOnlyChange,
         stopStreaming,
         handleHumanFeedback,

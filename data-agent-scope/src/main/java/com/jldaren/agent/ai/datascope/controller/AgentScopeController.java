@@ -309,6 +309,32 @@ public class AgentScopeController {
     }
 
     /**
+     * 保存消息
+     */
+    @PostMapping("/messages")
+    @Operation(summary = "保存消息", description = "保存聊天消息（用于SSE流式聊天后的消息持久化）")
+    public ApiResponse<ChatMessage> saveMessage(
+            @RequestBody ChatMessage message,
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader,
+            @RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
+        if (message.getSessionId() == null || message.getSessionId().isBlank()) {
+            return ApiResponse.error("sessionId is required");
+        }
+        if (message.getContent() == null) {
+            return ApiResponse.error("content is required");
+        }
+        if (message.getRole() == null) {
+            message.setRole("user");
+        }
+        if (message.getMessageType() == null) {
+            message.setMessageType("text");
+        }
+        chatMessageMapper.insert(message);
+        chatSessionMapper.updateTime(message.getSessionId());
+        return ApiResponse.success("保存成功", message);
+    }
+
+    /**
      * 与 Agent 聊天（支持会话）
      */
     @PostMapping("/{id}/chat")
