@@ -28,6 +28,9 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+
+import java.util.Map;
 
 /**
  * 工具返回直出 Hook - 防止 ReActAgent 二次总结
@@ -50,12 +53,39 @@ public class DirectResponseHook implements Hook {
             if (event instanceof PostActingEvent postActingEvent) {
                 String toolName = postActingEvent.getToolUse().getName();
                 log.info("🔍 [DirectResponse] PostActingEvent触发: toolName={}", toolName);
-                
+
+                Map<String, Object> toolArgs = postActingEvent.getToolUse().getInput();
+                Object skipReport = toolArgs != null ? toolArgs.get("skipReport") : null;
+
                 if ("get_zqsj_agent".equals(toolName)) {
                     // 从 ToolResultBlock.output 中提取实际文本
                     String resultText = extractToolResultText(postActingEvent);
                     
-                    // 用纯文本 Msg 替换 toolResultMsg，确保 getTextContent() 可用
+                    boolean shouldStop = true; // 默认终止循环
+                    
+                    // skipReport=true：提取 resultSet 并让 ReAct 继续处理
+                    if (Boolean.parseBoolean(String.valueOf(skipReport))) {
+                        try {
+                            // 从 "SQL查询结果：" 后提取 JSON
+                            String jsonText = resultText;
+                            int sqlResultIndex = resultText.indexOf("SQL查询结果：");
+                            if (sqlResultIndex >= 0) {
+                                jsonText = resultText.substring(sqlResultIndex + "SQL查询结果：".length()).trim();
+                            }
+                            
+                            JsonNode rootNode = OBJECT_MAPPER.readTree(jsonText);
+                            JsonNode resultSetNode = rootNode.get("resultSet");
+                            if (resultSetNode != null) {
+                                resultText = OBJECT_MAPPER.writeValueAsString(resultSetNode);
+                                log.info("📊 [DirectResponse] 已提取 resultSet 数据，长度={}", resultText.length());
+                                shouldStop = false; // 不终止，让 ReAct 继续处理
+                            }
+                        } catch (Exception e) {
+                            log.warn("⚠️ [DirectResponse] 提取 resultSet 失败: {}", e.getMessage(), e);
+                        }
+                    }
+                    
+                    // 用纯文本 Msg 替换 toolResultMsg
                     Msg directMsg = Msg.builder()
                             .name(postActingEvent.getAgent().getName())
                             .role(MsgRole.ASSISTANT)
@@ -63,9 +93,12 @@ public class DirectResponseHook implements Hook {
                             .build();
                     postActingEvent.setToolResultMsg(directMsg);
                     
-                    log.info("🚀 [DirectResponse] get_zqsj_agent 返回完成，文本长度={}，新Msg.role={}，请求终止循环，直接输出结果",
-                            resultText != null ? resultText.length() : 0, directMsg.getRole());
-                    postActingEvent.stopAgent();
+                    if (shouldStop) {
+                        log.info("🚀 [DirectResponse] get_zqsj_agent 返回完成，终止循环，直接输出结果");
+                        postActingEvent.stopAgent();
+                    } else {
+                        log.debug("🔄 [DirectResponse] get_zqsj_agent 返回，让 ReAct 继续处理截取后的结果");
+                    }
                 }
             }
             return event;

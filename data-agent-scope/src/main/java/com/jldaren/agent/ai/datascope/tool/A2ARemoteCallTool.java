@@ -24,7 +24,6 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
-
 import jakarta.annotation.PostConstruct;
 import java.util.Map;
 
@@ -59,16 +58,19 @@ public class A2ARemoteCallTool {
         log.info("✅Remote agent HTTP client initialized, url={}, agentId={}", remoteAgentUrl, remoteAgentId);
     }
 
-    @Tool(name = "get_zqsj_agent", description = "商机查询智能体：当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。")
+    @Tool(name = "get_zqsj_agent", description = "商机查询智能体：当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。" +
+            "默认设置 skipReport=true；如果需要完整分析报告，设置 skipReport=false。")
     public String callRemoteAgent(
-            @ToolParam(name = "question", description = "问题内容", required = true) String question) {
+            @ToolParam(name = "question", description = "问题内容", required = true) String question,
+            @ToolParam(name = "skipReport", description = "是否跳过报告生成", required = false) Boolean skipReport) {
 
         // 解析消息中的参数标记 [OPTIONS: userRole=admin, showSqlResults=true]
         String actualQuestion = question;
         String userRole = "user";
         Boolean showSqlResults = false;
         Boolean nl2sqlOnly = false;
-        
+        Boolean optionsSkipReport = null; // 从 OPTIONS 标记中解析的 skipReport
+
         int optionsStart = question.lastIndexOf("[OPTIONS:");
         if (optionsStart >= 0) {
             int optionsEnd = question.indexOf("]", optionsStart);
@@ -86,14 +88,19 @@ public class A2ARemoteCallTool {
                             case "userRole" -> userRole = value;
                             case "showSqlResults" -> showSqlResults = "true".equalsIgnoreCase(value);
                             case "nl2sqlOnly" -> nl2sqlOnly = "true".equalsIgnoreCase(value);
+                            case "skipReport" -> optionsSkipReport = "true".equalsIgnoreCase(value);
                         }
                     }
                 }
             }
         }
 
-        log.info("🔧 [远程智能体调用] get_zqsj_agent 被调用, question={}, userRole={}, showSqlResults={}", 
-                actualQuestion, userRole, showSqlResults);
+        // 优先级：@ToolParam 参数 > OPTIONS 标记 > 默认值(true)
+        Boolean finalSkipReport = skipReport != null ? skipReport : 
+                                  (optionsSkipReport != null ? optionsSkipReport : true);
+
+        log.info("🔧 [远程智能体调用] get_zqsj_agent 被调用, question={}, userRole={}, showSqlResults={}, skipReport={}",
+                actualQuestion, userRole, showSqlResults, finalSkipReport);
 
         // 保存为 final 变量供 lambda 使用
         final String finalQuestion = actualQuestion;
@@ -111,6 +118,7 @@ public class A2ARemoteCallTool {
                             .queryParam("userRole", finalUserRole)
                             .queryParam("nl2sqlOnly", finalNl2sqlOnly)
                             .queryParam("showSqlResults", finalShowSqlResults)
+                            .queryParam("skipReport", finalSkipReport)
                             .build())
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
