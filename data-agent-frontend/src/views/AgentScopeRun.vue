@@ -104,8 +104,16 @@
                 </div>
                 <!-- 普通文本/Markdown 消息 -->
                 <div v-else class="message-text">
-                  <!-- 🔑 关键修复：使用 div 而不是 span，因为 Markdown 会生成块级元素 -->
+                  <!-- 🔑 ECharts 图表：使用 MarkdownAgentContainer 组件 -->
+                  <MarkdownAgentContainer
+                      v-if="msg.messageType === 'markdown' && msg.content.includes('```echarts')"
+                      class="md-body"
+                      :content="stripReportPrefix(msg.content)"
+                      :options="options"
+                  />
+                  <!-- 🔑 普通 Markdown：使用 v-html -->
                   <div
+                      v-else
                       :class="{ 'markdown-container': msg.messageType === 'markdown' || msg.messageType === 'markdown-report' }"
                       v-html="formatMessage(msg.content, msg.messageType)"
                   ></div>
@@ -903,7 +911,7 @@ export default {
                       // ─────────────────────────────────────
                       // ✅ 完整消息：创建并推入消息列表
                   // ─────────────────────────────────────
-                  else if (eventType === 'message' && content) {
+                  else if ((eventType === 'message' || eventType === 'final') && content) {
                     // 🔑 自动修正 messageType：后端返回 'text' 时自动检测是否含 Markdown
                     let finalMessageType = messageType;
                     if (finalMessageType === 'text') {

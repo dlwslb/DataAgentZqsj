@@ -50,6 +50,7 @@ public class GraphController {
 			@RequestParam(value = "humanFeedbackContent", required = false) String humanFeedbackContent,
 			@RequestParam(value = "rejectedPlan", required = false) boolean rejectedPlan,
 			@RequestParam(value = "nl2sqlOnly", required = false) boolean nl2sqlOnly,
+			@RequestParam(value = "skipReport", required = false) boolean skipReport,
 			@RequestParam(value = "userRole", required = false, defaultValue = "admin") String userRole,
 			@RequestParam(value = "userId", required = false) Long userId,
 			@RequestParam(value = "tenantId", required = false) Long tenantId,
@@ -69,6 +70,7 @@ public class GraphController {
 			.humanFeedbackContent(humanFeedbackContent)
 			.rejectedPlan(rejectedPlan)
 			.nl2sqlOnly(nl2sqlOnly)
+			.skipReport(skipReport)
 			.userRole(userRole)
 			.userId(userId)
 			.tenantId(tenantId)

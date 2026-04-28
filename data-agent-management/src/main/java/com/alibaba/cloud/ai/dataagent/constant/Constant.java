@@ -147,6 +147,9 @@ public final class Constant {
 	// nl2sql接口预留相关
 	public static final String IS_ONLY_NL2SQL = "IS_ONLY_NL2SQL";
 
+	// 跳过报告生成（只返回SQL执行结果）
+	public static final String SKIP_REPORT = "SKIP_REPORT";
+
 	// 人类复核相关
 	public static final String HUMAN_REVIEW_ENABLED = "HUMAN_REVIEW_ENABLED";
 

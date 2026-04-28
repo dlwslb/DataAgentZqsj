@@ -86,17 +86,26 @@ public class PlanExecutorNode implements NodeAction {
 		List<ExecutionStep> executionPlan = plan.getExecutionPlan();
 
 		boolean isOnlyNl2Sql = state.value(IS_ONLY_NL2SQL, false);
+		boolean skipReport = state.value(SKIP_REPORT, false);
 
 		// Check if the plan is completed
 		if (currentStep > executionPlan.size()) {
 			log.info("Plan completed, current step: {}, total steps: {}", currentStep, executionPlan.size());
-			return Map.of(PLAN_CURRENT_STEP, 1, PLAN_NEXT_NODE, isOnlyNl2Sql ? StateGraph.END : REPORT_GENERATOR_NODE,
+			// 如果仅NL2SQL或跳过报告，则直接结束；否则生成报告
+			String nextNode = isOnlyNl2Sql || skipReport ? StateGraph.END : REPORT_GENERATOR_NODE;
+			return Map.of(PLAN_CURRENT_STEP, 1, PLAN_NEXT_NODE, nextNode,
 					PLAN_VALIDATION_STATUS, true);
 		}
 
 		// Get current step and determine next node
 		ExecutionStep executionStep = executionPlan.get(currentStep - 1);
 		String toolToUse = executionStep.getToolToUse();
+
+		// 如果跳过报告且下一个节点是报告生成节点，则直接结束
+		if (skipReport && REPORT_GENERATOR_NODE.equals(toolToUse)) {
+			log.info("Skip report generation, ending workflow");
+			return Map.of(PLAN_CURRENT_STEP, 1, PLAN_NEXT_NODE, StateGraph.END, PLAN_VALIDATION_STATUS, true);
+		}
 
 		return determineNextNode(toolToUse);
 	}

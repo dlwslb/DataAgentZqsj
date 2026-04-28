@@ -22,6 +22,7 @@ export interface GraphRequest {
   humanFeedbackContent?: string;
   rejectedPlan: boolean;
   nl2sqlOnly: boolean;
+  skipReport?: boolean; // Skip report generation, only return SQL execution results
   userRole?: 'admin' | 'user'; // User role: admin shows full process, user shows only results
 }
 
@@ -72,6 +73,9 @@ class GraphService {
     params.append('humanFeedback', request.humanFeedback.toString());
     params.append('rejectedPlan', request.rejectedPlan.toString());
     params.append('nl2sqlOnly', request.nl2sqlOnly.toString());
+    if (request.skipReport !== undefined) {
+      params.append('skipReport', request.skipReport.toString());
+    }
     if (request.userRole) {
       params.append('userRole', request.userRole);
     }

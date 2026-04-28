@@ -41,6 +41,11 @@ public class GraphRequest {
 	private boolean nl2sqlOnly;
 
 	/**
+	 * Skip report generation, only return SQL execution results
+	 */
+	private boolean skipReport;
+
+	/**
 	 * User role: admin shows full analysis process, user shows only results
 	 */
 	@Builder.Default

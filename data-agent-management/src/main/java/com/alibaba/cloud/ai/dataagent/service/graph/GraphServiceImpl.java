@@ -120,6 +120,7 @@ public class GraphServiceImpl implements GraphService {
 		String agentId = graphRequest.getAgentId();
 		String threadId = graphRequest.getThreadId();
 		boolean nl2sqlOnly = graphRequest.isNl2sqlOnly();
+		boolean skipReport = graphRequest.isSkipReport();
 		boolean humanReviewEnabled = graphRequest.isHumanFeedback() & !(nl2sqlOnly);
 		if (!StringUtils.hasText(threadId) || !StringUtils.hasText(agentId) || !StringUtils.hasText(query)) {
 			throw new IllegalArgumentException("Invalid arguments");
@@ -140,7 +141,7 @@ public class GraphServiceImpl implements GraphService {
 		String multiTurnContext = multiTurnContextManager.buildContext(threadId);
 		multiTurnContextManager.beginTurn(threadId, query);
 		Flux<NodeOutput> nodeOutputFlux = compiledGraph.stream(
-				Map.of(IS_ONLY_NL2SQL, nl2sqlOnly, INPUT_KEY, query, AGENT_ID, agentId, HUMAN_REVIEW_ENABLED,
+				Map.of(IS_ONLY_NL2SQL, nl2sqlOnly, SKIP_REPORT, skipReport, INPUT_KEY, query, AGENT_ID, agentId, HUMAN_REVIEW_ENABLED,
 						humanReviewEnabled, MULTI_TURN_CONTEXT, multiTurnContext, TRACE_THREAD_ID, threadId,
 						USER_ROLE, graphRequest.getUserRole()),
 				RunnableConfig.builder().threadId(threadId).build());

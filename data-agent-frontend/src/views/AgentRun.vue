@@ -285,6 +285,18 @@
                   </el-tooltip>
                 </div>
                 <div class="switch-item">
+                  <span class="switch-label">跳过报告</span>
+                  <el-tooltip
+                    content="启用后只返回SQL执行结果，不生成分析报告"
+                    placement="top"
+                  >
+                    <el-switch
+                      v-model="requestOptions.skipReport"
+                      :disabled="isStreaming || showHumanFeedback"
+                    />
+                  </el-tooltip>
+                </div>
+                <div class="switch-item">
                   <span class="switch-label">每页数量</span>
                   <el-select
                     v-model="resultSetDisplayConfig.pageSize"
@@ -543,6 +555,7 @@
         userRole: 'user' as 'user' | 'admin', // 用户模式，默认普通用户
         humanFeedback: false,
         nl2sqlOnly: false,
+        skipReport: false, // 跳过报告生成，只返回SQL执行结果
         reportFormat: 'markdown' as 'markdown' | 'html', // 'markdown' | 'html'，控制报告展示方式
       });
       const showReportFullscreen = ref(false);
@@ -646,6 +659,7 @@
             query: userInput.value,
             humanFeedback: requestOptions.value.humanFeedback,
             nl2sqlOnly: requestOptions.value.nl2sqlOnly,
+            skipReport: requestOptions.value.skipReport,
             rejectedPlan: false,
             humanFeedbackContent: null,
             threadId: sessionState.lastRequest?.threadId || null,
@@ -685,18 +699,16 @@
             if (node.length > 0 && node[0].textType === TextType.RESULT_SET) {
               try {
                 const resultData: ResultData = JSON.parse(node[0].text);
-                // 如果type不是table，保存一个特殊的标记，以便在历史消息中能够正确显示
-                if (resultData.displayStyle?.type && resultData.displayStyle?.type !== 'table') {
-                  const aiMessage: ChatMessage = {
-                    sessionId,
-                    role: 'assistant',
-                    content: node[0].text, // 保存原始JSON数据
-                    messageType: 'result-set', // 使用特殊的messageType
-                  };
-                  return ChatService.saveMessage(sessionId, aiMessage).catch(error => {
-                    console.error('保存AI消息失败:', error);
-                  });
-                }
+                // ✅ 修复：所有类型的 SQL 结果都保存为 'result-set' 类型，确保历史消息中正确显示
+                const aiMessage: ChatMessage = {
+                  sessionId,
+                  role: 'assistant',
+                  content: node[0].text, // 保存原始JSON数据
+                  messageType: 'result-set', // 统一使用 result-set 类型
+                };
+                return ChatService.saveMessage(sessionId, aiMessage).catch(error => {
+                  console.error('保存AI消息失败:', error);
+                });
               } catch (error) {
                 console.error('解析结果集JSON失败:', error);
               }
@@ -873,6 +885,12 @@
               }
             },
             async () => {
+              // ✅ 修复：在保存报告之前，先保存所有待处理的节点（包括 SQL 结果）
+              if (currentBlockIndex >= 0 && sessionState.nodeBlocks[currentBlockIndex]) {
+                const savePromise = saveNodeMessage(sessionState.nodeBlocks[currentBlockIndex]);
+                pendingSavePromises.push(savePromise);
+              }
+
               // 等待所有待处理的保存操作完成
               if (pendingSavePromises.length > 0) {
                 await Promise.all(pendingSavePromises);
