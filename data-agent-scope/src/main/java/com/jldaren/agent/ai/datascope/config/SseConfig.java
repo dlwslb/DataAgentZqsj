@@ -29,7 +29,7 @@ public class SseConfig {
     public ThreadPoolExecutor ragExecutor() {
         return new ThreadPoolExecutor(
                 8,                      // core: 按 2*CPU 核数预估
-                16,                     // max: 突发流量时弹性扩容
+                32,                     // max: 突发流量时弹性扩容
                 60L, TimeUnit.SECONDS,  // 空闲线程60秒回收
                 new ArrayBlockingQueue<>(500),  // 🔑 有界队列！防内存溢出
                 new ThreadFactoryBuilder().setNameFormat("rag-%d").setDaemon(true).build(),
