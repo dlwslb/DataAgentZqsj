@@ -115,7 +115,7 @@
             </div>
 
             <!-- ✅ 思考中状态：只在 发送中 && 未收到最终结果 时显示 -->
-            <div v-if="sending && sseEnabled && !hasFinalMessage" class="message assistant thinking-state">
+            <div v-if="sending && !hasFinalMessage" class="message assistant thinking-state">
               <div class="message-avatar thinking-avatar">
                 <el-avatar :size="32" class="avatar-pulse">A</el-avatar>
               </div>
