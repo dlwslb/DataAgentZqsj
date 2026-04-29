@@ -192,10 +192,18 @@ public class AgentScopeController {
      */
     @GetMapping("/{agentId}/sessions")
     @Operation(summary = "获取会话列表", description = "获取Agent的会话列表")
-    public ApiResponse<List<ChatSession>> getSessions(@PathVariable Long agentId) {
+    public ApiResponse<List<ChatSession>> getSessions(
+            @PathVariable Long agentId,
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader) {
         checkAgentExists(agentId);
-        List<ChatSession> sessions = chatSessionMapper.findByAgentId(agentId);
-        return ApiResponse.success("获取会话列表成功", sessions);
+        // 根据 userId 过滤会话，确保用户只能看到自己的会话
+        if (userIdHeader != null && !userIdHeader.isEmpty()) {
+            Long userId = Long.parseLong(userIdHeader);
+            List<ChatSession> sessions = chatSessionMapper.findByAgentIdAndUserId(agentId, userId);
+            return ApiResponse.success("获取会话列表成功", sessions);
+        }
+        // 如果没有 User-ID，返回空列表（安全策略）
+        return ApiResponse.success("获取会话列表成功", List.of());
     }
 
     /**
@@ -299,10 +307,16 @@ public class AgentScopeController {
      */
     @GetMapping("/sessions/{sessionId}/messages")
     @Operation(summary = "获取消息列表", description = "获取会话的消息列表")
-    public ApiResponse<List<ChatMessage>> getMessages(@PathVariable String sessionId) {
+    public ApiResponse<List<ChatMessage>> getMessages(
+            @PathVariable String sessionId,
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader) {
         ChatSession session = chatSessionMapper.findById(sessionId);
         if (session == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + sessionId);
+        }
+        // 用户隔离：验证当前用户是否有权访问该会话
+        if (userIdHeader != null && !userIdHeader.equals(String.valueOf(session.getUserId()))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权限访问该会话");
         }
         List<ChatMessage> messages = chatMessageMapper.findBySessionId(sessionId);
         return ApiResponse.success("获取消息列表成功", messages);
