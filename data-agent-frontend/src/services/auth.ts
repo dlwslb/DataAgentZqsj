@@ -15,6 +15,7 @@
  */
 
 import { apiClient, ApiResponse } from './common';
+import { sm3 } from 'sm-crypto';
 
 export interface LoginRequest {
   username: string;
@@ -38,9 +39,23 @@ export interface LoginResponse {
 }
 
 class AuthService {
+  /**
+   * 使用SM3对密码进行前端加密
+   * 符合中国国家密码标准GM/T 0004-2012
+   */
+  private encryptPassword(password: string): string {
+    return sm3(password);
+  }
+
   async login(request: LoginRequest): Promise<LoginResponse | null> {
     try {
-      const response = await apiClient.post('/api/auth/login', request);
+      // 使用SM3对密码进行前端加密（第一次加密）
+      const encryptedPassword = this.encryptPassword(request.password);
+      
+      const response = await apiClient.post('/api/auth/login', {
+        username: request.username,
+        password: encryptedPassword,
+      });
       if (response.data.code === 0 && response.data.data) {
         const loginData = response.data.data;
         localStorage.setItem('accessToken', loginData.accessToken);
@@ -48,10 +63,24 @@ class AuthService {
         localStorage.setItem('userInfo', JSON.stringify(loginData.userInfo));
         return loginData;
       }
-      throw new Error(response.data.message || '登录失败');
+      // code不为0时的错误信息
+      throw new Error(response.data.message || '登录失败，请检查用户名和密码');
     } catch (error: any) {
       console.error('Login error:', error);
-      throw error;
+      // 从各种可能的来源提取错误信息
+      let errorMessage = '登录失败，请检查用户名和密码';
+      
+      if (error.response?.data?.message) {
+        // axios错误响应中的message
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.message) {
+        // 可能的嵌套结构
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 

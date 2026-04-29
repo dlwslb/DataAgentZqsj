@@ -22,8 +22,7 @@ import com.alibaba.cloud.ai.dataagent.mapper.UserMapper;
 import com.alibaba.cloud.ai.dataagent.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import com.alibaba.cloud.ai.dataagent.util.Sm3PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,10 +37,9 @@ public class AuthService {
 
 	private final JwtUtil jwtUtil;
 
-	private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-
 	/**
 	 * User login
+	 * 前端传来的password已经是SM3加密后的值
 	 */
 	public LoginResponse login(LoginRequest request) {
 		User user = userMapper.selectByUsername(request.getUsername());
@@ -50,7 +48,8 @@ public class AuthService {
 			throw new RuntimeException("用户名或密码错误");
 		}
 
-		if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+		// 使用SM3验证密码
+		if (!Sm3PasswordEncoder.matches(request.getPassword(), user.getPassword())) {
 			throw new RuntimeException("用户名或密码错误");
 		}
 

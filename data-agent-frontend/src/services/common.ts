@@ -86,6 +86,10 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    // 登录接口不处理401跳转，避免登录失败时页面闪烁
+    if (originalRequest.url?.includes('/api/auth/login')) {
+      return Promise.reject(error);
+    }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {

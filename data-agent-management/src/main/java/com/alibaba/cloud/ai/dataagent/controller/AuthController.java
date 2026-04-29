@@ -6,7 +6,7 @@ import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.service.AuthService;
 import com.alibaba.cloud.ai.dataagent.service.TokenBlacklistService;
 import com.alibaba.cloud.ai.dataagent.util.JwtUtil;
-import com.alibaba.cloud.ai.dataagent.vo.ApiResponse;
+import com.alibaba.cloud.ai.dataagent.util.Sm3PasswordEncoder;
 import io.jsonwebtoken.Claims;
 import jakarta.validation.Valid;
 import lombok.Data;
@@ -14,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -128,5 +127,40 @@ public class AuthController {
 	@Data
 	static class RefreshTokenRequest {
 		private String refreshToken;
+	}
+
+	/**
+	 * 一键生成完整密码哈希（用于数据迁移）
+	 * 访问：GET /api/auth/generate-complete-password?password=你的密码
+	 */
+	@GetMapping("/generate-complete-password")
+	public ResponseEntity<Map<String, Object>> generateCompletePassword(@RequestParam String password) {
+		try {
+			// 第一步：前端SM3哈希
+			String frontendHash = Sm3PasswordEncoder.sm3Hash(password);
+			// 第二步：后端加盐哈希
+			String backendHash = Sm3PasswordEncoder.encode(frontendHash);
+			// 验证
+			boolean matches = Sm3PasswordEncoder.matches(frontendHash, backendHash);
+			
+			Map<String, Object> data = new HashMap<>();
+			data.put("originalPassword", password);
+			data.put("frontendSm3Hash", frontendHash);
+			data.put("backendStoredHash", backendHash);
+			data.put("verificationResult", matches);
+			data.put("sqlStatement", "UPDATE `system_users` SET `password` = '" + backendHash + "' WHERE `username` = '你的用户名';");
+			
+			return ResponseEntity.ok(Map.of(
+					"code", 0,
+					"message", "密码生成成功",
+					"data", data
+			));
+		} catch (Exception e) {
+			log.error("Generate password failed: {}", e.getMessage());
+			return ResponseEntity.status(500).body(Map.of(
+					"code", 500,
+					"message", "密码生成失败: " + e.getMessage()
+			));
+		}
 	}
 }
