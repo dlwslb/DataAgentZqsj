@@ -42,8 +42,8 @@ public class A2ARemoteCallTool {
     @Value("${agentscope.a2a.remote-agent-id:5}")
     private String remoteAgentId;
 
-    @Value("${agentscope.a2a.api-key:}")
-    private String apiKey;
+    @Value("${jwt.internal-api-key:DataAgentInternalKey2026}")
+    private String internalApiKey;
 
     private WebClient webClient;
 
@@ -125,7 +125,7 @@ public class A2ARemoteCallTool {
                             .queryParam("showSqlResults", finalShowSqlResults)
                             .queryParam("skipReport", finalSkipReport)
                             .build())
-                    .header("X-Internal-Api-Key", apiKey)
+                    .header("X-Internal-Api-Key", internalApiKey)
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
                     .filter(sse -> sse.data() != null)
