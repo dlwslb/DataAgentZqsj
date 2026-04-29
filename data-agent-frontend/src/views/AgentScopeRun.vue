@@ -150,7 +150,7 @@
 
         <!-- 输入区域 -->
         <div class="input-area" v-if="currentSession">
-          <div class="input-controls">
+          <div class="input-controls" v-if="isSuperAdmin">
             <div
                 class="input-controls-header"
                 @click="inputControlsCollapsed = !inputControlsCollapsed"
@@ -384,6 +384,20 @@ export default {
 
     // SSE 回答开关
     const sseEnabled = ref(false);
+    
+    // 是否为超级管理员
+    const isSuperAdmin = ref(false);
+    const checkSuperAdmin = () => {
+      const userInfoStr = localStorage.getItem('userInfo');
+      if (userInfoStr) {
+        try {
+          const userInfo = JSON.parse(userInfoStr);
+          isSuperAdmin.value = userInfo?.role === 'super_admin';
+        } catch (e) {
+          isSuperAdmin.value = false;
+        }
+      }
+    };
 
     // 状态控制
     const thinkingPreview = ref('');
@@ -1096,6 +1110,7 @@ export default {
     onMounted(async () => {
       // 🔑 初始化 marked 自定义渲染器
       initMarkedRenderer();
+      checkSuperAdmin();
       await loadAgent();
       await loadSessions();
       if (sessions.value.length > 0) {
@@ -1113,7 +1128,7 @@ export default {
       sendMessage, handleEnterKey, downloadMarkdownReport, downloadHtmlReport,
       openReportFullscreen, closeReportFullscreen, inputControlsCollapsed, autoScroll,
       showHumanFeedback, lastRequest, resultSetDisplayConfig, requestOptions,
-      isAdminMode, sseEnabled, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
+      isAdminMode, sseEnabled, isSuperAdmin, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
       detectMessageType, preprocessStreamingContent,
       thinkingPreview,
       hasFinalMessage,
