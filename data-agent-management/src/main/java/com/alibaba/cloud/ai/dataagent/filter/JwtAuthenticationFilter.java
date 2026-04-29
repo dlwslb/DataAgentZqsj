@@ -34,7 +34,7 @@ public class JwtAuthenticationFilter implements WebFilter {
             "/api/auth/refresh-token",
             "/api/system/config",
             "/api/model-config/check-ready",
-            "/api/auth/generate-complete-password",
+            //"/api/auth/generate-complete-password",
             "/actuator/health"
     );
 
