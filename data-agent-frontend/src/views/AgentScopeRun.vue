@@ -383,7 +383,7 @@ export default {
     });
 
     // SSE 回答开关
-    const sseEnabled = ref(false);
+    const sseEnabled = ref(true);
     
     // 是否为超级管理员
     const isSuperAdmin = ref(false);
