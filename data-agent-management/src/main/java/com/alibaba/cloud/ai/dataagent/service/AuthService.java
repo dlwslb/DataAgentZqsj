@@ -25,6 +25,8 @@ import lombok.extern.slf4j.Slf4j;
 import com.alibaba.cloud.ai.dataagent.util.Sm3PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 /**
  * Authentication Service
  */
@@ -55,6 +57,11 @@ public class AuthService {
 
 		if (user.getStatus() != 1) {
 			throw new RuntimeException("账户已被禁用");
+		}
+
+		// 更新登录信息
+		if (request.getLoginIp() != null && !request.getLoginIp().isEmpty()) {
+			userMapper.updateLoginInfo(user.getId(), request.getLoginIp(), LocalDateTime.now());
 		}
 
 		String token = jwtUtil.generateAccessToken(user.getId(), user.getUsername());

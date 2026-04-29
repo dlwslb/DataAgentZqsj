@@ -36,6 +36,10 @@
               <i class="bi bi-gear"></i>
               <span>模型配置</span>
             </div>
+            <div class="nav-item" :class="{ active: isUserManagementPage() }" @click="goToUserManagement" v-if="isAdmin">
+              <i class="bi bi-people"></i>
+              <span>用户管理</span>
+            </div>
           </nav>
         </div>
 
@@ -81,11 +85,12 @@
       const router = useRouter();
       const systemName = ref('Spring AI Alibaba Data Agent');
       const userInfo = ref(null);
+      const isAdmin = ref(false);
 
       onMounted(async () => {
         systemName.value = await systemConfigService.getSystemName();
-        // 获取用户信息
         userInfo.value = authService.getUserInfo();
+        isAdmin.value = userInfo.value?.role === 'super_admin';
       });
 
       // 导航方法
@@ -99,6 +104,10 @@
 
       const goToModelConfig = () => {
         router.push('/model-config');
+      };
+
+      const goToUserManagement = () => {
+        router.push('/users');
       };
 
       const isAgentPage = () => {
@@ -121,6 +130,10 @@
 
       const isModelConfigPage = () => {
         return router.currentRoute.value.name === 'ModelConfig';
+      };
+
+      const isUserManagementPage = () => {
+        return router.currentRoute.value.name === 'UserManagement';
       };
 
       // 处理下拉菜单命令
@@ -155,12 +168,15 @@
       return {
         systemName,
         userInfo,
+        isAdmin,
         goToAgentList,
         goToAgentScopeList,
         goToModelConfig,
+        goToUserManagement,
         isAgentPage,
         isAgentScopePage,
         isModelConfigPage,
+        isUserManagementPage,
         handleCommand,
         UserFilled,
       };

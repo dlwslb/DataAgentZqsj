@@ -121,6 +121,18 @@ const routes = [
     },
   },
 
+  // 用户管理模块
+  {
+    path: '/users',
+    name: 'UserManagement',
+    component: () => import('@/views/UserManagement.vue'),
+    meta: {
+      title: '用户管理',
+      module: 'admin',
+      roles: ['admin'],
+    },
+  },
+
   // 404页面
   {
     path: '/:pathMatch(.*)*',

@@ -39,12 +39,19 @@ public class User {
 	private String nickname;
 
 	private String email;
-
+	private String phone;
+	private String remark;
 	private String avatar;
 
 	private String role;
 
 	private Integer status;
+
+	private String province;
+
+	private String loginIp;
+
+	private LocalDateTime loginDate;
 
 	private Long tenantId;
 

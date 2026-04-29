@@ -10,7 +10,13 @@
       <el-header style="background-color: white; margin-bottom: 20px">
         <el-row :gutter="20" align="middle">
           <el-col :span="1">
-            <el-button type="primary" :icon="ArrowLeft" @click="goBack" circle />
+            <el-button
+                type="primary"
+                :icon="ArrowLeft"
+                @click="goBack"
+                circle
+                style="transform: scale(1.2)"
+            />
           </el-col>
           <el-col :span="1">
             <el-avatar :size="48" :src="agent.avatar">
@@ -161,13 +167,6 @@
       AgentScopeAccessApi,
       AgentScopeKnowledgeConfig,
       ToolConfig,
-      ArrowLeft,
-      InfoFilled,
-      ChatLineSquare,
-      VideoPlay,
-      Connection,
-      Document,
-      SetUp,
     },
     setup() {
       const router = useRouter();
@@ -278,6 +277,13 @@
       onMounted(loadAgent);
 
       return {
+        ArrowLeft,
+        InfoFilled,
+        ChatLineSquare,
+        VideoPlay,
+        Connection,
+        Document,
+        SetUp,
         activeMenuIndex,
         agent,
         goBack,

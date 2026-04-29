@@ -33,8 +33,15 @@ public class AuthController {
 	private final TokenBlacklistService blacklistService;
 
 	@PostMapping("/login")
-	public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request) {
+	public ResponseEntity<Map<String, Object>> login(
+			@Valid @RequestBody LoginRequest request,
+			@RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
+			@RequestHeader(value = "X-Real-IP", required = false) String realIp) {
 		try {
+			// 获取客户端真实IP
+			String clientIp = getClientIp(forwardedFor, realIp);
+			request.setLoginIp(clientIp);
+
 			LoginResponse response = authService.login(request);
 			User user = authService.getCurrentUser(response.getUserInfo().getId());
 
@@ -127,6 +134,24 @@ public class AuthController {
 	@Data
 	static class RefreshTokenRequest {
 		private String refreshToken;
+	}
+
+	/**
+	 * 获取客户端真实IP地址
+	 */
+	private String getClientIp(String forwardedFor, String realIp) {
+		// 优先从 X-Forwarded-For 获取（反向代理场景）
+		if (forwardedFor != null && !forwardedFor.isEmpty()) {
+			// X-Forwarded-For 可能包含多个IP，取第一个
+			String[] ips = forwardedFor.split(",");
+			return ips[0].trim();
+		}
+		// 其次从 X-Real-IP 获取
+		if (realIp != null && !realIp.isEmpty()) {
+			return realIp;
+		}
+		// 默认返回未知
+		return "unknown";
 	}
 
 	/**

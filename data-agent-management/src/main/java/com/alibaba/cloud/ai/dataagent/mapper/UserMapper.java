@@ -18,36 +18,58 @@ package com.alibaba.cloud.ai.dataagent.mapper;
 import com.alibaba.cloud.ai.dataagent.entity.User;
 import org.apache.ibatis.annotations.*;
 
+import java.util.List;
+
 /**
  * User Mapper Interface
  */
 @Mapper
 public interface UserMapper {
 
-	@Select("""
-			SELECT * FROM system_users
-			WHERE username = #{username} AND status = 1
-			""")
+	@Select("SELECT * FROM system_users WHERE username = #{username} AND status = 1")
 	User selectByUsername(@Param("username") String username);
 
-	@Select("""
-			SELECT * FROM system_users
-			WHERE id = #{id} AND status = 1
-			""")
+	@Select("SELECT * FROM system_users WHERE id = #{id}")
 	User selectById(@Param("id") Long id);
 
-	@Insert("""
-			INSERT INTO system_users (username, password, nickname, email, avatar, role, status, create_time, update_time)
-			VALUES (#{username}, #{password}, #{nickname}, #{email}, #{avatar}, #{role}, #{status}, NOW(), NOW())
-			""")
+	@Select("SELECT * FROM system_users ORDER BY create_time DESC")
+	List<User> selectAll();
+
+	@Select("SELECT * FROM system_users WHERE username LIKE CONCAT('%', #{keyword}, '%') OR nickname LIKE CONCAT('%', #{keyword}, '%') ORDER BY create_time DESC")
+	List<User> searchByKeyword(@Param("keyword") String keyword);
+
+	@Insert("INSERT INTO system_users (username, password, nickname, email, phone, remark, avatar, role, status, province, create_time, update_time) VALUES (#{username}, #{password}, #{nickname}, #{email}, #{phone}, #{remark}, #{avatar}, #{role}, #{status}, #{province}, NOW(), NOW())")
 	@Options(useGeneratedKeys = true, keyProperty = "id")
 	int insert(User user);
 
-	@Update("""
-			UPDATE system_users
-			SET nickname = #{nickname}, email = #{email}, avatar = #{avatar}, update_time = NOW()
-			WHERE id = #{id}
-			""")
+	@Update("UPDATE system_users SET nickname = #{nickname}, email = #{email}, phone = #{phone}, remark = #{remark}, avatar = #{avatar}, role = #{role}, status = #{status}, province = #{province}, update_time = NOW() WHERE id = #{id}")
 	int update(User user);
+
+	@Update("UPDATE system_users SET password = #{password}, update_time = NOW() WHERE id = #{id}")
+	int updatePassword(@Param("id") Long id, @Param("password") String password);
+
+	@Update("UPDATE system_users SET status = #{status}, update_time = NOW() WHERE id = #{id}")
+	int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+
+	@Update("UPDATE system_users SET login_ip = #{loginIp}, login_date = #{loginDate}, update_time = NOW() WHERE id = #{id}")
+	int updateLoginInfo(@Param("id") Long id, @Param("loginIp") String loginIp, @Param("loginDate") java.time.LocalDateTime loginDate);
+
+	@Delete("DELETE FROM system_users WHERE id = #{id}")
+	int deleteById(@Param("id") Long id);
+
+	@Select("SELECT COUNT(*) FROM system_users WHERE username = #{username}")
+	int countByUsername(@Param("username") String username);
+
+	@Select("SELECT * FROM system_users ORDER BY create_time DESC LIMIT #{offset}, #{limit}")
+	List<User> selectPage(@Param("offset") int offset, @Param("limit") int limit);
+
+	@Select("SELECT * FROM system_users WHERE username LIKE CONCAT('%', #{keyword}, '%') OR nickname LIKE CONCAT('%', #{keyword}, '%') ORDER BY create_time DESC LIMIT #{offset}, #{limit}")
+	List<User> searchByKeywordPage(@Param("keyword") String keyword, @Param("offset") int offset, @Param("limit") int limit);
+
+	@Select("SELECT COUNT(*) FROM system_users")
+	int countAll();
+
+	@Select("SELECT COUNT(*) FROM system_users WHERE username LIKE CONCAT('%', #{keyword}, '%') OR nickname LIKE CONCAT('%', #{keyword}, '%')")
+	int countByKeyword(@Param("keyword") String keyword);
 
 }

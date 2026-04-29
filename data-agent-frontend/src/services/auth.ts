@@ -52,9 +52,13 @@ class AuthService {
       // 使用SM3对密码进行前端加密（第一次加密）
       const encryptedPassword = this.encryptPassword(request.password);
       
+      // 获取客户端IP（这里只是示例，实际IP应由后端获取）
+      const loginIp = 'client';
+      
       const response = await apiClient.post('/api/auth/login', {
         username: request.username,
         password: encryptedPassword,
+        loginIp: loginIp,
       });
       if (response.data.code === 0 && response.data.data) {
         const loginData = response.data.data;
