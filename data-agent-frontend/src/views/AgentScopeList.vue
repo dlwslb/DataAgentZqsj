@@ -234,7 +234,7 @@
       };
 
       const enterAgent = (agentId: number) => {
-        router.push(`/agent-scope/${agentId}`);
+        router.push(`/daren-agent/${agentId}`);
       };
 
       const getStatusText = (status: string) => {
@@ -261,7 +261,7 @@
       };
 
       const goToCreateAgent = () => {
-        router.push('/agent-scope/create');
+        router.push('/daren-agent/create');
       };
 
       // 删除智能体

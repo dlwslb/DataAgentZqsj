@@ -223,7 +223,7 @@
       };
 
       const goBack = () => {
-        router.push('/agent-scope');
+        router.push('/daren-agent');
       };
 
       const regenerateAvatar = () => {
@@ -312,7 +312,7 @@
           const result = await agentScopeApi.create(agentData);
 
           ElMessage.success(`智能体创建成功！状态：${agentData.status === 'published' ? '已发布' : '草稿'}`);
-          await router.push(`/agent-scope/${result.id}`);
+          await router.push(`/daren-agent/${result.id}`);
         } catch (error) {
           console.error('创建智能体失败:', error);
           ElMessage.error('创建失败，请重试');

@@ -158,7 +158,7 @@
 
           await agentScopeApi.delete(props.agent.id);
           ElMessage.success('智能体已删除');
-          await router.push('/agent-scope');
+          await router.push('/daren-agent');
         } catch {
           // 用户点击取消按钮，忽略此错误
         }

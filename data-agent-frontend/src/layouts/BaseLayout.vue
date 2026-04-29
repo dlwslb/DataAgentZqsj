@@ -99,7 +99,7 @@
       };
 
       const goToAgentScopeList = () => {
-        router.push('/agent-scope');
+        router.push('/daren-agent');
       };
 
       const goToModelConfig = () => {

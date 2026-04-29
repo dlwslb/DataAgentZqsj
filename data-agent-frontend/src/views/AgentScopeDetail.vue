@@ -203,7 +203,7 @@
       const handleMenuSelect = (index: string) => {
         activeMenuIndex.value = index;
         if (index === 'go-run') {
-          router.push(`/agent-scope/${agent.value.id}/run`);
+          router.push(`/daren-agent/${agent.value.id}/run`);
         }
       };
 
@@ -221,7 +221,7 @@
         try {
           await agentScopeApi.delete(agent.value.id);
           ElMessage.success('删除成功');
-          router.push('/agent-scope');
+          router.push('/daren-agent');
         } catch (error) {
           ElMessage.error('删除失败');
         }
@@ -263,7 +263,7 @@
       };
 
       const goBack = () => {
-        router.push('/agent-scope');
+        router.push('/daren-agent');
       };
 
       const getStatusType = (status: string) => {
