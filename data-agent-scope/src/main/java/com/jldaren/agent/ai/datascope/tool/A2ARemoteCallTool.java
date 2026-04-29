@@ -20,6 +20,7 @@ import io.agentscope.core.tool.ToolParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
@@ -41,6 +42,9 @@ public class A2ARemoteCallTool {
     @Value("${agentscope.a2a.remote-agent-id:5}")
     private String remoteAgentId;
 
+    @Value("${agentscope.a2a.api-key:}")
+    private String apiKey;
+
     private WebClient webClient;
 
     private static final ParameterizedTypeReference<ServerSentEvent<Map<String, Object>>> SSE_TYPE =
@@ -54,6 +58,7 @@ public class A2ARemoteCallTool {
         this.webClient = WebClient.builder()
                 .baseUrl(remoteAgentUrl)
                 .exchangeStrategies(strategies)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                 .build();
         log.info("✅Remote agent HTTP client initialized, url={}, agentId={}", remoteAgentUrl, remoteAgentId);
     }
@@ -120,6 +125,7 @@ public class A2ARemoteCallTool {
                             .queryParam("showSqlResults", finalShowSqlResults)
                             .queryParam("skipReport", finalSkipReport)
                             .build())
+                    .header("X-Internal-Api-Key", apiKey)
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
                     .filter(sse -> sse.data() != null)

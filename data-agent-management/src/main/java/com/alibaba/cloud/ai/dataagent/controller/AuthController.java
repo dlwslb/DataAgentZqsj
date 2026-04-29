@@ -1,30 +1,23 @@
-/*
- * Copyright 2024-2026 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.alibaba.cloud.ai.dataagent.controller;
 
 import com.alibaba.cloud.ai.dataagent.dto.LoginRequest;
 import com.alibaba.cloud.ai.dataagent.dto.LoginResponse;
 import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.service.AuthService;
+import com.alibaba.cloud.ai.dataagent.service.TokenBlacklistService;
 import com.alibaba.cloud.ai.dataagent.util.JwtUtil;
 import com.alibaba.cloud.ai.dataagent.vo.ApiResponse;
+import io.jsonwebtoken.Claims;
 import jakarta.validation.Valid;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Authentication Controller
@@ -37,76 +30,103 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
 	private final AuthService authService;
-
 	private final JwtUtil jwtUtil;
+	private final TokenBlacklistService blacklistService;
 
-	/**
-	 * User login
-	 */
 	@PostMapping("/login")
-	public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+	public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request) {
 		try {
 			LoginResponse response = authService.login(request);
-			return ApiResponse.success("登录成功", response);
+			User user = authService.getCurrentUser(response.getUserInfo().getId());
+
+			String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
+			String refreshToken = jwtUtil.generateRefreshToken(user.getId());
+
+			Map<String, Object> data = new HashMap<>();
+			data.put("accessToken", accessToken);
+			data.put("refreshToken", refreshToken);
+			data.put("userInfo", Map.of(
+					"id", user.getId(),
+					"username", user.getUsername(),
+					"nickname", user.getNickname() != null ? user.getNickname() : "",
+					"email", user.getEmail() != null ? user.getEmail() : "",
+					"avatar", user.getAvatar() != null ? user.getAvatar() : "",
+					"role", user.getRole(),
+					"tenantId", user.getTenantId() != null ? user.getTenantId() : 0
+			));
+
+			return ResponseEntity.ok(Map.of(
+					"code", 0,
+					"message", "登录成功",
+					"data", data
+			));
 		} catch (Exception e) {
 			log.error("Login failed: {}", e.getMessage());
-			return ApiResponse.error(e.getMessage());
+			return ResponseEntity.status(401).body(Map.of(
+					"code", 401,
+					"message", "用户名或密码错误"
+			));
 		}
 	}
 
-	/**
-	 * Get current user info
-	 */
-	@GetMapping("/me")
-	public ApiResponse<User> getCurrentUser(@RequestHeader(value = "Authorization", required = false) String authorization) {
+	@PostMapping("/refresh-token")
+	public ResponseEntity<Map<String, Object>> refreshToken(@RequestBody RefreshTokenRequest request) {
 		try {
-			if (authorization == null || !authorization.startsWith("Bearer ")) {
-				return ApiResponse.error("未提供有效的认证令牌");
+			String tokenType = jwtUtil.getTokenType(request.getRefreshToken());
+			if (!"refresh".equals(tokenType)) {
+				return ResponseEntity.status(401).body(Map.of(
+						"code", 401,
+						"message", "无效的刷新令牌"
+				));
 			}
 
-			String token = authorization.substring(7);
-			Long userId = jwtUtil.getUserIdFromToken(token);
-
-			if (userId == null) {
-				return ApiResponse.error("无效的认证令牌");
-			}
-
+			Long userId = jwtUtil.getUserIdFromToken(request.getRefreshToken());
 			User user = authService.getCurrentUser(userId);
+
 			if (user == null) {
-				return ApiResponse.error("用户不存在");
+				return ResponseEntity.status(401).body(Map.of(
+						"code", 401,
+						"message", "用户不存在"
+				));
 			}
 
-			// Don't return password
-			user.setPassword(null);
-			return ApiResponse.success("获取用户信息成功", user);
+			String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
+			String newRefreshToken = jwtUtil.generateRefreshToken(user.getId());
+
+			return ResponseEntity.ok(Map.of(
+					"code", 0,
+					"data", Map.of(
+							"accessToken", newAccessToken,
+							"refreshToken", newRefreshToken
+					)
+			));
 		} catch (Exception e) {
-			log.error("Get current user failed: {}", e.getMessage());
-			return ApiResponse.error(e.getMessage());
+			return ResponseEntity.status(401).body(Map.of(
+					"code", 401,
+					"message", "刷新令牌已过期或无效"
+			));
 		}
 	}
 
-	/**
-	 * 临时接口：生成BCrypt密码哈希（仅用于测试，生产环境请删除）
-	 * 访问：GET /api/auth/generate-password?password=admin123
-	 */
-/*	@GetMapping("/generate-password")
-	public ApiResponse<String> generatePassword(@RequestParam String password) {
-		try {
-			org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder encoder = 
-				new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
-			String hash = encoder.encode(password);
-			boolean matches = encoder.matches(password, hash);
-			
-			String result = String.format(
-				"原始密码: %s\n加密哈希: %s\n验证结果: %s\n\n请执行以下SQL更新数据库:\nUPDATE `user` SET `password` = '%s' WHERE `username` = 'admin';",
-				password, hash, matches, hash
-			);
-			
-			return ApiResponse.success("密码生成成功", result);
-		} catch (Exception e) {
-			log.error("Generate password failed: {}", e.getMessage());
-			return ApiResponse.error(e.getMessage());
-		}
-	}*/
+	@PostMapping("/logout")
+	public ResponseEntity<Map<String, Object>> logout(@RequestHeader("Authorization") String authHeader) {
+		String token = authHeader.substring(7);
+		Claims claims = jwtUtil.parseToken(token);
+		String jti = claims.getId();
 
+		Date expiration = claims.getExpiration();
+		long remainingSeconds = (expiration.getTime() - System.currentTimeMillis()) / 1000;
+
+		blacklistService.addToBlacklist(jti, remainingSeconds).subscribe();
+
+		return ResponseEntity.ok(Map.of(
+				"code", 0,
+				"message", "登出成功"
+		));
+	}
+
+	@Data
+	static class RefreshTokenRequest {
+		private String refreshToken;
+	}
 }

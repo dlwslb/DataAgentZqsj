@@ -58,7 +58,7 @@ public class AuthService {
 			throw new RuntimeException("账户已被禁用");
 		}
 
-		String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
+		String token = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
 
 		LoginResponse.UserInfo userInfo = LoginResponse.UserInfo.builder()
 				.id(user.getId())

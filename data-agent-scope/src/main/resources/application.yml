@@ -26,6 +26,11 @@ mybatis:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:data-agent-secret-key-2024-prod}
+  internal-api-key: DataAgentInternalKey2026
+
 # AgentScope Configuration
 agentscope:
   # DashScope API Key (set via environment variable: DASHSCOPE_API_KEY)

@@ -39,6 +39,12 @@ let hasShownWarning = false;
 
 // 全局路由守卫
 router.beforeEach(async (to, from, next) => {
+  // 登录页直接放行，不做任何检查（包括系统名称）
+  if (to.path === '/login') {
+    next();
+    return;
+  }
+
   // 设置页面标题（异步，不阻塞路由）
   systemConfigService.getSystemName().then(systemName => {
     if (to.meta?.title) {
@@ -53,32 +59,7 @@ router.beforeEach(async (to, from, next) => {
     }
   });
 
-  // 检查是否需要认证
-  const requiresAuth = to.meta.requiresAuth !== false;
-  const isAuthenticated = authService.isAuthenticated();
-
-  if (requiresAuth && !isAuthenticated) {
-    // 需要认证但未登录，重定向到登录页
-    next({
-      path: '/login',
-      query: { redirect: to.fullPath },
-    });
-    return;
-  }
-
-  if (to.path === '/login' && isAuthenticated) {
-    // 已登录用户访问登录页，重定向到首页
-    next('/agents');
-    return;
-  }
-
-  if (to.path === '/model-config') {
-    console.log(`导航到: ${to.path} (${to.name})`);
-    next();
-    return;
-  }
-
-  // 检查模型配置是否就绪
+  // 检查模型配置是否就绪（只在非登录页检查）
   try {
     const result = await modelConfigService.checkReady();
 

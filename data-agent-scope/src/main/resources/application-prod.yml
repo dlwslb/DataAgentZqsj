@@ -1,5 +1,11 @@
 # 生产环境配置 tender_agent
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:172.26.177.96}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:Rdlz3%*rrr}
+      database: 0
   datasource:
     url: ${DATA_AGENT_DATASOURCE_URL:jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${DATA_AGENT_DATASOURCE_USERNAME:root}

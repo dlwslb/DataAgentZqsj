@@ -32,17 +32,19 @@ export interface UserInfo {
 }
 
 export interface LoginResponse {
-  token: string;
+  accessToken: string;
+  refreshToken: string;
   userInfo: UserInfo;
 }
 
 class AuthService {
   async login(request: LoginRequest): Promise<LoginResponse | null> {
     try {
-      const response = await apiClient.post<ApiResponse<LoginResponse>>('/api/auth/login', request);
-      if (response.data.success && response.data.data) {
+      const response = await apiClient.post('/api/auth/login', request);
+      if (response.data.code === 0 && response.data.data) {
         const loginData = response.data.data;
-        localStorage.setItem('token', loginData.token);
+        localStorage.setItem('accessToken', loginData.accessToken);
+        localStorage.setItem('refreshToken', loginData.refreshToken);
         localStorage.setItem('userInfo', JSON.stringify(loginData.userInfo));
         return loginData;
       }
@@ -54,35 +56,25 @@ class AuthService {
   }
 
   async getCurrentUser(): Promise<UserInfo | null> {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
+    const userInfoStr = localStorage.getItem('userInfo');
+    if (userInfoStr) {
+      try {
+        return JSON.parse(userInfoStr);
+      } catch (error) {
         return null;
       }
-
-      const response = await apiClient.get<ApiResponse<UserInfo>>('/api/auth/me', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.data.success && response.data.data) {
-        return response.data.data;
-      }
-      return null;
-    } catch (error) {
-      console.error('Get current user error:', error);
-      return null;
     }
+    return null;
   }
 
   logout(): void {
-    localStorage.removeItem('token');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('userInfo');
   }
 
   getToken(): string | null {
-    return localStorage.getItem('token');
+    return localStorage.getItem('accessToken');
   }
 
   getUserInfo(): UserInfo | null {
