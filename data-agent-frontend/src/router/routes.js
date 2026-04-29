@@ -72,41 +72,41 @@ const routes = [
     },
   },
 
-  // AgentScope 智能体模块
+  // daren-agent 智能体模块
   {
-    path: '/agent-scope',
+    path: '/daren-agent',
     name: 'AgentScopeList',
     component: () => import('@/views/AgentScopeList.vue'),
     meta: {
-      title: 'AgentScope 智能体',
-      module: 'agent-scope',
+      title: 'daren-taotao 智能体',
+      module: 'daren-agent',
     },
   },
   {
-    path: '/agent-scope/create',
+    path: '/daren-agent/create',
     name: 'AgentScopeCreate',
     component: () => import('@/views/AgentScopeCreate.vue'),
     meta: {
-      title: '创建 AgentScope 智能体',
-      module: 'agent-scope',
+      title: '创建智能体',
+      module: 'daren-agent',
     },
   },
   {
-    path: '/agent-scope/:id',
+    path: '/daren-agent/:id',
     name: 'AgentScopeDetail',
     component: () => import('@/views/AgentScopeDetail.vue'),
     meta: {
-      title: 'AgentScope 智能体详情',
-      module: 'agent-scope',
+      title: '智能体详情',
+      module: 'daren-agent',
     },
   },
   {
-    path: '/agent-scope/:id/run',
+    path: '/daren-agent/:id/run',
     name: 'AgentScopeRun',
     component: () => import('@/views/AgentScopeRun.vue'),
     meta: {
-      title: '运行 AgentScope 智能体',
-      module: 'agent-scope',
+      title: '运行智能体',
+      module: 'daren-agent',
     },
   },
 
