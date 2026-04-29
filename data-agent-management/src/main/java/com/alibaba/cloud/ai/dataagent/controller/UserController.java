@@ -150,6 +150,10 @@ public class UserController {
 			user.setRole((String) request.get("role"));
 			user.setAvatar((String) request.get("avatar"));
 			user.setProvince((String) request.get("province"));
+			// 处理 agentId
+			if (request.get("agentId") != null) {
+				user.setAgentId(((Number) request.get("agentId")).longValue());
+			}
 			user.setStatus(request.get("status") != null
 					? ((Number) request.get("status")).intValue()
 					: 1);

@@ -27,6 +27,7 @@ export interface UserInfo {
   role: string;
   status: number;
   province: string;
+  agentId: number | null;
   loginIp: string;
   loginDate: string;
   createTime: string;
@@ -47,6 +48,7 @@ export interface CreateUserRequest {
   email?: string;
   phone?: string;
   province?: string;
+  agentId?: number | null;
   remark?: string;
   role?: string;
   avatar?: string;
@@ -58,6 +60,7 @@ export interface UpdateUserRequest {
   email?: string;
   phone?: string;
   province?: string;
+  agentId?: number | null;
   remark?: string;
   role?: string;
   avatar?: string;

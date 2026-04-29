@@ -29,6 +29,7 @@ export interface UserInfo {
   email: string;
   avatar: string;
   role: string;
+  agentId: number | null;
   tenantId: number;
 }
 

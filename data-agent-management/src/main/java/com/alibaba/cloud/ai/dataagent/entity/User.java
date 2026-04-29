@@ -53,6 +53,8 @@ public class User {
 
 	private LocalDateTime loginDate;
 
+	private Long agentId;
+
 	private Long tenantId;
 
 	private LocalDateTime createTime;

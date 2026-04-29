@@ -85,6 +85,11 @@
             <el-table-column prop="email" label="邮箱" width="180" show-overflow-tooltip />
             <el-table-column prop="phone" label="电话" width="130" />
             <el-table-column prop="province" label="省份" width="100" show-overflow-tooltip />
+            <el-table-column prop="agentId" label="绑定智能体" width="120">
+              <template #default="{ row }">
+                {{ getAgentName(row.agentId) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="role" label="角色" width="100">
               <template #default="{ row }">
                 <el-tag :type="row.role === 'super_admin' ? 'danger' : 'info'" size="small">
@@ -180,6 +185,16 @@
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="绑定智能体" prop="agentId">
+              <el-select v-model="userForm.agentId" placeholder="请选择绑定的智能体" filterable clearable style="width: 100%;">
+                <el-option
+                  v-for="agent in agentList"
+                  :key="agent.id"
+                  :label="agent.name"
+                  :value="agent.id"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="角色" prop="role">
               <el-select v-model="userForm.role" style="width: 100%;">
                 <el-option label="普通用户" value="user" />
@@ -234,6 +249,7 @@ import { ElMessage, ElMessageBox, ElIcon } from 'element-plus';
 import { Plus, Search, Refresh, Edit, Delete, Key, UserFilled } from '@element-plus/icons-vue';
 import BaseLayout from '@/layouts/BaseLayout.vue';
 import userService from '@/services/user';
+import { agentScopeApi } from '@/services/agentScope';
 
 export default defineComponent({
   name: 'UserManagement',
@@ -258,6 +274,9 @@ export default defineComponent({
     const currentPage = ref(1);
     const pageSize = ref(10);
     const totalCount = ref(0);
+    
+    // 智能体列表
+    const agentList = ref([]);
 
     // SQL注入过滤正则
     const SQL_INJECTION_REGEX = /['";<>\\%]/g;
@@ -288,6 +307,7 @@ export default defineComponent({
       email: '',
       phone: '',
       province: '',
+      agentId: null,
       role: 'user',
       remark: '',
     });
@@ -348,6 +368,26 @@ export default defineComponent({
         loading.value = false;
       }
     };
+    
+    // 加载智能体列表
+    const loadAgentList = async () => {
+      try {
+        const response = await agentScopeApi.list();
+        // axios返回的数据在 response.data 中
+        const data = response?.data?.data || response?.data || [];
+        agentList.value = Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.error('加载智能体列表失败:', error);
+        agentList.value = [];
+      }
+    };
+    
+    // 根据ID获取智能体名称
+    const getAgentName = (agentId) => {
+      if (!agentId) return '-';
+      const agent = agentList.value.find(a => a.id === agentId);
+      return agent ? agent.name : '-';
+    };
 
     const handleSearch = () => {
       currentPage.value = 1;
@@ -380,6 +420,7 @@ export default defineComponent({
         email: '',
         phone: '',
         province: '',
+        agentId: null,
         role: 'user',
         remark: '',
       });
@@ -396,6 +437,7 @@ export default defineComponent({
         email: user.email || '',
         phone: user.phone || '',
         province: user.province || '',
+        agentId: user.agentId || null,
         role: user.role || 'user',
         remark: user.remark || '',
       });
@@ -423,6 +465,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: userForm.province,
+                agentId: userForm.agentId,
                 role: userForm.role,
                 remark: userForm.remark,
               });
@@ -435,6 +478,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: userForm.province,
+                agentId: userForm.agentId,
                 role: userForm.role,
                 remark: userForm.remark,
               });
@@ -504,6 +548,7 @@ export default defineComponent({
 
     onMounted(() => {
       loadUsers();
+      loadAgentList();
       updateTableHeight();
       window.addEventListener('resize', updateTableHeight);
     });
@@ -526,6 +571,7 @@ export default defineComponent({
       defaultPassword,
       filterSqlInjection,
       provinceList,
+      agentList,
       userForm,
       passwordForm,
       formRules,
@@ -539,6 +585,8 @@ export default defineComponent({
       pageSize,
       totalCount,
       loadUsers,
+      loadAgentList,
+      getAgentName,
       handleSearch,
       handleReset,
       handleSizeChange,

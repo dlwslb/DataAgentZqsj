@@ -71,6 +71,7 @@
   import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
   import { User, Lock } from '@element-plus/icons-vue';
   import authService from '@/services/auth';
+  import { agentScopeApi } from '@/services/agentScope';
 
   export default defineComponent({
     name: 'Login',
@@ -113,7 +114,37 @@
 
           if (result) {
             ElMessage.success('登录成功');
-            router.push('/agents');
+            
+            // 根据角色跳转
+            if (result.userInfo.role === 'admin' || result.userInfo.role === 'super_admin') {
+              // 管理员跳转到智能体列表
+              router.push('/daren-agent');
+            } else {
+              // 普通用户跳转到绑定的智能体对话页
+              let agentId = result.userInfo.agentId;
+              
+              // 如果没有绑定智能体，获取第一个已发布的智能体
+              if (!agentId) {
+                try {
+                  const response = await agentScopeApi.list();
+                  const agents = response?.data?.data || response?.data || [];
+                  if (agents.length > 0) {
+                    // 获取第一个已发布的智能体
+                    const publishedAgent = agents.find((a: any) => a.status === 'published') || agents[0];
+                    agentId = publishedAgent.id;
+                  } else {
+                    ElMessage.warning('暂无可用的智能体');
+                    return;
+                  }
+                } catch (e) {
+                  console.error('获取智能体列表失败:', e);
+                  ElMessage.error('获取智能体信息失败');
+                  return;
+                }
+              }
+              
+              router.push(`/daren-agent/${agentId}/run`);
+            }
           }
         } catch (error: any) {
           ElMessage.error(error.response?.data?.message || error.message || '登录失败，请检查用户名和密码');

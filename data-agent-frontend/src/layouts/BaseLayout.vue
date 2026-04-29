@@ -23,7 +23,7 @@
             <i class="bi bi-robot"></i>
             <span class="brand-text">{{ systemName }}</span>
           </div>
-          <nav class="header-nav">
+          <nav class="header-nav" v-if="isSuperAdmin">
             <div class="nav-item" :class="{ active: isAgentPage() }" @click="goToAgentList">
               <i class="bi bi-grid-3x3-gap"></i>
               <span>智能体列表</span>
@@ -36,7 +36,7 @@
               <i class="bi bi-gear"></i>
               <span>模型配置</span>
             </div>
-            <div class="nav-item" :class="{ active: isUserManagementPage() }" @click="goToUserManagement" v-if="isAdmin">
+            <div class="nav-item" :class="{ active: isUserManagementPage() }" @click="goToUserManagement" v-if="isSuperAdmin">
               <i class="bi bi-people"></i>
               <span>用户管理</span>
             </div>
@@ -85,12 +85,12 @@
       const router = useRouter();
       const systemName = ref('Spring AI Alibaba Data Agent');
       const userInfo = ref(null);
-      const isAdmin = ref(false);
+      const isSuperAdmin = ref(false);
 
       onMounted(async () => {
         systemName.value = await systemConfigService.getSystemName();
         userInfo.value = authService.getUserInfo();
-        isAdmin.value = userInfo.value?.role === 'super_admin';
+        isSuperAdmin.value = userInfo.value?.role === 'super_admin';
       });
 
       // 导航方法
@@ -168,7 +168,7 @@
       return {
         systemName,
         userInfo,
-        isAdmin,
+        isSuperAdmin,
         goToAgentList,
         goToAgentScopeList,
         goToModelConfig,

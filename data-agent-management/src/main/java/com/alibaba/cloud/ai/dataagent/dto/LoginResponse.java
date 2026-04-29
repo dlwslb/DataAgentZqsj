@@ -44,6 +44,7 @@ public class LoginResponse {
 		private String email;
 		private String avatar;
 		private String role;
+		private Long agentId;
 		private Long tenantId;
 	}
 
