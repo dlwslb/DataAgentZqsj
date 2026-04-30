@@ -348,7 +348,7 @@
 <style scoped>
   .agent-create-page {
     padding: 20px;
-    background: #f8fafc;
+    background: transparent;
     min-height: 100vh;
   }
 

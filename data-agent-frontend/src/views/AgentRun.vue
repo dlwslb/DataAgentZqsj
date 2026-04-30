@@ -1447,7 +1447,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 20px;
-    background: #f8f9fa;
+    background: var(--theme-header-bg);
     border-radius: 8px;
     margin-bottom: 20px;
   }
@@ -1504,11 +1504,11 @@
 
   .markdown-report {
     line-height: 1.6;
-    color: #1f2933;
+    color: var(--theme-text-primary);
   }
 
   .markdown-report pre {
-    background: #f6f8fa;
+    background: rgba(0, 0, 0, 0.04);
     padding: 10px 12px;
     border-radius: 6px;
     overflow: auto;
@@ -1527,20 +1527,20 @@
   }
 
   .message.user .message-text {
-    background: #409eff;
+    background: var(--theme-primary);
     color: white;
   }
 
   .message.assistant .message-text {
-    background: white;
-    color: #303133;
-    border: 1px solid #e8e8e8;
+    background: var(--theme-header-bg);
+    color: var(--theme-text-primary);
+    border: 1px solid rgba(0, 0, 0, 0.08);
   }
 
   /* 流式响应样式 */
   .streaming-response {
-    background: white;
-    border: 1px solid #e8e8e8;
+    background: var(--theme-header-bg);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 8px;
     padding: 16px;
   }
@@ -1577,24 +1577,24 @@
   }
 
   .agent-response-block {
-    background: #f8f9fa;
-    border: 1px solid #e8e8e8;
+    background: rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 8px;
     overflow: hidden;
     transition: all 0.3s ease;
   }
 
   .agent-response-block:hover {
-    border-color: #409eff;
-    box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+    border-color: var(--theme-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }
 
   .agent-response-title {
-    background: #ecf5ff;
+    background: rgba(0, 0, 0, 0.03);
     padding: 12px 16px;
     font-weight: 600;
-    color: #409eff;
-    border-bottom: 1px solid #e8e8e8;
+    color: var(--theme-primary);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     font-size: 14px;
   }
 
@@ -1636,8 +1636,8 @@
 
   /* 代码高亮样式 */
   .agent-response-content pre.hljs {
-    background: #f6f8fa !important;
-    border: 1px solid #e1e4e8;
+    background: rgba(0, 0, 0, 0.04) !important;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 6px;
     padding: 16px;
     margin: 8px 0;
@@ -1655,11 +1655,11 @@
   .agent-response-content .hljs {
     display: block;
     overflow-x: auto;
-    color: #24292e;
-    background: #f6f8fa;
+    color: var(--theme-text-primary);
+    background: rgba(0, 0, 0, 0.04);
     padding: 16px;
     border-radius: 6px;
-    border: 1px solid #e1e4e8;
+    border: 1px solid rgba(0, 0, 0, 0.06);
   }
 
   /* HTML报告消息样式 */
@@ -1669,15 +1669,15 @@
     align-items: center;
     gap: 16px;
     padding: 16px;
-    background: #f8fbff;
+    background: var(--theme-header-bg);
     border-radius: 12px;
-    border: 1px solid #e1f0ff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
   }
 
   /* Markdown报告消息样式 */
   .markdown-report-message {
-    background: white;
-    border: 1px solid #e8e8e8;
+    background: var(--theme-header-bg);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 16px;
@@ -1689,7 +1689,7 @@
     align-items: center;
     margin-bottom: 16px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   }
 
   .markdown-report-content {
@@ -1700,7 +1700,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #409eff;
+    color: var(--theme-primary);
     font-size: 16px;
     font-weight: 500;
   }
@@ -1725,7 +1725,7 @@
     width: 100%;
     max-width: 1200px;
     height: 90vh;
-    background: white;
+    background: var(--theme-header-bg);
     border-radius: 12px;
     display: flex;
     flex-direction: column;
@@ -1738,15 +1738,15 @@
     justify-content: space-between;
     align-items: center;
     padding: 16px 24px;
-    border-bottom: 1px solid #e8e8e8;
-    background: #f8f9fa;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.02);
     flex-shrink: 0;
   }
 
   .report-fullscreen-title {
     font-size: 18px;
     font-weight: 600;
-    color: #303133;
+    color: var(--theme-text-primary);
   }
 
   .report-fullscreen-close {

@@ -1150,7 +1150,7 @@ export default {
 
 <style scoped>
 /* ========== 基础布局样式 ========== */
-.chat-container { flex: 1; overflow-y: auto; padding: 20px; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px; }
+.chat-container { flex: 1; overflow-y: auto; padding: 20px; background: var(--theme-header-bg); border-radius: 8px; margin-bottom: 20px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 40px 20px; }
 .messages-area { display: flex; flex-direction: column; gap: 16px; }
 .message { display: flex; gap: 12px; max-width: 80%; }
@@ -1168,9 +1168,9 @@ export default {
   position: relative;
   margin-left: 4px;
 }
-.message.user .message-text { background: #409eff; color: white; }
-.message.assistant .message-text { background: white; color: #303133; border: 1px solid #e8e8e8; }
-.message-time { font-size: 12px; color: #909399; margin-top: 4px; padding: 0 4px; text-align: right; }
+.message.user .message-text { background: var(--theme-primary); color: white; }
+.message.assistant .message-text { background: var(--theme-header-bg); color: var(--theme-text-primary); border: 1px solid rgba(0, 0, 0, 0.08); }
+.message-time { font-size: 12px; color: var(--theme-text-secondary); margin-top: 4px; padding: 0 4px; text-align: right; }
 .message.user .message-time { color: rgba(255, 255, 255, 0.8); }
 
 /* 🔑 ========== Markdown 容器通用样式（普通消息 + 思考预览） ========== */
@@ -1310,10 +1310,10 @@ export default {
 .thinking-preview .markdown-container pre {
   margin: 12px 0;
   padding: 12px 16px;
-  background: #f6f8fa;
+  background: rgba(0, 0, 0, 0.04);
   border-radius: 6px;
   overflow: auto;
-  border: 1px solid #e1e4e8;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 .message-text .markdown-container code,
 .thinking-preview .markdown-container code {
@@ -1368,12 +1368,12 @@ export default {
 .thinking-preview .markdown-container table th,
 .thinking-preview .markdown-container table td {
   padding: 8px 12px;
-  border: 1px solid #e1e4e8;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   text-align: left;
 }
 .message-text .markdown-container table th,
 .thinking-preview .markdown-container table th {
-  background: #f6f8fa;
+  background: rgba(0, 0, 0, 0.03);
   font-weight: 600;
 }
 .message.user .message-text .markdown-container table th {
@@ -1435,10 +1435,10 @@ export default {
 .thinking-preview .markdown-container h4 { font-size: 1.1em; }
 
 /* ========== 输入区域样式 ========== */
-.input-area { background: white; border-radius: 8px; padding: 16px; border: 1px solid #e8e8e8; }
-.input-controls { margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; }
-.input-controls-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; cursor: pointer; user-select: none; color: #606266; font-size: 14px; }
-.input-controls-header:hover { color: #409eff; }
+.input-area { background: var(--theme-header-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(0, 0, 0, 0.1); }
+.input-controls { margin-bottom: 12px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+.input-controls-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; cursor: pointer; user-select: none; color: var(--theme-text-secondary); font-size: 14px; }
+.input-controls-header:hover { color: var(--theme-primary); }
 .input-controls-title { font-weight: 500; }
 .input-controls-toggle-btn { flex-shrink: 0; }
 .input-controls-toggle-btn .input-controls-toggle-icon { margin-right: 4px; transition: transform 0.2s ease; }
@@ -1446,53 +1446,53 @@ export default {
 .input-controls-body { padding-bottom: 12px; }
 .switch-group { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
 .switch-item { display: flex; align-items: center; gap: 8px; }
-.switch-label { font-size: 14px; color: #606266; }
+.switch-label { font-size: 14px; color: var(--theme-text-secondary); }
 .send-button { width: 48px; height: 48px; }
 .stop-button-inline { width: 48px; height: 48px; }
 .input-container { display: flex; gap: 12px; align-items: flex-end; }
-.hint { font-size: 12px; color: #909399; }
+.hint { font-size: 12px; color: var(--theme-text-secondary); }
 
 /* ========== Markdown 报告样式 ========== */
-.markdown-report-message { background: white; border: 1px solid #e8e8e8; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-.markdown-report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f0f0f0; }
+.markdown-report-message { background: var(--theme-header-bg); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.markdown-report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
 .markdown-report-content { margin-top: 16px; }
-.report-info { display: flex; align-items: center; gap: 12px; color: #409eff; font-size: 16px; font-weight: 500; }
+.report-info { display: flex; align-items: center; gap: 12px; color: var(--theme-primary); font-size: 16px; font-weight: 500; }
 .report-format-inline { margin-left: 8px; }
 
 /* 报告 Markdown 容器 - 与普通消息对齐 */
-.markdown-report-content { line-height: 1.6; color: #1f2933; font-size: 14px; }
+.markdown-report-content { line-height: 1.6; color: var(--theme-text-primary); font-size: 14px; }
 .markdown-report-content .markdown-container {
   line-height: 1.4;
   white-space: normal;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 14px;
 }
-.markdown-report-content pre { background: #f6f8fa; padding: 10px 12px; border-radius: 6px; overflow: auto; margin: 0; border: none; }
+.markdown-report-content pre { background: rgba(0, 0, 0, 0.04); padding: 10px 12px; border-radius: 6px; overflow: auto; margin: 0; border: none; }
 .markdown-report-content code { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; background: transparent; padding: 0; }
 
 /* ========== 报告全屏样式 ========== */
 .report-fullscreen-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.report-fullscreen-container { width: 100%; max-width: 1200px; height: 90vh; background: white; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
-.report-fullscreen-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #e8e8e8; background: #f8f9fa; flex-shrink: 0; }
-.report-fullscreen-title { font-size: 18px; font-weight: 600; color: #303133; }
+.report-fullscreen-container { width: 100%; max-width: 1200px; height: 90vh; background: var(--theme-header-bg); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
+.report-fullscreen-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid rgba(0, 0, 0, 0.08); background: rgba(0, 0, 0, 0.02); flex-shrink: 0; }
+.report-fullscreen-title { font-size: 18px; font-weight: 600; color: var(--theme-text-primary); }
 .report-fullscreen-close { flex-shrink: 0; }
 .report-fullscreen-content { flex: 1; overflow: auto; padding: 24px; }
 .report-fullscreen-body { min-height: 100%; }
 .report-fullscreen-body .markdown-container { line-height: 1.4; white-space: normal; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; }
-.report-fullscreen-body pre { background: #f6f8fa; padding: 10px 12px; border-radius: 6px; overflow: auto; margin: 0; border: none; }
+.report-fullscreen-body pre { background: rgba(0, 0, 0, 0.04); padding: 10px 12px; border-radius: 6px; overflow: auto; margin: 0; border: none; }
 .report-fullscreen-body code { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; background: transparent; padding: 0; }
 
 /* ========== 思考状态样式 ========== */
 .thinking-state { animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .thinking-avatar { position: relative; }
-.avatar-pulse { animation: pulse 2s infinite ease-in-out; box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4); }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(64, 158, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(64, 158, 255, 0); } }
-.thinking-container { padding: 12px 16px; background: #f8f9fa; border-radius: 12px; border: 1px solid #e8e8e8; max-width: 100%; min-height: 40px; }
-.thinking-preview { font-size: 14px; color: #606266; line-height: 1.5; white-space: pre-wrap; word-break: break-word; display: flex; align-items: flex-start; gap: 4px; }
+.avatar-pulse { animation: pulse 2s infinite ease-in-out; box-shadow: 0 0 0 0 var(--theme-primary); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--theme-primary); } 70% { box-shadow: 0 0 0 10px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.thinking-container { padding: 12px 16px; background: var(--theme-header-bg); border-radius: 12px; border: 1px solid rgba(0, 0, 0, 0.08); max-width: 100%; min-height: 40px; }
+.thinking-preview { font-size: 14px; color: var(--theme-text-secondary); line-height: 1.5; white-space: pre-wrap; word-break: break-word; display: flex; align-items: flex-start; gap: 4px; }
 .preview-text { flex: 1; }
-.typing-cursor { color: #409eff; font-weight: bold; animation: blink 1s infinite; flex-shrink: 0; }
+.typing-cursor { color: var(--theme-primary); font-weight: bold; animation: blink 1s infinite; flex-shrink: 0; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.thinking-placeholder { display: flex; align-items: center; gap: 8px; color: #909399; font-size: 14px; }
+.thinking-placeholder { display: flex; align-items: center; gap: 8px; color: var(--theme-text-secondary); font-size: 14px; }
 @media (max-width: 768px) { .thinking-preview { font-size: 13px; } .thinking-placeholder { font-size: 13px; } }
 </style>

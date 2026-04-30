@@ -651,7 +651,7 @@ export default defineComponent({
 <style scoped>
 .user-management-page {
   min-height: calc(100vh - 4rem);
-  background: #f5f7fa;
+  background: transparent;
 }
 
 .main-content {

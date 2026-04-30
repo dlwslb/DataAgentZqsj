@@ -342,7 +342,7 @@
 <style scoped>
   .agent-list-page {
     min-height: 100vh;
-    background: #f8fafc;
+    background: transparent;
     font-family:
       -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   }
