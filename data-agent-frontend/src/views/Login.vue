@@ -17,7 +17,7 @@
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
-        <h1 class="login-title">政企商机智能体</h1>
+        <h1 class="login-title">滔滔</h1>
         <p class="login-subtitle">欢迎登录系统</p>
       </div>
 
