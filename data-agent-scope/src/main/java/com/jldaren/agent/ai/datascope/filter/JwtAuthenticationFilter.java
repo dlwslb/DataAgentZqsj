@@ -1,87 +1,97 @@
 package com.jldaren.agent.ai.datascope.filter;
 
 import com.jldaren.agent.ai.datascope.service.TokenBlacklistService;
+import com.jldaren.agent.ai.datascope.service.UserInfoService;
 import com.jldaren.agent.ai.datascope.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.WebFilter;
-import org.springframework.web.server.WebFilterChain;
-import reactor.core.publisher.Mono;
+import org.springframework.web.filter.OncePerRequestFilter;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * JWT 认证过滤器 - 基于 Servlet Filter
+ * 拦截所有请求，验证 JWT Token
+ */
 @Slf4j
 @Component
 @Order(1)
 @RequiredArgsConstructor
-public class JwtAuthenticationFilter implements WebFilter {
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final TokenBlacklistService blacklistService;
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        String token = extractToken(exchange);
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+
+        String token = extractToken(request);
 
         if (token == null) {
-            return unauthorized(exchange, "Missing token");
+            sendUnauthorized(response, "Missing token");
+            return;
         }
 
         try {
+            // 检查 Token 类型
+            String tokenType = jwtUtil.getTokenType(token);
+            if (!"access".equals(tokenType)) {
+                sendUnauthorized(response, "Invalid token type");
+                return;
+            }
+
+            // 检查黑名单
             String jti = jwtUtil.getJti(token);
-            
-            return blacklistService.isBlacklisted(jti)
-                    .flatMap(isBlacklisted -> {
-                        if (isBlacklisted) {
-                            return unauthorized(exchange, "Token已失效");
-                        }
+            if (blacklistService.isBlacklistedSync(jti)) {
+                sendUnauthorized(response, "Token已失效");
+                return;
+            }
 
-                        Claims claims = jwtUtil.parseToken(token);
-                        Long userId = claims.get("userId", Long.class);
-                        String username = claims.getSubject();
+            // 解析 Token
+            Claims claims = jwtUtil.parseToken(token);
+            Long userId = claims.get("userId", Long.class);
+            String username = claims.getSubject();
 
-                        exchange.getRequest().mutate()
-                                .header("X-User-Id", String.valueOf(userId))
-                                .header("X-Username", username)
-                                .build();
+            // 将用户信息设置到请求属性中，供后续使用
+            request.setAttribute("userId", userId);
+            request.setAttribute("username", username);
 
-                        log.debug("Authenticated: {} (id={})", username, userId);
-                        return chain.filter(exchange);
-                    });
+            log.debug("Authenticated: {} (id={})", username, userId);
+            filterChain.doFilter(request, response);
 
         } catch (ExpiredJwtException e) {
-            return unauthorized(exchange, "Token expired");
+            sendUnauthorized(response, "Token expired");
         } catch (Exception e) {
-            return unauthorized(exchange, "Invalid token");
+            sendUnauthorized(response, "Invalid token");
         }
     }
 
-    private String extractToken(ServerWebExchange exchange) {
-        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        
+    private String extractToken(HttpServletRequest request) {
+        // 从 Authorization Header 获取
+        String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
-        
-        return exchange.getRequest().getQueryParams().getFirst("token");
+
+        // 从 Query Parameter 获取
+        return request.getParameter("token");
     }
 
-    private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        
+    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json;charset=UTF-8");
+        response.setCharacterEncoding("UTF-8");
         String body = String.format("{\"code\":401,\"message\":\"%s\"}", message);
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        
-        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse()
-                .bufferFactory().wrap(bytes)));
+        response.getWriter().write(body);
     }
 }

@@ -17,4 +17,13 @@ public class TokenBlacklistService {
         String key = BLACKLIST_PREFIX + jti;
         return redisTemplate.hasKey(key);
     }
+
+    /**
+     * 同步检查 Token 是否在黑名单中（用于 Servlet Filter）
+     */
+    public boolean isBlacklistedSync(String jti) {
+        String key = BLACKLIST_PREFIX + jti;
+        Boolean exists = redisTemplate.hasKey(key).block();
+        return exists != null && exists;
+    }
 }
