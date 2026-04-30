@@ -42,6 +42,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
@@ -69,6 +70,7 @@ public class AgentScopeController {
 
     private final AgentScopeRegistry agentRegistry;
     private final RagService ragService;
+    private final reactor.core.scheduler.Scheduler blockingScheduler;
     /**
      * 获取 Agent 列表
      */
@@ -446,7 +448,12 @@ public class AgentScopeController {
         String ragEnhancedMessage = ragService.enhanceWithRag(id, message);
         Msg ragEnhancedMsg = Msg.builder().textContent(ragEnhancedMessage).build();
         log.debug("📨 [Chat] Agent收到消息: agentId={}, message={}, userRole={}", id, message, userRole);
-        Msg response = Mono.fromFuture(agent.call(ragEnhancedMsg).toFuture()).block();
+        
+        // 使用线程隔离执行阻塞的 Agent 调用
+        Msg response = Mono.fromFuture(agent.call(ragEnhancedMsg).toFuture())
+                .subscribeOn(blockingScheduler)
+                .block();
+        
         log.debug("📨 [Chat] Agent原始响应: agentId={}, role={}, contentType={}, getTextContent长度={}",
                 id, 
                 response != null ? response.getRole() : "null",

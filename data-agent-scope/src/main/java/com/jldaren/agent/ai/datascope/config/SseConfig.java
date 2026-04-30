@@ -9,19 +9,7 @@ import java.util.concurrent.*;
 
 //✅ 安全（防OOM/防泄漏） ✅ 可观测（线程名+监控） ✅ 按业务隔离
 @Configuration
-@EnableScheduling
 public class SseConfig {
-
-    // ==================== 心跳线程池 ====================
-    // 场景：定时轻量任务，单线程足够，丢了不影响核心业务
-    @Bean(name = "heartbeatExecutor", destroyMethod = "shutdown")
-    public ScheduledExecutorService heartbeatExecutor() {
-        return new ScheduledThreadPoolExecutor(
-                1,
-                new ThreadFactoryBuilder().setNameFormat("heartbeat-%d").setDaemon(true).build(),
-                new ThreadPoolExecutor.AbortPolicy()
-        );
-    }
 
     // ==================== RAG 线程池 ====================
     // 场景：向量检索+LLM调用，典型IO密集型，允许短暂排队

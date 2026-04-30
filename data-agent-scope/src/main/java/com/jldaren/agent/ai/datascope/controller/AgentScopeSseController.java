@@ -21,7 +21,6 @@ import io.agentscope.core.message.Msg;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -32,15 +31,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.MediaType;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.core.Disposable;
 
 import javax.annotation.PostConstruct;
-import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,6 +51,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * AgentScope SSE Controller - WebFlux 版本
+ * 使用 Flux<ServerSentEvent> 实现真正的响应式流式输出
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/scope/agent")
@@ -61,6 +65,9 @@ public class AgentScopeSseController {
     @Value("${sse.timeout-ms:180000}")
     private long sseTimeoutMs;
 
+    @Value("${heartbeat.interval-seconds:15}")
+    private int heartbeatIntervalSeconds;
+
     @Value("${rag.timeout-seconds:2}")
     private int ragTimeoutSeconds;
 
@@ -70,9 +77,6 @@ public class AgentScopeSseController {
     @Value("${request.max-message-length:4000}")
     private int maxMessageLength;
 
-    @Value("${heartbeat.interval-seconds:15}")
-    private int heartbeatIntervalSeconds;
-
     @Value("${agent.hook.flush-delay-ms:100}")
     private int hookFlushDelayMs;
 
@@ -80,13 +84,10 @@ public class AgentScopeSseController {
     private double sseFragmentSampleRate;
 
     private final ObjectMapper jsonMapper;
-
-    // 依赖注入
     private final AgentScopeRegistry agentRegistry;
     private final RagService ragService;
     private final ChatSessionService chatSessionService;
     private final ChatMessageMapper chatMessageMapper;
-    private final ScheduledExecutorService heartbeatExecutor;
     private final ExecutorService ragExecutor;
     private final ExecutorService chatSaveExecutor;
     private final Semaphore sseSemaphore;
@@ -99,7 +100,6 @@ public class AgentScopeSseController {
     private final Counter sseStartCounter = Metrics.counter("sse.connection.started");
     private final Counter saveFailedCounter = Metrics.counter("message.save.failed");
     private final Timer requestDurationTimer = Metrics.timer("agent.request.duration");
-    private final Counter emptyResponseCounter = Metrics.counter("agent.response.empty");
     private final AtomicInteger activeSseConnections = new AtomicInteger(0);
 
     {
@@ -114,11 +114,6 @@ public class AgentScopeSseController {
 
     @PostConstruct
     public void validateConfig() {
-        long heartbeatMs = heartbeatIntervalSeconds * 1000L;
-        if (heartbeatMs >= sseTimeoutMs) {
-            log.warn("Configuration warning: heartbeat.interval-seconds({}s) * 1000 >= sse.timeout-ms({}ms). " +
-                    "Heartbeat may not fire before timeout.", heartbeatIntervalSeconds, sseTimeoutMs);
-        }
         if (hookFlushDelayMs < 0 || hookFlushDelayMs > 1000) {
             log.warn("Configuration warning: agent.hook.flush-delay-ms={} is out of reasonable range [0, 1000]", hookFlushDelayMs);
         }
@@ -130,7 +125,6 @@ public class AgentScopeSseController {
             RagService ragService,
             ChatSessionService chatSessionService,
             ChatMessageMapper chatMessageMapper,
-            @Qualifier("heartbeatExecutor") ScheduledExecutorService heartbeatExecutor,
             @Qualifier("ragExecutor") ExecutorService ragExecutor,
             @Qualifier("chatSaveExecutor") ExecutorService chatSaveExecutor,
             @Value("${sse.max-concurrent:100}") int maxConcurrent) {
@@ -140,27 +134,29 @@ public class AgentScopeSseController {
         this.ragService = ragService;
         this.chatSessionService = chatSessionService;
         this.chatMessageMapper = chatMessageMapper;
-        this.heartbeatExecutor = heartbeatExecutor;
         this.ragExecutor = ragExecutor;
         this.chatSaveExecutor = chatSaveExecutor;
         this.sseSemaphore = new Semaphore(maxConcurrent);
         this.messageFormatDetector = new MessageFormatDetector();
     }
 
-    @PostMapping(value = "/{id}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    /**
+     * SSE 流式聊天 - WebFlux 版本
+     * 使用 Flux<ServerSentEvent> 实现真正的响应式流
+     */
+    @PostMapping(value = "/{id}/chat/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "SSE流式聊天(POST)", description = "SSE流式返回Agent回复，支持推理过程实时推送")
-    public SseEmitter chatStreamPost(
+    public Flux<ServerSentEvent<String>> chatStreamPost(
             @PathVariable Long id,
             @RequestBody @Valid StreamChatRequest request,
             @RequestHeader(value = "Authorization", required = false) String authHeader,
-            @RequestHeader(value = "User-ID", required = false) @Pattern(regexp = "\\d+", message = "User-ID must be numeric") String userIdHeader,
-            @RequestHeader(value = "Tenant-ID", required = false) @Pattern(regexp = "\\d+", message = "Tenant-ID must be numeric") String tenantIdHeader) {
+            @RequestHeader(value = "User-ID", required = false) String userIdHeader,
+            @RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
 
         // 从 Authorization header 中提取 token
         UserInfoService.TokenUserInfo user = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            // 一次性获取所有信息
             user = userInfoService.getUserInfoFromToken(token);
             if (user == null) {
                 log.warn("无法解析 token，token 可能无效或已过期");
@@ -171,6 +167,23 @@ public class AgentScopeSseController {
         MDC.put("messageId", messageId);
         MDC.put("agentId", String.valueOf(id));
 
+        // 获取用户信息
+        String rawUserId = userIdHeader != null ? userIdHeader : "anonymous";
+        String rawTenantId = tenantIdHeader != null ? tenantIdHeader : "default";
+        String finalUserId;
+        String finalTenantId;
+        if (user != null) {
+            finalUserId = String.valueOf(user.getId());
+            finalTenantId = String.valueOf(user.getTenantId());
+        } else {
+            finalUserId = rawUserId;
+            finalTenantId = rawTenantId;
+        }
+        final String userId = finalUserId;
+        final String tenantId = finalTenantId;
+        MDC.put("userId", userId);
+
+        // 信号量控制并发
         try {
             if (!sseSemaphore.tryAcquire(1, TimeUnit.SECONDS)) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "服务器繁忙，请稍后重试");
@@ -180,332 +193,228 @@ public class AgentScopeSseController {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "服务器繁忙，请稍后重试");
         }
 
+        // 验证消息长度
         if (request.getMessage() == null || request.getMessage().length() > maxMessageLength) {
             sseSemaphore.release();
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "message too long (max " + maxMessageLength + " chars)");
         }
 
-        String userId = userIdHeader != null ? userIdHeader : "anonymous";
-        String tenantId = tenantIdHeader != null ? tenantIdHeader : "default";
+        activeSseConnections.incrementAndGet();
+        sseStartCounter.increment();
 
-        if (user != null) {
-            userId = String.valueOf(user.getId());
-            tenantId = String.valueOf(user.getTenantId());
-        }
+        // 创建会话并保存用户消息
+        String sessionId = chatSessionService.createSessionAndSaveUserMsg(
+                id, userId, tenantId, request.getSessionId(), request.getMessage());
+        Long userIdLong = parseLongSafe(userId, null);
+        Long tenantIdLong = parseLongSafe(tenantId, null);
 
-        MDC.put("userId", userId);
+        // 构建响应式流
+        return Flux.<ServerSentEvent<String>>create(sink -> {
+            try {
+                ReActAgent baseAgent = agentRegistry.getAgentWithLongTermMemory(id, userId, sessionId, tenantId);
+                if (baseAgent == null) {
+                    sink.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found or not published: " + id));
+                    sseSemaphore.release();
+                    activeSseConnections.decrementAndGet();
+                    return;
+                }
 
-        try {
-            ReActAgent baseAgent = agentRegistry.getAgentWithLongTermMemory(id, userId, request.getSessionId(), tenantId);
-            if (baseAgent == null) {
-                sseSemaphore.release();
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found or not published: " + id);
+                // 启动心跳保活
+                Disposable heartbeatDisposable = setupHeartbeat(sink, messageId);
+
+                // RAG 增强
+                Mono<String> messageMono = request.isEnableRag()
+                        ? Mono.fromFuture(() -> CompletableFuture
+                                .supplyAsync(() -> ragService.enhanceWithRag(id, request.getMessage()), ragExecutor)
+                                .orTimeout(ragTimeoutSeconds, TimeUnit.SECONDS))
+                        .onErrorResume(e -> {
+                            log.warn("RAG fallback: agentId={}", id, e);
+                            return Mono.just(request.getMessage());
+                        })
+                        : Mono.just(request.getMessage());
+
+                messageMono.subscribe(ragEnhancedMessage -> {
+                    Msg msgForAgent = Msg.builder().textContent(ragEnhancedMessage).build();
+                    log.debug("📨 [SSE] stream start: agentId={}, userId={}, messageId={}", id, userId, messageId);
+
+                    // 创建 StreamingHook
+                    StreamingHook streamingHook = new StreamingHook(sink, messageId, jsonMapper,
+                            messageFormatDetector, sseFragmentSampleRate);
+                    ReActAgent agentWithHook = buildAgentWithHooks(baseAgent, streamingHook);
+
+                    // 执行 Agent 调用
+                    agentWithHook.call(msgForAgent)
+                            .timeout(Duration.ofSeconds(agentCallTimeoutSeconds),
+                                    Mono.just(Msg.builder().textContent("请求超时，请稍后重试").build()))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .subscribe(
+                                    msg -> {
+                                        // 处理最终响应
+                                        handleAgentResponse(msg, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
+                                        heartbeatDisposable.dispose(); // 停止心跳
+                                        sink.complete();
+                                    },
+                                    error -> {
+                                        handleAgentError(error, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
+                                        heartbeatDisposable.dispose(); // 停止心跳
+                                        sink.error(error);
+                                    }
+                            );
+                });
+
+            } catch (Exception e) {
+                log.error("Unexpected error in chatStreamPost: agentId={}, messageId={}", id, messageId, e);
+                sink.error(e);
             }
-
-            final String finalSessionId = chatSessionService.createSessionAndSaveUserMsg(
-                    id, userId, tenantId, request.getSessionId(), request.getMessage());
-            Long userIdLong = parseLongSafe(userId, null);
-            Long tenantIdLong = parseLongSafe(tenantId, null);
-
-            SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-            activeSseConnections.incrementAndGet();
-            sseStartCounter.increment();
-
-            ResourceContext ctx = new ResourceContext(emitter, messageId, () -> {
-                sseSemaphore.release();
-                activeSseConnections.decrementAndGet();
-                MDC.remove("messageId");
-                MDC.remove("agentId");
-                MDC.remove("userId");
-            });
-
-            setupEmitterCallbacks(emitter, ctx);
-            setupHeartbeat(emitter, ctx);
-
-            StreamingHook streamingHook = new StreamingHook(emitter, ctx, messageId, jsonMapper,
-                    messageFormatDetector, sseFragmentSampleRate);
-            ReActAgent agentWithHook = buildAgentWithHooks(baseAgent, streamingHook);
-
-            executeAgentCall(agentWithHook, request, id, ctx, finalSessionId, userIdLong, tenantIdLong);
-
-            return emitter;
-
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Unexpected error in chatStreamPost: agentId={}, messageId={}", id, messageId, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "服务器内部错误");
-        } finally {
-            // 兜底清理：防止异常退出时遗漏（重复 remove 无副作用）
+        })
+        .doFinally(signalType -> {
+            sseSemaphore.release();
+            activeSseConnections.decrementAndGet();
             MDC.remove("messageId");
             MDC.remove("agentId");
             MDC.remove("userId");
-        }
+            log.info("✅ [SSE] finished: agentId={}, signal={}, messageId={}", id, signalType, messageId);
+        })
+        .timeout(Duration.ofMillis(sseTimeoutMs));
     }
 
-    private void setupEmitterCallbacks(SseEmitter emitter, ResourceContext ctx) {
-        Runnable cleanup = () -> {
-            ctx.cancelHeartbeat();
-            ctx.releaseResources();
-        };
-        // 回调中调用 markDisconnected() 保证幂等清理
-        emitter.onCompletion(() -> { ctx.markDisconnected(); cleanup.run(); });
-        emitter.onTimeout(() -> {
-            ctx.markDisconnected();
-            log.debug("SSE timeout: {}", ctx.getMessageId());
-            cleanup.run();
-        });
-        emitter.onError(e -> {
-            ctx.markDisconnected();
-            log.error("SSE error: {}", ctx.getMessageId(), e);
-            cleanup.run();
-        });
-    }
-
-    private void setupHeartbeat(SseEmitter emitter, ResourceContext ctx) {
-        ScheduledFuture<?> heartbeat = heartbeatExecutor.scheduleAtFixedRate(() -> {
-            if (!ctx.isDisconnected()) {
-                try {
-                    emitter.send(SseEmitter.event().comment("heartbeat"));
-                } catch (IllegalStateException | IOException e) {
-                    // 客户端断开或连接异常，标记断开（幂等）
-                    ctx.markDisconnected();
-                }
-            }
-        }, heartbeatIntervalSeconds, heartbeatIntervalSeconds, TimeUnit.SECONDS);
-        ctx.setHeartbeatFuture(heartbeat);
-    }
-
-    private void executeAgentCall(ReActAgent agent, StreamChatRequest request, Long agentId,
-                                  ResourceContext ctx, String sessionId, Long userId, Long tenantId) {
-
-        Mono<String> messageMono = request.isEnableRag()
-                ? Mono.fromFuture(() -> CompletableFuture
-                        .supplyAsync(() -> ragService.enhanceWithRag(agentId, request.getMessage()), ragExecutor)
-                        .orTimeout(ragTimeoutSeconds, TimeUnit.SECONDS))
-                .onErrorResume(e -> {
-                    log.warn("RAG fallback: agentId={}", agentId, e);
-                    return Mono.just(request.getMessage());
-                })
-                : Mono.just(request.getMessage());
-
-        messageMono.flatMap(ragEnhancedMessage -> {
-            Msg msgForAgent = Msg.builder().textContent(ragEnhancedMessage).build();
-            log.debug("📨 [SSE] stream start: agentId={}, userId={}, messageId={}", agentId, userId, ctx.getMessageId());
-            return agent.call(msgForAgent)
-                    .publishOn(Schedulers.boundedElastic())
-                    .timeout(Duration.ofSeconds(agentCallTimeoutSeconds),
-                            Mono.just(Msg.builder().textContent("请求超时，请稍后重试").build()));
-        }).subscribe(
-                msg -> {
-                    ctx.markDisconnected();
-                    handleAgentResponse(msg, ctx, agentId, sessionId, userId, tenantId);
-                },
-                error -> handleAgentError(error, ctx, agentId, sessionId, userId, tenantId),
-                () -> handleAgentComplete(ctx, agentId, sessionId, userId, tenantId)
-        );
-    }
-
-    private void handleAgentResponse(Msg msg, ResourceContext ctx, Long agentId,
-                                     String sessionId, Long userId, Long tenantId) {
-        Schedulers.single().schedule(() -> {
-            try {
-                String finalContent = ctx.getResponseContent();
-                if (finalContent.isBlank() && msg != null) {
-                    String msgContent = msg.getTextContent();
-                    if (msgContent != null && !msgContent.isBlank()) {
-                        ctx.appendResponse(msgContent);
-                        finalContent = msgContent;
-                    }
-                }
-
-                StreamResponseDTO doneResp = StreamResponseDTO.builder()
-                        .content("").messageType("text").messageId(ctx.getMessageId()).eventType("done").build();
-                ctx.getEmitter().send(SseEmitter.event().name("done").data(jsonMapper.writeValueAsString(doneResp)));
-                log.info("📨 [SSE] done sent: agentId={}, messageId={}, responseLength={}",
-                        agentId, ctx.getMessageId(), finalContent.length());
-
-                if (!finalContent.isBlank()) {
-                    saveAssistantMessageAsync(agentId, userId, tenantId, sessionId, finalContent);
-                }
-                long latency = System.currentTimeMillis() - ctx.getStartTime();
-                requestDurationTimer.record(latency, TimeUnit.MILLISECONDS);
-                ctx.releaseResources();
-                log.info("✅ [SSE] finished: agentId={}, latency={}ms, messageId={}",
-                        agentId, latency, ctx.getMessageId());
-            } catch (IOException e) {
-                // 发送 done 时连接已断开，属于正常边界，标记断开即可
-                log.debug("SSE done send failed (client disconnected): agentId={}, messageId={}", agentId, ctx.getMessageId());
-                ctx.markDisconnected();
-            } catch (IllegalStateException e) {
-                // 可能重复完成或响应已提交
-                log.debug("SSE done send failed (illegal state): agentId={}, messageId={}", agentId, ctx.getMessageId());
-                ctx.markDisconnected();
-            } catch (Exception e) {
-                log.warn("SSE done send unexpected error: agentId={}, messageId={}", agentId, ctx.getMessageId(), e);
-                ctx.markDisconnected();
-            }
-        }, hookFlushDelayMs, TimeUnit.MILLISECONDS);
-    }
-
-    private void handleAgentError(Throwable error, ResourceContext ctx, Long agentId,
-                                  String sessionId, Long userId, Long tenantId) {
-        String content = ctx.getResponseContent();
-        if (content != null && !content.isBlank()) {
-            saveAssistantMessageAsync(agentId, userId, tenantId, sessionId, content);
-        }
-        if (!ctx.isDisconnected()) {
-            try {
-                StreamResponseDTO errorResp = StreamResponseDTO.builder()
-                        .content(error.getMessage()).messageType("text").messageId(ctx.getMessageId()).eventType("error").build();
-                ctx.getEmitter().send(SseEmitter.event().name("error").data(jsonMapper.writeValueAsString(errorResp)));
-                ctx.getEmitter().completeWithError(error);
-            } catch (IllegalStateException | IOException ignored) {
-                // 连接已关闭，忽略
-            }
-        }
-        ctx.markDisconnected(); // 幂等调用
-        log.error("SSE stream error: agentId={}, messageId={}", agentId, ctx.getMessageId(), error);
-    }
-
-    private void handleAgentComplete(ResourceContext ctx, Long agentId, String sessionId, Long userId, Long tenantId) {
-        if (ctx.isDisconnected()) {
-            log.debug("SSE onComplete skipped (already handled): agentId={}, messageId={}",
-                    agentId, ctx.getMessageId());
-            return;
-        }
-
-        String content = ctx.getResponseContent();
-        if (content == null || content.isBlank()) {
-            emptyResponseCounter.increment();
-            log.warn("Agent completed with empty response: agentId={}, messageId={}", agentId, ctx.getMessageId());
-        }
-
-        long latency = System.currentTimeMillis() - ctx.getStartTime();
-        requestDurationTimer.record(latency, TimeUnit.MILLISECONDS);
-        ctx.releaseResources();
-        log.debug("SSE onComplete (cleanup only): agentId={}, latency={}ms, messageId={}",
-                agentId, latency, ctx.getMessageId());
-    }
-
-    private void saveAssistantMessageAsync(Long agentId, Long userId, Long tenantId, String sessionId, String content) {
-        if (content == null || content.isBlank()) {
-            log.debug("Skip saving empty message: agentId={}, sessionId={}", agentId, sessionId);
-            return;
-        }
+    private void handleAgentResponse(Msg msg, FluxSink<ServerSentEvent<String>> sink, Long agentId,
+                                     String messageId, String sessionId, Long userId, Long tenantId) {
         try {
-            chatSaveExecutor.execute(() -> {
-                try {
-                    ChatMessage assistantMsg = ChatMessage.builder()
-                            .sessionId(sessionId).agentId(agentId).userId(userId).tenantId(tenantId)
-                            .role("assistant").content(content).messageType(messageFormatDetector.detect(content)).build();
-                    chatMessageMapper.insert(assistantMsg);
-                } catch (Exception e) {
-                    saveFailedCounter.increment();
-                    log.error("Failed to save assistant message: agentId={}, sessionId={}", agentId, sessionId, e);
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            log.warn("Save task rejected by chatSaveExecutor: agentId={}, sessionId={}", agentId, sessionId);
+            String content = msg != null ? msg.getTextContent() : "";
+            
+            // 发送 done 事件
+            StreamResponseDTO doneResp = StreamResponseDTO.builder()
+                    .content("").messageType("text").messageId(messageId).eventType("done").build();
+            sink.next(ServerSentEvent.<String>builder()
+                    .event("done")
+                    .data(jsonMapper.writeValueAsString(doneResp))
+                    .build());
+
+            log.info("📨 [SSE] done sent: agentId={}, messageId={}, responseLength={}",
+                    agentId, messageId, content != null ? content.length() : 0);
+
+            // 异步保存助手消息
+            if (content != null && !content.isBlank()) {
+                saveAssistantMessageAsync(agentId, userId, tenantId, sessionId, content);
+            }
+        } catch (Exception e) {
+            log.warn("SSE done send error: agentId={}, messageId={}", agentId, messageId, e);
         }
     }
 
-    private ReActAgent buildAgentWithHooks(ReActAgent source, Hook... additionalHooks) {
+    private void handleAgentError(Throwable error, FluxSink<ServerSentEvent<String>> sink, Long agentId,
+                                  String messageId, String sessionId, Long userId, Long tenantId) {
+        try {
+            StreamResponseDTO errorResp = StreamResponseDTO.builder()
+                    .content(error.getMessage()).messageType("text").messageId(messageId).eventType("error").build();
+            sink.next(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data(jsonMapper.writeValueAsString(errorResp))
+                    .build());
+        } catch (Exception e) {
+            log.warn("SSE error send failed: agentId={}, messageId={}", agentId, messageId);
+        }
+        log.error("SSE stream error: agentId={}, messageId={}", agentId, messageId, error);
+    }
+
+    /**
+     * 设置心跳保活 - WebFlux 版本
+     * 使用 interval 定期发送注释类型的心跳事件
+     */
+    private Disposable setupHeartbeat(FluxSink<ServerSentEvent<String>> sink, String messageId) {
+        long heartbeatIntervalMs = heartbeatIntervalSeconds * 1000L;
+        
+        return Flux.interval(Duration.ofMillis(heartbeatIntervalMs))
+                .subscribeOn(Schedulers.single())
+                .subscribe(
+                        tick -> {
+                            try {
+                                // 发送 SSE 注释作为心跳（不触发前端 onmessage）
+                                sink.next(ServerSentEvent.<String>builder()
+                                        .comment("heartbeat")
+                                        .build());
+                                log.debug("💓 [SSE] heartbeat sent: messageId={}, tick={}", messageId, tick);
+                            } catch (Exception e) {
+                                log.debug("💔 [SSE] heartbeat failed (client disconnected?): messageId={}", messageId);
+                            }
+                        },
+                        error -> log.warn("Heartbeat error: messageId={}", messageId, error)
+                );
+    }
+
+    private ReActAgent buildAgentWithHooks(ReActAgent source, Hook additionalHook) {
         ReActAgent.Builder builder = ReActAgent.builder()
-                .name(source.getName()).sysPrompt(source.getSysPrompt()).model(source.getModel())
-                .memory(source.getMemory()).toolkit(source.getToolkit()).maxIters(source.getMaxIters()).checkRunning(true);
+                .name(source.getName())
+                .sysPrompt(source.getSysPrompt())
+                .model(source.getModel())
+                .memory(source.getMemory())
+                .toolkit(source.getToolkit())
+                .maxIters(source.getMaxIters())
+                .checkRunning(true);
+        
+        // 合并原有的 Hooks 和新的 Hook
         List<Hook> mergedHooks = new ArrayList<>(source.getHooks());
-        Collections.addAll(mergedHooks, additionalHooks);
+        mergedHooks.add(additionalHook);
         return builder.hooks(mergedHooks).build();
     }
 
-    private Long parseLongSafe(String str, Long defaultValue) {
-        if (str == null || str.isBlank()) return defaultValue;
-        try {
-            return Long.parseLong(str);
-        } catch (NumberFormatException e) {
-            log.debug("Failed to parse '{}' as Long, using default: {}", str, defaultValue);
-            return defaultValue;
-        }
+    private void saveAssistantMessageAsync(Long agentId, Long userId, Long tenantId, 
+                                           String sessionId, String content) {
+        chatSaveExecutor.submit(() -> {
+            try {
+                String messageType = detectMessageType(content);
+                ChatMessage assistantMsg = ChatMessage.builder()
+                        .sessionId(sessionId)
+                        .agentId(agentId)
+                        .userId(userId)
+                        .tenantId(tenantId)
+                        .role("assistant")
+                        .content(content)
+                        .messageType(messageType)
+                        .build();
+                chatMessageMapper.insert(assistantMsg);
+                log.debug("💾 [SSE] assistant message saved: sessionId={}, length={}", sessionId, content.length());
+            } catch (Exception e) {
+                log.error("Failed to save assistant message: sessionId={}", sessionId, e);
+                saveFailedCounter.increment();
+            }
+        });
     }
 
-    // ========== ResourceContext：资源管理上下文 ==========
-    private static class ResourceContext {
-        private final SseEmitter emitter;
-        private final String messageId;
-        private final long startTime;
-        // 🔑 核心：用 AtomicBoolean 保证断开状态幂等，避免重复清理
-        private final AtomicBoolean disconnected;
-        private final AtomicBoolean resourcesReleased;
-        private final StringBuilder responseBuffer;
-        private final Object bufferLock;
-        private volatile ScheduledFuture<?> heartbeatFuture;
-        private final Runnable cleanupCallback;
-
-        public ResourceContext(SseEmitter emitter, String messageId, Runnable cleanupCallback) {
-            this.emitter = emitter;
-            this.messageId = messageId;
-            this.cleanupCallback = cleanupCallback;
-            this.startTime = System.currentTimeMillis();
-            this.disconnected = new AtomicBoolean(false);
-            this.resourcesReleased = new AtomicBoolean(false);
-            this.responseBuffer = new StringBuilder();
-            this.bufferLock = new Object();
+    private String detectMessageType(String content) {
+        if (content == null || content.isBlank()) return "text";
+        if (content.trim().startsWith("{") || content.trim().startsWith("[")) {
+            return "json";
         }
-
-        public boolean isDisconnected() { return disconnected.get(); }
-
-        // 🔑 幂等方法：多次调用无副作用
-        public void markDisconnected() {
-            if (disconnected.compareAndSet(false, true)) {
-                log.debug("Connection marked disconnected: messageId={}", messageId);
-            }
+        if (content.contains("<table>") || content.contains("|")) {
+            return "table";
         }
+        return "text";
+    }
 
-        public void setHeartbeatFuture(ScheduledFuture<?> f) { this.heartbeatFuture = f; }
-
-        public void cancelHeartbeat() {
-            ScheduledFuture<?> f = heartbeatFuture;
-            if (f != null && !f.isDone()) {
-                f.cancel(false);
-            }
-        }
-        public String getMessageId() { return messageId; }
-        public long getStartTime() { return startTime; }
-        public SseEmitter getEmitter() { return emitter; }
-
-        public void appendResponse(String content) {
-            if (content != null) synchronized (bufferLock) { responseBuffer.append(content); }
-        }
-        public String getResponseContent() {
-            synchronized (bufferLock) { return responseBuffer.toString(); }
-        }
-
-        public void releaseResources() {
-            if (resourcesReleased.compareAndSet(false, true)) {
-                cancelHeartbeat();
-                if (cleanupCallback != null) cleanupCallback.run();
-                log.debug("Resources released for messageId: {}", messageId);
-            }
+    private Long parseLongSafe(String value, Long defaultValue) {
+        if (value == null) return defaultValue;
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 
     // ========== StreamingHook：流式事件钩子 ==========
     private class StreamingHook implements Hook {
-        private final SseEmitter emitter;
-        private final ResourceContext resourceCtx;
+        private final FluxSink<ServerSentEvent<String>> sink;
         private final String messageId;
         private final ObjectMapper localMapper;
         private final MessageFormatDetector formatDetector;
         private final double sampleRate;
-
         private final AtomicReference<String> globalMessageType = new AtomicReference<>();
 
-        public StreamingHook(SseEmitter emitter, ResourceContext resourceCtx, String messageId,
+        public StreamingHook(FluxSink<ServerSentEvent<String>> sink, String messageId,
                              ObjectMapper localMapper, MessageFormatDetector formatDetector, double sampleRate) {
-            this.emitter = emitter;
-            this.resourceCtx = resourceCtx;
+            this.sink = sink;
             this.messageId = messageId;
             this.localMapper = localMapper;
             this.formatDetector = formatDetector;
@@ -520,8 +429,6 @@ public class AgentScopeSseController {
 
         @Override
         public <T extends HookEvent> Mono<T> onEvent(T event) {
-            if (resourceCtx.isDisconnected()) return Mono.just(event);
-
             return Mono.defer(() -> {
                 try {
                     String eventName = null;
@@ -532,7 +439,8 @@ public class AgentScopeSseController {
                         var chunk = chunkEvent.getIncrementalChunk();
                         if (chunk != null) content = chunk.getTextContent();
                     } else if (event instanceof ActingChunkEvent) {
-                        eventName = "acting"; content = "执行工具...";
+                        eventName = "acting"; 
+                        content = "执行工具...";
                     } else if (event instanceof SummaryChunkEvent summaryEvent) {
                         eventName = "summary";
                         var chunk = summaryEvent.getIncrementalChunk();
@@ -546,14 +454,14 @@ public class AgentScopeSseController {
                     }
 
                     if (content != null && !content.isEmpty()) {
-                        if (!(event instanceof PostCallEvent)) {
-                            resourceCtx.appendResponse(content);
-                        }
-
                         String messageType = resolveGlobalMessageType(content);
                         StreamResponseDTO response = StreamResponseDTO.builder()
                                 .content(content).messageType(messageType).messageId(messageId).eventType(eventName).build();
-                        emitter.send(SseEmitter.event().name(eventName).data(localMapper.writeValueAsString(response)));
+                        
+                        sink.next(ServerSentEvent.<String>builder()
+                                .event(eventName)
+                                .data(localMapper.writeValueAsString(response))
+                                .build());
 
                         if (log.isDebugEnabled() && Math.random() < sampleRate) {
                             String safeContent = content.length() > 100 ? content.substring(0, 100) + "..." : content;
@@ -561,15 +469,7 @@ public class AgentScopeSseController {
                                     messageId, eventName, safeContent);
                         }
                     }
-                } catch (IllegalStateException e) {
-                    // 连接已关闭或重复发送，标记断开（幂等）
-                    resourceCtx.markDisconnected();
-                } catch (IOException e) {
-                    // IO 异常通常表示客户端断开
-                    resourceCtx.markDisconnected();
-                    log.debug("SseEmitter IO error (client disconnected): messageId={}", messageId);
                 } catch (Exception e) {
-                    resourceCtx.markDisconnected();
                     log.warn("Streaming hook send error: messageId={}", messageId, e);
                 }
                 return Mono.just(event);

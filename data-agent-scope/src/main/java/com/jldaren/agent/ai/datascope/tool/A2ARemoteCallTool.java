@@ -26,6 +26,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import jakarta.annotation.PostConstruct;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import java.util.Map;
 
 /**
@@ -115,7 +117,8 @@ public class A2ARemoteCallTool {
 
         try {
             // 使用 SSE 专用解码器，直接接收 ServerSentEvent 对象
-            String fullResponse = webClient.get()
+            String fullResponse = Mono.fromFuture(
+                webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/stream/search")
                             .queryParam("agentId", remoteAgentId)
@@ -136,7 +139,8 @@ public class A2ARemoteCallTool {
                     .filter(text -> !text.isBlank())
                     .collectList()
                     .map(chunks -> String.join("", chunks))
-                    .block();
+                    .toFuture()
+            ).subscribeOn(Schedulers.boundedElastic()).block();
 
             if (fullResponse == null || fullResponse.isBlank()) {
                 log.warn("⚠️ [远程智能体调用] 返回为空, question={}", actualQuestion);

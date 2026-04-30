@@ -7,6 +7,8 @@ import io.agentscope.core.tool.Toolkit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 多智能体 - 报告生成器
@@ -44,6 +46,8 @@ public class ReportGeneratorAgent {
         log.info("📝 ReportGenerator 生成报告");
         String prompt = "基于以下分析结果生成报告：\n" + analysisResult;
         Msg request = Msg.builder().textContent(prompt).build();
-        return agent.call(request).block();
+        return Mono.fromFuture(agent.call(request).toFuture())
+                .subscribeOn(Schedulers.boundedElastic())
+                .block();
     }
 }

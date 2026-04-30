@@ -7,6 +7,8 @@ import io.agentscope.core.tool.Toolkit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 多智能体 - 数据分析师
@@ -46,6 +48,8 @@ public class DataAnalystAgent {
     public Msg analyze(String question) {
         log.info("📊 DataAnalyst 分析: {}", question);
         Msg request = Msg.builder().textContent(question).build();
-        return agent.call(request).block();
+        return Mono.fromFuture(agent.call(request).toFuture())
+                .subscribeOn(Schedulers.boundedElastic())
+                .block();
     }
 }

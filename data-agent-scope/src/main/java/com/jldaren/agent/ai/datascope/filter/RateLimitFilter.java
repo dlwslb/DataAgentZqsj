@@ -16,27 +16,25 @@
 package com.jldaren.agent.ai.datascope.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.Filter;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * 基于 IP 的 API 速率限制过滤器（令牌桶算法简化版）
+ * 基于 IP 的 API 速率限制过滤器（令牌桶算法简化版）- WebFlux 版本
  * <p>
  * 针对 LLM 调用接口做限流，防止恶意请求打爆 DashScope 配额。
  * 配置项：
@@ -46,8 +44,8 @@ import java.util.concurrent.atomic.LongAdder;
  */
 @Slf4j
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
-public class RateLimitFilter implements Filter {
+@Order(2)
+public class RateLimitFilter implements WebFilter {
 
     @Value("${app.rate-limit.enabled:true}")
     private boolean enabled;
@@ -62,35 +60,26 @@ public class RateLimitFilter implements Filter {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-            throws IOException, ServletException {
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         if (!enabled) {
-            chain.doFilter(request, response);
-            return;
+            return chain.filter(exchange);
         }
 
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-        String requestPath = httpRequest.getRequestURI();
+        String requestPath = exchange.getRequest().getURI().getPath();
 
         // 只对 LLM 相关路径限流
         if (!isLlmPath(requestPath)) {
-            chain.doFilter(request, response);
-            return;
+            return chain.filter(exchange);
         }
 
-        String clientId = getClientId(httpRequest);
+        String clientId = getClientId(exchange);
         RequestCounter counter = counters.computeIfAbsent(clientId, k -> new RequestCounter());
 
         if (counter.tryAcquire(maxRequestsPerMinute)) {
-            chain.doFilter(request, response);
+            return chain.filter(exchange);
         } else {
             log.warn("Rate limit exceeded for client: {}, path: {}", clientId, requestPath);
-            sendRateLimitResponse((HttpServletResponse) response);
-        }
-
-        // 清理过期的计数器（每 100 次请求清理一次）
-        if (counter.totalCount() % 100 == 0) {
-            cleanupExpiredCounters();
+            return sendRateLimitResponse(exchange);
         }
     }
 
@@ -106,31 +95,35 @@ public class RateLimitFilter implements Filter {
         return false;
     }
 
-    private String getClientId(HttpServletRequest request) {
+    private String getClientId(ServerWebExchange exchange) {
         // 优先使用认证用户 ID，否则使用 IP
-        String userId = request.getHeader("X-User-Id");
+        String userId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
         if (userId != null && !userId.isEmpty()) {
             return "user:" + userId;
         }
-        String xfHeader = request.getHeader("X-Forwarded-For");
+        
+        String xfHeader = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
         if (xfHeader != null && !xfHeader.isEmpty()) {
             return "ip:" + xfHeader.split(",")[0].trim();
         }
-        return "ip:" + request.getRemoteAddr();
+        
+        return "ip:" + exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
     }
 
-    private void sendRateLimitResponse(HttpServletResponse response) throws IOException {
-        response.setStatus(429);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(objectMapper.writeValueAsString(
-                Map.of("code", 429, "message", "请求过于频繁，请稍后再试")));
-    }
-
-    private void cleanupExpiredCounters() {
-        long now = System.currentTimeMillis();
-        counters.entrySet().removeIf(entry ->
-                now - entry.getValue().windowStart > 120_000 // 超过2分钟未活跃的清理掉
-        );
+    private Mono<Void> sendRateLimitResponse(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        
+        try {
+            String body = objectMapper.writeValueAsString(
+                    Map.of("code", 429, "message", "请求过于频繁，请稍后再试"));
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            return exchange.getResponse().writeWith(Mono.just(exchange.getResponse()
+                    .bufferFactory().wrap(bytes)));
+        } catch (Exception e) {
+            log.error("Failed to serialize rate limit response", e);
+            return exchange.getResponse().setComplete();
+        }
     }
 
     /**

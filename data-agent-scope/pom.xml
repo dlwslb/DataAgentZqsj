@@ -24,10 +24,10 @@
     </properties>
 
     <dependencies>
-        <!-- Spring Boot Web (Servlet 环境，兼容 JDBC/DataSource) -->
+        <!-- Spring Boot WebFlux (响应式框架) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
         <!-- Spring Boot JDBC (for MyBatis DataSource auto-config) -->
@@ -91,6 +91,11 @@
                     <groupId>tools.jackson.core</groupId>
                     <artifactId>jackson-databind</artifactId>
                 </exclusion>
+                <!-- 排除 Servlet 依赖，确保 WebFlux 兼容 -->
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
@@ -103,6 +108,11 @@
                 <exclusion>
                     <groupId>tools.jackson.core</groupId>
                     <artifactId>jackson-databind</artifactId>
+                </exclusion>
+                <!-- 排除 Servlet 依赖，确保 WebFlux 兼容 -->
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
