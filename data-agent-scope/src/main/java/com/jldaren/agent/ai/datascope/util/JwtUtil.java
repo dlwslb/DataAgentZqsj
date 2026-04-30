@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret:data-agent-secret-key-2024-prod}")
+    @Value("${jwt.secret:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}")
     private String secret;
 
     private SecretKey getSigningKey() {
@@ -39,6 +39,34 @@ public class JwtUtil {
     public Long getUserIdFromToken(String token) {
         Claims claims = parseToken(token);
         return claims.get("userId", Long.class);
+    }
+
+    public Long getTenantIdFromToken(String token) {
+        Claims claims = parseToken(token);
+        return claims.get("tenantId", Long.class);
+    }
+
+    public String getRoleFromToken(String token) {
+        Claims claims = parseToken(token);
+        return claims.get("role", String.class);
+    }
+
+    public String getUsernameFromToken(String token) {
+        Claims claims = parseToken(token);
+        return claims.getSubject();
+    }
+
+    public String getTokenType(String token) {
+        Claims claims = parseToken(token);
+        return claims.get("type", String.class);
+    }
+
+    public boolean isAccessToken(String token) {
+        return "access".equals(getTokenType(token));
+    }
+
+    public boolean isRefreshToken(String token) {
+        return "refresh".equals(getTokenType(token));
     }
 
     public String getJti(String token) {

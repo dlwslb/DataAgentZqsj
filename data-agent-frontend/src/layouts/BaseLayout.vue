@@ -23,6 +23,18 @@
             <i class="bi bi-robot"></i>
             <span class="brand-text">{{ systemName }}</span>
           </div>
+          <nav class="header-nav" v-if="isImpersonating">
+            <!-- 模拟模式提示条 -->
+            <el-alert
+                v-if="isImpersonating"
+                title="当前处于模拟用户模式"
+                type="warning"
+                :closable="false"
+                show-icon
+                style="border-radius: 0;"
+            >
+            </el-alert>
+          </nav>
           <nav class="header-nav" v-if="isSuperAdmin">
             <div class="nav-item" :class="{ active: isAgentPage() }" @click="goToAgentList">
               <i class="bi bi-grid-3x3-gap"></i>
@@ -55,7 +67,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="logout">
                   <i class="bi bi-box-arrow-right"></i>
-                  退出登录
+                  {{ isImpersonating ? '退出模拟' : '退出登录' }}
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -86,6 +98,8 @@
       const systemName = ref('Spring AI Alibaba Data Agent');
       const userInfo = ref(null);
       const isSuperAdmin = ref(false);
+      // 检查是否在模拟模式
+      const isImpersonating = ref(authService.isImpersonating());
 
       onMounted(async () => {
         systemName.value = await systemConfigService.getSystemName();
@@ -139,7 +153,11 @@
       // 处理下拉菜单命令
       const handleCommand = (command) => {
         if (command === 'logout') {
-          handleLogout();
+          if(isImpersonating.value){
+            exitImpersonation();
+          }else{
+            handleLogout();
+          }
         }
       };
 
@@ -165,10 +183,20 @@
         }
       };
 
+      // 退出模拟模式
+      const exitImpersonation = () => {
+        authService.exitImpersonation();
+        isImpersonating.value = false;
+        ElMessage.success('已退出模拟模式');
+        // 跳转到用户管理页面
+        router.push('/users');
+      };
+
       return {
         systemName,
         userInfo,
         isSuperAdmin,
+        isImpersonating,
         goToAgentList,
         goToAgentScopeList,
         goToModelConfig,
@@ -178,6 +206,7 @@
         isModelConfigPage,
         isUserManagementPage,
         handleCommand,
+        exitImpersonation,
         UserFilled,
       };
     },

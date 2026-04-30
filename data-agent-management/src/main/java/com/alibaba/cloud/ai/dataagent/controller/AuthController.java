@@ -32,20 +32,67 @@ public class AuthController {
 	private final JwtUtil jwtUtil;
 	private final TokenBlacklistService blacklistService;
 
+	/**
+	 * 获取当前登录用户信息
+	 */
+	@GetMapping("/current")
+	public ResponseEntity<Map<String, Object>> getCurrentUser(
+			@RequestHeader(value = "Authorization", required = false) String authHeader) {
+		try {
+			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+			return ResponseEntity.status(401).body(Map.of(
+					"code", 401,
+					"message", "未登录"
+			));
+		}
+
+		String token = authHeader.substring(7);
+		Long userId = jwtUtil.getUserIdFromToken(token);
+		User user = authService.getCurrentUser(userId);
+
+		if (user == null) {
+			return ResponseEntity.status(404).body(Map.of(
+					"code", 404,
+					"message", "用户不存在"
+			));
+		}
+
+		return ResponseEntity.ok(Map.of(
+				"code", 0,
+				"message", "获取成功",
+				"data", Map.of(
+						"id", user.getId(),
+						"username", user.getUsername(),
+						"nickname", user.getNickname() != null ? user.getNickname() : "",
+						"email", user.getEmail() != null ? user.getEmail() : "",
+						"avatar", user.getAvatar() != null ? user.getAvatar() : "",
+						"role", user.getRole(),
+						"agentId", user.getAgentId() != null ? user.getAgentId() : 0,
+						"tenantId", user.getTenantId() != null ? user.getTenantId() : 0
+				)
+		));
+	} catch (Exception e) {
+		log.error("获取当前用户信息失败: {}", e.getMessage());
+		return ResponseEntity.status(500).body(Map.of(
+				"code", 500,
+				"message", "获取用户信息失败"
+		));
+	}
+	}
+
 	@PostMapping("/login")
 	public ResponseEntity<Map<String, Object>> login(
 			@Valid @RequestBody LoginRequest request,
-			@RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
-			@RequestHeader(value = "X-Real-IP", required = false) String realIp) {
+			org.springframework.http.server.reactive.ServerHttpRequest serverRequest) {
 		try {
 			// 获取客户端真实IP
-			String clientIp = getClientIp(forwardedFor, realIp);
+			String clientIp = getClientIp(serverRequest);
 			request.setLoginIp(clientIp);
 
 			LoginResponse response = authService.login(request);
 			User user = authService.getCurrentUser(response.getUserInfo().getId());
 
-			String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
+			String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getTenantId(), user.getRole());
 			String refreshToken = jwtUtil.generateRefreshToken(user.getId());
 
 			Map<String, Object> data = new HashMap<>();
@@ -96,7 +143,7 @@ public class AuthController {
 				));
 			}
 
-			String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
+			String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getTenantId(), user.getRole());
 			String newRefreshToken = jwtUtil.generateRefreshToken(user.getId());
 
 			return ResponseEntity.ok(Map.of(
@@ -137,20 +184,30 @@ public class AuthController {
 	}
 
 	/**
-	 * 获取客户端真实IP地址
+	 * 获取客户端真实IP地址（WebFlux）
 	 */
-	private String getClientIp(String forwardedFor, String realIp) {
-		// 优先从 X-Forwarded-For 获取（反向代理场景）
+	private String getClientIp(org.springframework.http.server.reactive.ServerHttpRequest request) {
+		// 优先从 X-Forwarded-For 获取
+		String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
 		if (forwardedFor != null && !forwardedFor.isEmpty()) {
-			// X-Forwarded-For 可能包含多个IP，取第一个
 			String[] ips = forwardedFor.split(",");
 			return ips[0].trim();
 		}
+		
 		// 其次从 X-Real-IP 获取
+		String realIp = request.getHeaders().getFirst("X-Real-IP");
 		if (realIp != null && !realIp.isEmpty()) {
 			return realIp;
 		}
-		// 默认返回未知
+		
+		// 最后从远程地址获取
+		if (request.getRemoteAddress() != null) {
+			String remoteAddr = request.getRemoteAddress().getAddress().getHostAddress();
+			if (remoteAddr != null && !remoteAddr.isEmpty()) {
+				return remoteAddr;
+			}
+		}
+		
 		return "unknown";
 	}
 
@@ -187,5 +244,110 @@ public class AuthController {
 					"message", "密码生成失败: " + e.getMessage()
 			));
 		}
+	}
+
+	/**
+	 * 超级管理员模拟用户登录（生成临时Token）
+	 * 只有超级管理员可以调用此接口
+	 */
+	@PostMapping("/impersonate")
+	public ResponseEntity<Map<String, Object>> impersonateUser(
+			@RequestBody ImpersonateRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authHeader) {
+		try {
+			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+				return ResponseEntity.status(401).body(Map.of(
+						"code", 401,
+						"message", "未登录"
+				));
+			}
+
+			String currentToken = authHeader.substring(7);
+			String currentRole = jwtUtil.getRoleFromToken(currentToken);
+			String currentUsername = jwtUtil.getUsernameFromToken(currentToken);
+
+			// 严格验证：仅允许超级管理员
+			if (!"super_admin".equals(currentRole)) {
+				log.warn("【安全警告】非超级管理员尝试模拟用户 - 用户名: {}, 角色: {}", 
+						currentUsername != null ? currentUsername : "unknown", currentRole);
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "禁止访问：此功能仅限超级管理员使用"
+				));
+			}
+
+			// 验证请求参数
+			if (request == null || request.getUserId() == null) {
+				log.warn("模拟用户请求参数为空: request={}", request);
+				return ResponseEntity.status(400).body(Map.of(
+						"code", 400,
+						"message", "请求参数错误：userId不能为空"
+				));
+			}
+
+			log.info("开始模拟用户，目标用户ID: {}", request.getUserId());
+
+			// 获取目标用户信息
+			User targetUser = authService.getUserById(request.getUserId());
+			if (targetUser == null) {
+				log.warn("目标用户不存在，ID: {}", request.getUserId());
+				return ResponseEntity.status(404).body(Map.of(
+						"code", 404,
+						"message", "目标用户不存在"
+				));
+			}
+
+			// 检查目标用户状态
+			if (targetUser.getStatus() != null && targetUser.getStatus() != 1) {
+				return ResponseEntity.status(400).body(Map.of(
+						"code", 400,
+						"message", "目标用户已被禁用"
+				));
+			}
+
+			// 生成临时Token（有效期5分钟）
+			String tempToken = jwtUtil.generateTempToken(
+					targetUser.getId(),
+					targetUser.getUsername(),
+					targetUser.getTenantId(),
+					targetUser.getRole()
+			);
+
+			String adminUsername = jwtUtil.getUsernameFromToken(currentToken);
+			log.info("超级管理员 [{}] 模拟用户 [{}] (ID: {})",
+					adminUsername != null ? adminUsername : "unknown",
+					targetUser.getUsername(),
+					targetUser.getId());
+
+			Map<String, Object> data = new HashMap<>();
+			data.put("accessToken", tempToken);
+			
+			// 构建用户信息（处理null值）
+			Map<String, Object> userInfo = new HashMap<>();
+			userInfo.put("id", targetUser.getId());
+			userInfo.put("username", targetUser.getUsername());
+			userInfo.put("nickname", targetUser.getNickname() != null ? targetUser.getNickname() : "");
+			userInfo.put("tenantId", targetUser.getTenantId());
+			userInfo.put("role", targetUser.getRole());
+			userInfo.put("agentId", targetUser.getAgentId()); // 允许为null
+			data.put("userInfo", userInfo);
+
+			return ResponseEntity.ok(Map.of(
+					"code", 0,
+					"message", "模拟登录成功",
+					"data", data
+			));
+		} catch (Exception e) {
+			log.error("Impersonate user failed: {}", e.getMessage(), e);
+			return ResponseEntity.status(500).body(Map.of(
+					"code", 500,
+					"message", "模拟登录失败: " + e.getMessage()
+			));
+		}
+	}
+
+	@Data
+	public static class ImpersonateRequest {
+		private Long userId;
 	}
 }

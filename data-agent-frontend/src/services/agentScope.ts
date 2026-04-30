@@ -12,7 +12,7 @@ const agentScopeClient = axios.create({
 // 请求拦截器 - 自动添加用户信息（与 common.ts 保持一致）
 agentScopeClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

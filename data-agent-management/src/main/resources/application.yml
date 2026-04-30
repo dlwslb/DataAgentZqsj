@@ -11,7 +11,7 @@ springdoc:
 # 应用配置
 app:
   system:
-    name: 政企商机智能体
+    name: 滔滔
 
 spring:
   profiles:

@@ -126,6 +126,74 @@ class AuthService {
   isAuthenticated(): boolean {
     return !!this.getToken();
   }
+
+  /**
+   * 模拟用户登录（生成临时Token）
+   * 只有超级管理员可以调用
+   */
+  async impersonateUser(userId: number): Promise<LoginResponse | null> {
+    try {
+      // 保存当前超级管理员的token
+      const originalToken = localStorage.getItem('accessToken');
+      const originalUserInfo = localStorage.getItem('userInfo');
+      if (originalToken && originalUserInfo) {
+        localStorage.setItem('originalAccessToken', originalToken);
+        localStorage.setItem('originalUserInfo', originalUserInfo);
+      }
+      
+      const response = await apiClient.post('/api/auth/impersonate', {
+        userId: userId,
+      });
+      
+      if (response.data.code === 0 && response.data.data) {
+        const loginData = response.data.data;
+        // 保存临时Token和用户信息
+        localStorage.setItem('accessToken', loginData.accessToken);
+        localStorage.setItem('userInfo', JSON.stringify(loginData.userInfo));
+        // 标记为模拟会话
+        localStorage.setItem('isImpersonating', 'true');
+        return loginData;
+      }
+      throw new Error(response.data.message || '模拟登录失败');
+    } catch (error: any) {
+      console.error('Impersonate error:', error);
+      let errorMessage = '模拟登录失败';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * 退出模拟模式，恢复原始用户
+   */
+  exitImpersonation(): void {
+    // 恢复原始用户的token
+    const originalToken = localStorage.getItem('originalAccessToken');
+    const originalUserInfo = localStorage.getItem('originalUserInfo');
+    
+    if (originalToken && originalUserInfo) {
+      localStorage.setItem('accessToken', originalToken);
+      localStorage.setItem('userInfo', originalUserInfo);
+    }
+    
+    // 清除模拟相关标记
+    localStorage.removeItem('isImpersonating');
+    localStorage.removeItem('originalAccessToken');
+    localStorage.removeItem('originalUserInfo');
+  }
+
+  /**
+   * 检查是否在模拟模式
+   */
+  isImpersonating(): boolean {
+    return localStorage.getItem('isImpersonating') === 'true';
+  }
 }
 
 export default new AuthService();

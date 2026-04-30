@@ -317,7 +317,7 @@
 
 <script lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Loading, Document, Download, FullScreen, Close, ArrowDown, Promotion, CircleClose } from '@element-plus/icons-vue';
 import { marked } from 'marked';
@@ -328,6 +328,7 @@ import MarkdownAgentContainer from '@/components/run/markdown';
 import ReportHtmlView from '@/components/run/ReportHtmlView.vue';
 import HumanFeedback from '@/components/run/HumanFeedback.vue';
 import { agentScopeApi, AgentScope, ChatSession, ChatMessage } from '@/services/agentScope';
+import authService from '@/services/auth';
 
 export default {
   name: 'AgentScopeRun',
@@ -348,6 +349,11 @@ export default {
   },
   setup() {
     const router = useRouter();
+    const route = useRoute();
+    // 获取模拟用户ID（从URL参数）
+    const impersonateUserId = computed(() => route.query.impersonateUserId as string);
+    // 检查是否在模拟模式
+    const isImpersonating = ref(authService.isImpersonating());
     const agent = ref<AgentScope>({
       id: 0,
       name: '',
@@ -795,7 +801,7 @@ export default {
 
     const sendStreamingMessage = async (userMessage: string) => {
       return new Promise<void>((resolve, reject) => {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('accessToken');
         const userInfoStr = localStorage.getItem('userInfo');
         const extraHeaders: Record<string, string> = {};
         if (token) extraHeaders['Authorization'] = `Bearer ${token}`;
@@ -805,6 +811,10 @@ export default {
             if (userInfo.id) extraHeaders['User-ID'] = String(userInfo.id);
             if (userInfo.tenantId) extraHeaders['Tenant-ID'] = String(userInfo.tenantId);
           } catch (e) { console.error('Failed to parse user info:', e); }
+        }
+        // 如果有模拟用户ID，添加到header
+        if (impersonateUserId.value) {
+          extraHeaders['X-Impersonate-User-ID'] = impersonateUserId.value;
         }
 
         const body = JSON.stringify({
@@ -1128,7 +1138,7 @@ export default {
       sendMessage, handleEnterKey, downloadMarkdownReport, downloadHtmlReport,
       openReportFullscreen, closeReportFullscreen, inputControlsCollapsed, autoScroll,
       showHumanFeedback, lastRequest, resultSetDisplayConfig, requestOptions,
-      isAdminMode, sseEnabled, isSuperAdmin, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
+      isAdminMode, sseEnabled, isSuperAdmin, isImpersonating, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
       detectMessageType, preprocessStreamingContent,
       thinkingPreview,
       hasFinalMessage,

@@ -87,7 +87,15 @@
             <el-table-column prop="province" label="省份" width="100" show-overflow-tooltip />
             <el-table-column prop="agentId" label="绑定智能体" width="120">
               <template #default="{ row }">
-                {{ getAgentName(row.agentId) }}
+                <span
+                  v-if="row.agentId"
+                  :class="['agent-link', { 'disabled-link': !isSuperAdmin }]"
+                  @click="goToAgentRun(row.agentId, row.id)"
+                  :title="!isSuperAdmin ? '仅超级管理员可访问' : ''"
+                >
+                  {{ getAgentName(row.agentId) }}
+                </span>
+                <span v-else class="text-muted">-</span>
               </template>
             </el-table-column>
             <el-table-column prop="role" label="角色" width="100">
@@ -245,16 +253,19 @@
 
 <script>
 import { defineComponent, ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox, ElIcon } from 'element-plus';
 import { Plus, Search, Refresh, Edit, Delete, Key, UserFilled } from '@element-plus/icons-vue';
 import BaseLayout from '@/layouts/BaseLayout.vue';
 import userService from '@/services/user';
+import authService from '@/services/auth';
 import { agentScopeApi } from '@/services/agentScope';
 
 export default defineComponent({
   name: 'UserManagement',
   components: { BaseLayout, ElIcon, Plus, Search, Refresh, Edit, Delete, Key, UserFilled },
   setup() {
+    const router = useRouter();
     const loading = ref(false);
     const dialogVisible = ref(false);
     const passwordDialogVisible = ref(false);
@@ -263,6 +274,10 @@ export default defineComponent({
     const resetting = ref(false);
     const formRef = ref();
     const passwordFormRef = ref();
+
+    // 检查是否为超级管理员
+    const userInfo = authService.getUserInfo();
+    const isSuperAdmin = computed(() => userInfo?.role === 'super_admin');
 
     const users = ref([]);
     const searchKeyword = ref('');
@@ -387,6 +402,26 @@ export default defineComponent({
       if (!agentId) return '-';
       const agent = agentList.value.find(a => a.id === agentId);
       return agent ? agent.name : '-';
+    };
+    
+    // 跳转到智能体运行页面（先模拟用户登录）
+    const goToAgentRun = async (agentId, userId) => {
+      if (!agentId) return;
+      
+      // 严格权限检查：仅超级管理员可以模拟
+      if (!isSuperAdmin.value) {
+        ElMessage.error('禁止访问：此功能仅限超级管理员使用');
+        return;
+      }
+      
+      try {
+        // 调用后端接口获取目标用户的临时Token
+        await authService.impersonateUser(userId);
+        // 跳转到智能体运行页面
+        router.push(`/daren-agent/${agentId}/run`);
+      } catch (error) {
+        ElMessage.error(error.message || '模拟登录失败');
+      }
     };
 
     const handleSearch = () => {
@@ -587,6 +622,7 @@ export default defineComponent({
       loadUsers,
       loadAgentList,
       getAgentName,
+      goToAgentRun,
       handleSearch,
       handleReset,
       handleSizeChange,
@@ -600,6 +636,13 @@ export default defineComponent({
       handleDelete,
       formatDate,
       UserFilled,
+      Plus,
+      Search,
+      Refresh,
+      Edit,
+      Delete,
+      Key,
+      isSuperAdmin,
     };
   },
 });
@@ -719,5 +762,32 @@ export default defineComponent({
 
 :deep(.el-button + .el-button) {
   margin-left: 0.25rem;
+}
+
+.agent-link {
+  color: #409eff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.agent-link:hover {
+  color: #66b1ff;
+  text-decoration: underline;
+}
+
+/* 禁用状态的链接（非超级管理员） */
+.agent-link.disabled-link {
+  color: #c0c4cc;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.agent-link.disabled-link:hover {
+  color: #c0c4cc;
+  text-decoration: none;
+}
+
+.text-muted {
+  color: #909399;
 }
 </style>

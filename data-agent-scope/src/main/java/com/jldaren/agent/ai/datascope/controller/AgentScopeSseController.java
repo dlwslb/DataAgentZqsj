@@ -8,6 +8,7 @@ import com.jldaren.agent.ai.datascope.mapper.ChatMessageMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
 import com.jldaren.agent.ai.datascope.service.ChatSessionService;
 import com.jldaren.agent.ai.datascope.service.RagService;
+import com.jldaren.agent.ai.datascope.service.UserInfoService;
 import com.jldaren.agent.ai.datascope.util.MessageFormatDetector;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.Hook;
@@ -27,6 +28,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -90,6 +92,9 @@ public class AgentScopeSseController {
     private final Semaphore sseSemaphore;
     private final MessageFormatDetector messageFormatDetector;
 
+    @Autowired
+    private UserInfoService userInfoService;
+
     // 监控指标
     private final Counter sseStartCounter = Metrics.counter("sse.connection.started");
     private final Counter saveFailedCounter = Metrics.counter("message.save.failed");
@@ -147,8 +152,20 @@ public class AgentScopeSseController {
     public SseEmitter chatStreamPost(
             @PathVariable Long id,
             @RequestBody @Valid StreamChatRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestHeader(value = "User-ID", required = false) @Pattern(regexp = "\\d+", message = "User-ID must be numeric") String userIdHeader,
             @RequestHeader(value = "Tenant-ID", required = false) @Pattern(regexp = "\\d+", message = "Tenant-ID must be numeric") String tenantIdHeader) {
+
+        // 从 Authorization header 中提取 token
+        UserInfoService.TokenUserInfo user = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            // 一次性获取所有信息
+            user = userInfoService.getUserInfoFromToken(token);
+            if (user == null) {
+                log.warn("无法解析 token，token 可能无效或已过期");
+            }
+        }
 
         String messageId = UUID.randomUUID().toString();
         MDC.put("messageId", messageId);
@@ -171,6 +188,11 @@ public class AgentScopeSseController {
 
         String userId = userIdHeader != null ? userIdHeader : "anonymous";
         String tenantId = tenantIdHeader != null ? tenantIdHeader : "default";
+
+        if (user != null) {
+            userId = String.valueOf(user.getId());
+            tenantId = String.valueOf(user.getTenantId());
+        }
 
         MDC.put("userId", userId);
 

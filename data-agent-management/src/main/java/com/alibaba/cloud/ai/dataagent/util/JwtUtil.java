@@ -20,6 +20,7 @@ public class JwtUtil {
 
 	private static final long ACCESS_TOKEN_EXPIRATION = 2 * 60 * 60 * 1000;
 	private static final long REFRESH_TOKEN_EXPIRATION = 7 * 24 * 60 * 60 * 1000;
+	private static final long TEMP_TOKEN_EXPIRATION = 5 * 60 * 1000; // 临时Token有效期5分钟
 
 	@Value("${jwt.secret:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}")
 	private String secret;
@@ -29,26 +30,46 @@ public class JwtUtil {
 		return Keys.hmacShaKeyFor(keyBytes);
 	}
 
-	public String generateAccessToken(Long userId, String username) {
-		return generateToken(userId, username, "access", ACCESS_TOKEN_EXPIRATION);
+	public String generateAccessToken(Long userId, String username, Long tenantId, String role) {
+		return generateToken(userId, username, "access", ACCESS_TOKEN_EXPIRATION, tenantId, role);
 	}
 
 	public String generateRefreshToken(Long userId) {
-		return generateToken(userId, null, "refresh", REFRESH_TOKEN_EXPIRATION);
+		return generateToken(userId, null, "refresh", REFRESH_TOKEN_EXPIRATION, null, null);
 	}
 
-	private String generateToken(Long userId, String username, String type, long expiration) {
+	/**
+	 * 生成临时Token（用于模拟用户）
+	 * 有效期5分钟
+	 */
+	public String generateTempToken(Long userId, String username, Long tenantId, String role) {
+		return generateToken(userId, username, "temp", TEMP_TOKEN_EXPIRATION, tenantId, role);
+	}
+
+	private String generateToken(Long userId, String username, String type, long expiration, Long tenantId, String role) {
 		String jti = UUID.randomUUID().toString();
 		Date now = new Date();
 		Date expiryDate = new Date(now.getTime() + expiration);
 
-		return Jwts.builder()
+		var builder = Jwts.builder()
 				.id(jti)
 				.subject(username)
 				.claim("userId", userId)
 				.claim("type", type)
 				.issuedAt(now)
-				.expiration(expiryDate)
+				.expiration(expiryDate);
+
+		// 添加租户ID
+		if (tenantId != null) {
+			builder.claim("tenantId", tenantId);
+		}
+
+		// 添加角色
+		if (role != null && !role.isEmpty()) {
+			builder.claim("role", role);
+		}
+
+		return builder
 				.signWith(getSigningKey())
 				.compact();
 	}
@@ -72,6 +93,21 @@ public class JwtUtil {
 	public Long getUserIdFromToken(String token) {
 		Claims claims = parseToken(token);
 		return claims.get("userId", Long.class);
+	}
+
+	public String getUsernameFromToken(String token) {
+		Claims claims = parseToken(token);
+		return claims.getSubject();
+	}
+
+	public Long getTenantIdFromToken(String token) {
+		Claims claims = parseToken(token);
+		return claims.get("tenantId", Long.class);
+	}
+
+	public String getRoleFromToken(String token) {
+		Claims claims = parseToken(token);
+		return claims.get("role", String.class);
 	}
 
 	public String getTokenType(String token) {

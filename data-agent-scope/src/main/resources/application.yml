@@ -28,8 +28,12 @@ mybatis:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:data-agent-secret-key-2024-prod}
+  secret: ${JWT_SECRET:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}
   internal-api-key: DataAgentInternalKey2026
+
+# Data Agent Management URL
+data-agent-management:
+  url: ${DATA_AGENT_MANAGEMENT_URL:http://localhost:58065}
 
 # AgentScope Configuration
 agentscope:
