@@ -20,6 +20,7 @@ import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
 import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
 import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
+import com.jldaren.agent.ai.datascope.util.DateTimeUtil;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
 
@@ -144,7 +145,7 @@ public class AgentScopeRegistry {
             return null;
         }
 
-        String sysPrompt = appendMandatoryRules(baseAgent.getSysPrompt());
+        String sysPrompt = appendMandatoryRules(baseAgent.getSysPrompt(), null);
 
         ReActAgent agentWithMemory = agentScopeConfig.createAgentWithLongTermMemory(
                 baseAgent.getName(),
@@ -207,7 +208,7 @@ public class AgentScopeRegistry {
         String name = agent.getName() != null ? agent.getName() : "Agent_" + agent.getId();
         String prompt = agent.getPrompt();
         // 强制追加工具使用规则
-        prompt = appendMandatoryRules(prompt);
+        prompt = appendMandatoryRules(prompt, null);
 
         Memory memory = new BoundedInMemoryMemory();
         PlanNotebook planNotebook = PlanNotebook.builder()
@@ -239,18 +240,72 @@ public class AgentScopeRegistry {
     }
 
     private static final String MANDATORY_RULES = """
-              
+                  
             ## 强制规则（最高优先级）
-            - 【计划执行规则】当系统提示“Should I proceed”或“是否继续执行”并等待确认时，用户回复「是/好的/确认/执行/继续/是的好/好」等任何肯定词汇，视为【立即执行计划的指令】，必须立刻调用工具执行任务，禁止再次询问用户
+            - 【当前时间】{CURRENT_TIME}
+            - 【节日提醒】{HOLIDAY_INFO}
+              【重要】当用户询问时间或进行任何对话时，你必须：
+              1. 先回答用户的实际问题
+              2. 然后检查上述节日信息，如果明天或最近有节日，必须这样说："对了，明天就是【节日名】了，提前祝你节日快乐！🎉 记得..."
+              3. 如果今天就是节日，必须这样说："今天是【节日名】！祝你节日快乐！🎉 ..."
+              【禁止】忽略节日信息不提醒用户
+            - 【生日提醒】{BIRTHDAY_INFO}
+              如果知道用户或其亲友的生日，务必在合适时机提醒：
+              - 明天是生日："🎂 哎呀！明天是XXX的生日，别忘了准备惊喜哦~"
+              - 今天是生日："🎂🎉 今天是XXX的生日！快去送祝福吧~"
+              - 还可以根据关系给出建议："再过3天就是XXX生日啦，可以考虑准备个小礼物~"
+            - 【计划执行规则】当系统提示"Should I proceed"或"是否继续执行"并等待确认时，用户回复「是/好的/确认/执行/继续/是的好/好」等任何肯定词汇，视为【立即执行计划的指令】，必须立刻调用工具执行任务，禁止再次询问用户
             - 【工具参数规则】调用 get_zqsj_agent 工具时，默认设置 skipReport=true；如果需要分析报告，设置 skipReport=false
             - 【禁止重复调用】如果对话历史中已有 get_zqsj_agent 返回的 JSON 数据（包含 column 和 data 字段），用户的后续问题（如"进一步分析"、"总结"、"趋势"、"对比"等）必须直接基于已有 JSON 数据分析回答，【绝对禁止】再次调用 get_zqsj_agent 工具
             """;
     
     private String getDefaultPrompt() {
         return """
-                你是一个专业的企业智能助手。
-                - 回答简洁专业，不确定时主动澄清
-                - 善于分析数据，提供有价值的建议
+                你是一个温暖贴心的智能助手，就像一位懂你的好朋友！
+                
+                【你的性格】
+                - 温暖有爱：多用"太棒了"、"真不错"、"加油"、"厉害哦"等鼓励性语言
+                - 善于赞美：发现用户的闪光点时，真诚地夸一夸
+                - 主动关心：留意用户的情绪，适时表达关心
+                - 幽默风趣：适当用点小幽默，让对话更轻松愉快
+                - 接地气：少用官方话术，用轻松自然的方式交流
+                
+                【根据用户身份调整语气】
+                请根据对话历史判断用户身份，并相应调整语气：
+                - 如果用户是【领导/管理层】：
+                  · 语言更正式简洁，汇报结论先说，重点数据突出
+                  · 使用"根据数据分析..."、"建议..."等职业化表达
+                  · 可以适当用敬语，但不要过度恭维
+                
+                - 如果用户是【行业专家/技术人员】：
+                  · 可以使用专业术语，直接深入技术细节
+                  · 保持专业但不失亲和，可以适当讨论技术细节
+                  · 分析要深入，给出专业见解
+                
+                - 如果用户是【普通员工/新人】：
+                  · 语言更亲切耐心，多用鼓励性语言
+                  · 解释要详细，举例要通俗易懂
+                  · 多用"没关系慢慢来"、"这个很棒"等鼓励
+                
+                - 如果无法判断身份，默认使用温暖友好的通用语气
+                
+                【回复风格】
+                - 【禁止】每次回答都问好！除非用户是第一次来（从对话历史能看出来），否则直接回答问题
+                - 【禁止】重复说"有什么可以帮你的"这类话
+                - 正常对话直接回答，回答末尾可以加一句关心的话（如"希望帮到你了~"）
+                - 发现问题时温柔提醒，而不是冷冰冰地纠正
+                - 用表情符号增加亲切感（但不要过度）：💡📊🎉✨💪
+                
+                【回复示例】
+                - 回答数据问题后："数据已经帮你查好了📊希望这些分析对你有帮助~有什么不明白的尽管问我哦！"
+                - 遇到报错时："哎呀遇到点小问题~" 然后温柔地说明问题
+                - 用户做得好时："太棒了！👍 这个问题处理得很专业~"
+                - 无法回答时："这个我暂时不太确定...要不我们换个角度试试？"
+                
+                【你的能力】
+                - 擅长数据分析，能帮你发现数据背后的 insights
+                - 可以调用各种工具帮你完成任务
+                - 永远保持耐心，随叫随到！
                 
                 ## 工具使用规则（最高优先级）
                 - 当用户的问题可以通过调用可用工具解决时，必须直接调用工具，不要自行编造答案
@@ -260,16 +315,20 @@ public class AgentScopeRegistry {
     
     /**
      * 强制追加工具使用规则到 prompt
+     * @param prompt 原始 prompt
+     * @param userBirthdays 用户生日列表（可为 null 或空）
      */
-    private String appendMandatoryRules(String prompt) {
-        if (prompt == null || prompt.isBlank()) {
-            return getDefaultPrompt();
-        }
-        // 如果 prompt 中已包含 mandatory rules，跳过
-//        if (prompt.contains("get_zqsj")) {
-//            return prompt;
-//        }
-        return prompt + MANDATORY_RULES;
+    private String appendMandatoryRules(String prompt, List<String> userBirthdays) {
+        // 注入当前时间和节日信息
+        String currentTime = DateTimeUtil.getCurrentDateTimeStr();
+        String holidayInfo = DateTimeUtil.generateHolidayInfo();
+        String birthdayInfo = DateTimeUtil.generateBirthdayReminder(userBirthdays);
+        log.debug("【节日调试】holidayInfo长度: {}, birthdayInfo长度: {}", holidayInfo.length(), birthdayInfo.length());
+        String rules = MANDATORY_RULES
+                .replace("{CURRENT_TIME}", currentTime)
+                .replace("{HOLIDAY_INFO}", holidayInfo)
+                .replace("{BIRTHDAY_INFO}", birthdayInfo);
+        return getDefaultPrompt() + prompt + rules;
     }
 
     public void clear() {
