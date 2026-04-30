@@ -19,6 +19,7 @@ import com.jldaren.agent.ai.datascope.config.AgentScopeConfig;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeAgent;
 import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
 import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
+import com.jldaren.agent.ai.datascope.memory.BoundedRedisMemory;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import com.jldaren.agent.ai.datascope.util.DateTimeUtil;
 import io.agentscope.core.ReActAgent;
@@ -79,7 +80,7 @@ public class AgentScopeRegistry {
     }
 
     /**
-     * 注册智能体
+     * 注册智能体（基础 Agent，不带会话信息）
      */
     public void register(AgentScopeAgent agent) {
         if (agent == null || agent.getId() == null) {
@@ -93,7 +94,8 @@ public class AgentScopeRegistry {
                 unregister(agent.getId());
             }
 
-            ReActAgent reActAgent = createReActAgent(agent);
+            // 注册时使用内存记忆（因为此时没有 sessionId）
+            ReActAgent reActAgent = createReActAgent(agent, null);
             agentMap.put(agent.getId(), reActAgent);
 
             log.info("Agent 注册成功: id={}, name={}", agent.getId(), agent.getName());
@@ -205,12 +207,42 @@ public class AgentScopeRegistry {
      * 根据 Agent 配置创建 ReActAgent 实例
      */
     private ReActAgent createReActAgent(AgentScopeAgent agent) {
+        return createReActAgent(agent, null);
+    }
+
+    /**
+     * 根据 Agent 配置创建 ReActAgent 实例
+     * @param agent Agent 配置
+     * @param sessionId 会话ID（用于 Redis 短期记忆）
+     */
+    private ReActAgent createReActAgent(AgentScopeAgent agent, String sessionId) {
         String name = agent.getName() != null ? agent.getName() : "Agent_" + agent.getId();
         String prompt = agent.getPrompt();
         // 强制追加工具使用规则
         prompt = appendMandatoryRules(prompt, null);
 
-        Memory memory = new BoundedInMemoryMemory();
+        // 优先使用 Redis 短期记忆，回退到内存记忆
+        Memory memory;
+        if (agentScopeConfig.isRedisMemoryEnabled() && sessionId != null) {
+            // 注意：这里没有 userId 和 tenantId，所以只能使用默认值
+            memory = new BoundedRedisMemory(
+                agentScopeConfig.getRedisTemplate(), 
+                String.valueOf(agent.getId()), 
+                "default", 
+                "anonymous", 
+                sessionId
+            );
+            log.info("使用 Redis 短期记忆, agentId={}, sessionId={}", agent.getId(), sessionId);
+        } else {
+            // 降级到内存记忆，传入会话标识以便日志追踪
+            memory = new BoundedInMemoryMemory(
+                String.valueOf(agent.getId()),
+                "default",
+                "anonymous",
+                sessionId != null ? sessionId : "no_session"
+            );
+            log.warn("Redis 不可用或 sessionId 为空，使用内存短期记忆（重启后数据会丢失）");
+        }
         PlanNotebook planNotebook = PlanNotebook.builder()
                .storage(agentScopeConfig.getPlanStorage())
                .maxSubtasks(5)

@@ -22,6 +22,7 @@ import com.jldaren.agent.ai.datascope.hook.DirectResponseHook;
 import com.jldaren.agent.ai.datascope.hook.TokenUsageHook;
 import com.jldaren.agent.ai.datascope.mapper.ModelConfigMapper;
 import com.jldaren.agent.ai.datascope.memory.BoundedInMemoryMemory;
+import com.jldaren.agent.ai.datascope.memory.BoundedRedisMemory;
 import com.jldaren.agent.ai.datascope.memory.OceanBaseLongTermMemory;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig;
@@ -31,6 +32,7 @@ import com.jldaren.agent.ai.datascope.tool.ToolRegistry;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -40,6 +42,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
@@ -72,6 +75,7 @@ public class AgentScopeConfig {
     private final ToolRegistry toolRegistry;
     private final DirectResponseHook directResponseHook;
     private final TokenUsageHook tokenUsageHook;
+    private final ReactiveStringRedisTemplate redisTemplate;
 
     /** 缓存 ChatModel 实例，避免每次调用都查数据库+new Builder */
     private volatile DashScopeChatModel cachedChatModel;
@@ -84,7 +88,8 @@ public class AgentScopeConfig {
                            @Autowired(required = false) LongTermMemoryConfig memoryConfig,
                            ToolRegistry toolRegistry,
                            DirectResponseHook directResponseHook,
-                           TokenUsageHook tokenUsageHook) {
+                           TokenUsageHook tokenUsageHook,
+                           @Autowired(required = false) ReactiveStringRedisTemplate redisTemplate) {
         this.modelConfigMapper = modelConfigMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.longTermMemoryService = longTermMemoryService;
@@ -92,6 +97,7 @@ public class AgentScopeConfig {
         this.toolRegistry = toolRegistry;
         this.directResponseHook = directResponseHook;
         this.tokenUsageHook = tokenUsageHook;
+        this.redisTemplate = redisTemplate;
     }
 
     /**
@@ -212,6 +218,54 @@ public class AgentScopeConfig {
     }
 
     /**
+     * 检查 Redis 短期记忆是否启用
+     */
+    public boolean isRedisMemoryEnabled() {
+        return redisTemplate != null;
+    }
+
+    /**
+     * 获取 Redis Template（供外部使用）
+     */
+    public ReactiveStringRedisTemplate getRedisTemplate() {
+        return redisTemplate;
+    }
+
+    /**
+     * 创建 Redis 短期记忆实例
+     * @param agentId Agent ID
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @param sessionId 会话ID，用于 Redis Key 区分不同会话
+     * @return BoundedRedisMemory 实例
+     */
+    public BoundedRedisMemory createRedisMemory(String agentId, String tenantId, String userId, String sessionId) {
+        if (!isRedisMemoryEnabled()) {
+            log.warn("Redis 不可用，回退到内存记忆");
+            return null;
+        }
+        return new BoundedRedisMemory(redisTemplate, agentId, tenantId, userId, sessionId);
+    }
+
+    /**
+     * 创建 Redis 短期记忆实例（带参数）
+     * @param agentId Agent ID
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @param sessionId 会话ID
+     * @param maxMessages 最大消息数
+     * @return BoundedRedisMemory 实例
+     */
+    public BoundedRedisMemory createRedisMemory(String agentId, String tenantId, String userId, 
+                                                String sessionId, int maxMessages) {
+        if (!isRedisMemoryEnabled()) {
+            log.warn("Redis 不可用，回退到内存记忆");
+            return null;
+        }
+        return new BoundedRedisMemory(redisTemplate, agentId, tenantId, userId, sessionId, maxMessages);
+    }
+
+    /**
      * 获取长期记忆服务
      */
     public LongTermMemoryService getLongTermMemoryService() {
@@ -245,10 +299,11 @@ public class AgentScopeConfig {
     /**
      * 创建带长期记忆的 Agent
      * 集成 OceanBase 长期记忆支持跨会话的持久化存储和语义检索
+     * 短期记忆使用 Redis 持久化存储
      *
      * @param agentName   Agent名称
      * @param userId      用户ID (用于多租户隔离)
-     * @param sessionId   会话ID
+     * @param sessionId   会话ID (用于 Redis 短期记忆)
      * @param tenantId    租户ID
      * @param sysPrompt   系统提示词
      * @return ReActAgent 实例
@@ -258,7 +313,19 @@ public class AgentScopeConfig {
         // 获取基础组件
         DashScopeChatModel chatModel = getChatModel();
         Toolkit toolkit = getToolkit();
-        BoundedInMemoryMemory shortTermMemory = new BoundedInMemoryMemory();
+
+        // 优先使用 Redis 短期记忆，回退到内存记忆
+        Memory shortTermMemory;
+        if (isRedisMemoryEnabled()) {
+            // 使用 agentName 作为 agentId（因为此时还没有 agentId）
+            shortTermMemory = new BoundedRedisMemory(redisTemplate, agentName, tenantId, userId, sessionId);
+            log.info("使用 Redis 短期记忆, agentName={}, tenantId={}, userId={}, sessionId={}", 
+                     agentName, tenantId, userId, sessionId);
+        } else {
+            // 降级到内存记忆，传入会话标识以便日志追踪
+            shortTermMemory = new BoundedInMemoryMemory(agentName, tenantId, userId, sessionId);
+            log.warn("Redis 不可用，使用内存短期记忆（注意：重启后对话历史会丢失，建议启用 Redis）");
+        }
 
         // 构建 Agent
         ReActAgent.Builder builder = ReActAgent.builder()

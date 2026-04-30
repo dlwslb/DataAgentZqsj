@@ -40,14 +40,17 @@ public class JwtAuthenticationFilter implements WebFilter {
         }
 
         try {
+            // 先解析 Token（会验证是否过期）
+            Claims claims = jwtUtil.parseToken(token);
+            
             // 检查 Token 类型
-            String tokenType = jwtUtil.getTokenType(token);
+            String tokenType = claims.get("type", String.class);
             if (!"access".equals(tokenType)) {
                 return unauthorized(exchange, "Invalid token type");
             }
 
             // 检查黑名单
-            String jti = jwtUtil.getJti(token);
+            String jti = claims.getId();
             
             return blacklistService.isBlacklisted(jti)
                     .flatMap(isBlacklisted -> {
@@ -55,7 +58,6 @@ public class JwtAuthenticationFilter implements WebFilter {
                             return unauthorized(exchange, "Token已失效");
                         }
 
-                        Claims claims = jwtUtil.parseToken(token);
                         Long userId = claims.get("userId", Long.class);
                         String username = claims.getSubject();
 

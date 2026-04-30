@@ -107,7 +107,8 @@ apiClient.interceptors.response.use(
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
         try {
-          const res = await axios.post('/api/auth/refresh-token', { refreshToken });
+          // 使用 apiClient 而不是原始 axios，确保 baseURL 和拦截器生效
+          const res = await apiClient.post('/api/auth/refresh-token', { refreshToken });
           const { accessToken, refreshToken: newRefreshToken } = res.data.data;
           
           localStorage.setItem('accessToken', accessToken);
