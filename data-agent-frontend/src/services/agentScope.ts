@@ -96,6 +96,8 @@ export interface ChatMessage {
 export interface AgentScopeKnowledge {
   id: number;
   agentId: number;
+  tenantId?: number;  // 租户ID
+  userId?: number;    // 用户ID
   title: string;
   type: 'DOCUMENT' | 'QA' | 'FAQ';
   question?: string;
@@ -110,6 +112,17 @@ export interface AgentScopeKnowledge {
   splitterType?: string;
   createTime: string;
   updateTime: string;
+}
+
+export interface TenantInfo {
+  id: number;
+  name: string;
+}
+
+export interface UserInfo {
+  id: number;
+  username: string;
+  nickname: string;
 }
 
 export const agentScopeApi = {
@@ -341,8 +354,8 @@ export const agentScopeApi = {
     /**
      * 创建知识
      */
-    create: (agentId: number, data: Partial<AgentScopeKnowledge>) => {
-      return agentScopeClient.post(`/api/scope/knowledge/${agentId}`, data);
+    create: (agentId: number, data: Partial<AgentScopeKnowledge>, options?: { params?: { tenantId?: number; userId?: number } }) => {
+      return agentScopeClient.post(`/api/scope/knowledge/${agentId}`, data, options);
     },
 
     /**
@@ -379,6 +392,43 @@ export const agentScopeApi = {
     getRecallable: (agentId: number) => {
       return agentScopeClient.get(`/api/scope/knowledge/${agentId}/recallable`);
     },
+
+    /**
+     * 按租户获取知识列表
+     */
+    listByTenant: (tenantId: number, params?: { userId?: number; type?: string; embeddingStatus?: string }) => {
+      return agentScopeClient.get(`/api/scope/knowledge/tenant/${tenantId}/list`, { params });
+    },
+
+    /**
+     * 获取公共知识列表（未绑定租户）
+     */
+    listPublicKnowledge: (params?: { type?: string; embeddingStatus?: string }) => {
+      return agentScopeClient.get('/api/scope/knowledge/public/list', { params });
+    },
+
+    /**
+     * 按用户获取知识列表
+     */
+    listByUser: (userId: number, params?: { type?: string; embeddingStatus?: string }) => {
+      return agentScopeClient.get(`/api/scope/knowledge/user/${userId}/list`, { params });
+    },
+  },
+
+  // ==================== 租户管理 ====================
+
+  /**
+   * 获取所有启用的租户列表
+   */
+  getTenants: () => {
+    return agentScopeClient.get<TenantInfo[]>('/api/scope/knowledge/tenants');
+  },
+
+  /**
+   * 根据租户ID获取用户列表
+   */
+  getUsersByTenant: (tenantId: number) => {
+    return agentScopeClient.get<UserInfo[]>(`/api/scope/knowledge/tenants/${tenantId}/users`);
   },
 };
 

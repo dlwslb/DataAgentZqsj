@@ -37,6 +37,10 @@ public class AgentScopeKnowledge {
 
     private Long agentId;
 
+    private Long tenantId;  // 租户ID（必填）
+
+    private Long userId;    // 用户ID（可选）
+
     private String title;
 
     // DOCUMENT-文档, QA-问答对, FAQ-常见问题

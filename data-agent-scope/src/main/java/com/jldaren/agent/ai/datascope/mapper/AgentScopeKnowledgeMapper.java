@@ -29,6 +29,72 @@ public interface AgentScopeKnowledgeMapper {
     @Select("SELECT * FROM agent_scope_knowledge WHERE agent_id = #{agentId} AND is_deleted = 0 ORDER BY create_time DESC")
     List<AgentScopeKnowledge> findByAgentId(@Param("agentId") Long agentId);
 
+    /**
+     * 按租户查询知识库（支持可选的用户过滤）
+     */
+    @Select("""
+            <script>
+            SELECT * FROM agent_scope_knowledge 
+            WHERE tenant_id = #{tenantId}
+              AND is_deleted = 0
+              <if test="userId != null">
+                  AND user_id = #{userId}
+              </if>
+              <if test="type != null and type != ''">
+                  AND type = #{type}
+              </if>
+              <if test="embeddingStatus != null and embeddingStatus != ''">
+                  AND embedding_status = #{embeddingStatus}
+              </if>
+            ORDER BY create_time DESC
+            </script>
+            """)
+    List<AgentScopeKnowledge> findByTenantId(@Param("tenantId") Long tenantId,
+                                             @Param("userId") Long userId,
+                                             @Param("type") String type,
+                                             @Param("embeddingStatus") String embeddingStatus);
+
+    /**
+     * 查询未绑定租户的公共知识
+     */
+    @Select("""
+            <script>
+            SELECT * FROM agent_scope_knowledge 
+            WHERE (tenant_id IS NULL OR tenant_id = 0)
+              AND is_deleted = 0
+              <if test="type != null and type != ''">
+                  AND type = #{type}
+              </if>
+              <if test="embeddingStatus != null and embeddingStatus != ''">
+                  AND embedding_status = #{embeddingStatus}
+              </if>
+            ORDER BY create_time DESC
+            </script>
+            """)
+    List<AgentScopeKnowledge> findPublicKnowledge(@Param("type") String type,
+                                                   @Param("embeddingStatus") String embeddingStatus);
+
+    /**
+     * 按用户查询知识库（跨租户）
+     */
+    @Select("""
+            <script>
+            SELECT * FROM agent_scope_knowledge 
+            WHERE user_id = #{userId}
+              AND is_deleted = 0
+              <if test="type != null and type != ''">
+                  AND type = #{type}
+              </if>
+              <if test="embeddingStatus != null and embeddingStatus != ''">
+                  AND embedding_status = #{embeddingStatus}
+              </if>
+            ORDER BY create_time DESC
+            </script>
+            """)
+    List<AgentScopeKnowledge> findByUserId(@Param("userId") Long userId,
+                                           @Param("type") String type,
+                                           @Param("embeddingStatus") String embeddingStatus);
+
     @Select("SELECT * FROM agent_scope_knowledge WHERE id = #{id}")
     AgentScopeKnowledge findById(@Param("id") Long id);
 
@@ -53,8 +119,8 @@ public interface AgentScopeKnowledgeMapper {
 
     @Insert("""
             INSERT INTO agent_scope_knowledge 
-            (agent_id, title, type, question, content, is_recall, embedding_status, source_filename, file_path, file_size, file_type, splitter_type, create_time, update_time)
-            VALUES (#{agentId}, #{title}, #{type}, #{question}, #{content}, #{isRecall}, #{embeddingStatus}, #{sourceFilename}, #{filePath}, #{fileSize}, #{fileType}, #{splitterType}, NOW(), NOW())
+            (agent_id, tenant_id, user_id, title, type, question, content, is_recall, embedding_status, source_filename, file_path, file_size, file_type, splitter_type, create_time, update_time)
+            VALUES (#{agentId}, #{tenantId}, #{userId}, #{title}, #{type}, #{question}, #{content}, #{isRecall}, #{embeddingStatus}, #{sourceFilename}, #{filePath}, #{fileSize}, #{fileType}, #{splitterType}, NOW(), NOW())
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(AgentScopeKnowledge knowledge);
@@ -66,6 +132,8 @@ public interface AgentScopeKnowledgeMapper {
                     <if test="title != null">title = #{title},</if>
                     <if test="question != null">question = #{question},</if>
                     <if test="content != null">content = #{content},</if>
+                    tenant_id = #{tenantId},
+                    user_id = #{userId},
                     <if test="isRecall != null">is_recall = #{isRecall},</if>
                     <if test="embeddingStatus != null">embedding_status = #{embeddingStatus},</if>
                     <if test="errorMsg != null">error_msg = #{errorMsg},</if>

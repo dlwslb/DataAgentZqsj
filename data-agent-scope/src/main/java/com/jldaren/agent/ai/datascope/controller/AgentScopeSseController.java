@@ -226,7 +226,7 @@ public class AgentScopeSseController {
                 // RAG 增强
                 Mono<String> messageMono = request.isEnableRag()
                         ? Mono.fromFuture(() -> CompletableFuture
-                                .supplyAsync(() -> ragService.enhanceWithRag(id, request.getMessage()), ragExecutor)
+                                .supplyAsync(() -> ragService.enhanceWithRag(id, userIdLong, tenantIdLong, request.getMessage(), 5), ragExecutor)
                                 .orTimeout(ragTimeoutSeconds, TimeUnit.SECONDS))
                         .onErrorResume(e -> {
                             log.warn("RAG fallback: agentId={}", id, e);

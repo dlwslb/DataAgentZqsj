@@ -50,6 +50,8 @@ public class RagService {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("knowledgeId", knowledge.getId());
             metadata.put("agentId", knowledge.getAgentId());
+            metadata.put("tenantId", knowledge.getTenantId() != null ? String.valueOf(knowledge.getTenantId()) : "null");
+            metadata.put("userId", knowledge.getUserId() != null ? String.valueOf(knowledge.getUserId()) : "null");
             metadata.put("type", knowledge.getType());
             metadata.put("title", knowledge.getTitle());
 
@@ -63,7 +65,8 @@ public class RagService {
 
             // 更新状态为完成
             knowledgeMapper.updateEmbeddingStatus(knowledge.getId(), "COMPLETED");
-            log.info("✅ 知识向量化成功: id={}, title={}", knowledge.getId(), knowledge.getTitle());
+            log.info("✅ 知识向量化成功: id={}, title={}, tenantId={}, userId={}", 
+                    knowledge.getId(), knowledge.getTitle(), knowledge.getTenantId(), knowledge.getUserId());
         } catch (Exception e) {
             knowledgeMapper.updateEmbeddingStatus(knowledge.getId(), "FAILED");
             log.error("❌ 知识向量化失败: id={}, error={}", knowledge.getId(), e.getMessage(), e);
@@ -71,17 +74,46 @@ public class RagService {
     }
 
     private static final int DEFAULT_TOP_K = 3;
+    private static final double SIMILARITY_THRESHOLD = 0.7; // 相似度阈值，低于此值的结果将被过滤
 
 
     /**
      * 检索相关知识
-     * 使用 filterExpression 在向量库层面过滤 agentId，避免全量搜索后内存过滤
+     * 使用 filterExpression 在向量库层面过滤 agentId、tenantId、userId
+     * - agentId: 必填，必须匹配
+     * - tenantId: 可选，如果有值则匹配 (tenant_id = ? OR tenant_id IS NULL)
+     * - userId: 可选，如果有值则匹配 (user_id = ? OR user_id IS NULL)
      */
     public List<Document> searchRelatedKnowledge(Long agentId, String query, int topK) {
+        return searchRelatedKnowledge(agentId, null, null, query, topK);
+    }
+
+    /**
+     * 检索相关知识（支持租户和用户隔离）
+     */
+    public List<Document> searchRelatedKnowledge(Long agentId, Long tenantId, Long userId, String query, int topK) {
+        // 构建过滤表达式
+        StringBuilder filterBuilder = new StringBuilder();
+        filterBuilder.append(String.format("agentId == '%s'", agentId));
+        
+        // 如果提供了 tenantId，添加租户过滤：匹配指定租户或公共知识(tenant_id IS NULL)
+        if (tenantId != null) {
+            filterBuilder.append(String.format(" AND (tenantId == '%s' OR tenantId == 'null')", tenantId));
+        }
+        
+        // 如果提供了 userId，添加用户过滤：匹配指定用户或公共知识(user_id IS NULL)
+        if (userId != null) {
+            filterBuilder.append(String.format(" AND (userId == '%s' OR userId == 'null')", userId));
+        }
+        
+        String filterExpression = filterBuilder.toString();
+        log.debug("🔍 [RAG] 搜索过滤条件: {}", filterExpression);
+        
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(query)
                 .topK(topK)
-                .filterExpression(String.format("agentId == '%s'", agentId))
+                .similarityThreshold(SIMILARITY_THRESHOLD)  // 设置相似度阈值
+                .filterExpression(filterExpression)
                 .build();
 
         try {
@@ -97,7 +129,27 @@ public class RagService {
             return documents.stream()
                     .filter(doc -> {
                         Object docAgentId = doc.getMetadata().get("agentId");
-                        return docAgentId != null && docAgentId.equals(agentId);
+                        if (docAgentId == null || !docAgentId.equals(agentId)) {
+                            return false;
+                        }
+                        
+                        // 检查租户隔离
+                        if (tenantId != null) {
+                            Object docTenantId = doc.getMetadata().get("tenantId");
+                            if (docTenantId != null && !docTenantId.equals(tenantId) && !"null".equals(String.valueOf(docTenantId))) {
+                                return false;
+                            }
+                        }
+                        
+                        // 检查用户隔离
+                        if (userId != null) {
+                            Object docUserId = doc.getMetadata().get("userId");
+                            if (docUserId != null && !docUserId.equals(userId) && !"null".equals(String.valueOf(docUserId))) {
+                                return false;
+                            }
+                        }
+                        
+                        return true;
                     })
                     .limit(topK)
                     .collect(Collectors.toList());
@@ -110,13 +162,25 @@ public class RagService {
      * 提供统一的 RAG 增强逻辑，供所有 Controller 使用
      */
     public String enhanceWithRag(Long agentId, String userMessage) {
-        return enhanceWithRag(agentId, userMessage, DEFAULT_TOP_K);
+        return enhanceWithRag(agentId, null, null, userMessage, DEFAULT_TOP_K);
     }
 
-    public String enhanceWithRag(Long agentId, String userMessage, int topK) {
+    public String enhanceWithRag(Long agentId, Long tenantId, Long userId, String userMessage, int topK) {
         try {
-            List<Document> relatedKnowledge = searchRelatedKnowledge(agentId, userMessage, topK);
+            List<Document> relatedKnowledge = searchRelatedKnowledge(agentId, tenantId, userId, userMessage, topK);
 
+            // 打印检索结果（调试用）
+            if (!relatedKnowledge.isEmpty()) {
+                log.info("📚 [RAG] 检索到 {} 条相关知识:", relatedKnowledge.size());
+                for (int i = 0; i < relatedKnowledge.size(); i++) {
+                    Document doc = relatedKnowledge.get(i);
+                    Object title = doc.getMetadata().get("title");
+                    Double score = doc.getScore();
+                    log.info("  [{}] title={}, score={}, contentPreview={}", 
+                            i+1, title, score, 
+                            doc.getText().length() > 50 ? doc.getText().substring(0, 50) + "..." : doc.getText());
+                }
+            }
 
             if (relatedKnowledge.isEmpty()) {
                 log.debug("🔍 [RAG] 未检索到相关知识，使用原始消息");

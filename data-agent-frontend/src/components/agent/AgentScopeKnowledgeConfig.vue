@@ -4,25 +4,61 @@
 -->
 
 <template>
-  <div style="padding: 20px">
-    <div style="margin-bottom: 20px">
-      <h2>智能体知识库</h2>
-      <p style="color: #909399; font-size: 14px; margin-top: 5px">
-        管理用于增强智能体能力的知识源。
-      </p>
+  <div style="padding: 20px; display: flex; gap: 20px">
+    <!-- 左侧租户树 -->
+    <div style="width: 250px; flex-shrink: 0">
+      <el-card shadow="never" style="height: calc(100vh - 150px); overflow-y: auto">
+        <template #header>
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <span>租户列表</span>
+            <el-button size="small" @click="loadTenants" :icon="RefreshLeft" circle />
+          </div>
+        </template>
+        <!-- 租户搜索框 -->
+        <div style="padding: 0 10px 10px 10px">
+          <el-input
+            v-model="tenantSearchKeyword"
+            placeholder="搜索租户"
+            clearable
+            size="small"
+            :prefix-icon="Search"
+          />
+        </div>
+        <el-tree
+          :data="filteredTenantTree"
+          node-key="id"
+          default-expand-all
+          :expand-on-click-node="false"
+          @node-click="handleTenantClick"
+        >
+          <template #default="{ node, data }">
+            <span class="custom-tree-node">
+              <span>{{ data.label }}</span>
+              <span v-if="selectedTenantId === data.id" style="color: #409eff">✓</span>
+            </span>
+          </template>
+        </el-tree>
+      </el-card>
     </div>
-    <el-divider />
+
+    <!-- 右侧知识列表 -->
+    <div style="flex: 1">
+      <div style="margin-bottom: 20px">
+        <h2>智能体知识库</h2>
+        <p style="color: #909399; font-size: 14px; margin-top: 5px">
+          管理用于增强智能体能力的知识源。
+        </p>
+      </div>
+      <el-divider />
 
     <div style="margin-bottom: 30px">
-      <el-row style="display: flex; justify-content: space-between; align-items: center">
-        <el-col :span="12">
-          <h3>知识列表</h3>
-        </el-col>
-        <el-col :span="12" style="text-align: right">
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <h3>知识列表</h3>
+        <div style="display: flex; gap: 10px; align-items: center">
           <el-input
             v-model="queryParams.title"
             placeholder="请输入知识标题搜索"
-            style="width: 400px; margin-right: 10px"
+            style="width: 300px"
             clearable
             @clear="handleSearch"
             @keyup.enter="handleSearch"
@@ -44,8 +80,8 @@
           <el-button @click="openCreateDialog" size="large" type="primary" round :icon="Plus">
             添加知识
           </el-button>
-        </el-col>
-      </el-row>
+        </div>
+      </div>
     </div>
 
     <!-- 筛选面板 -->
@@ -183,7 +219,8 @@
         </template>
       </el-table-column>
     </el-table>
-  </div>
+    </div>  <!-- 右侧知识列表结束 -->
+  </div>  <!-- 主容器结束 -->
 
   <!-- 添加/编辑知识弹窗 -->
   <el-dialog
@@ -193,17 +230,51 @@
     :close-on-click-modal="false"
   >
     <el-form :model="knowledgeForm" label-width="100px">
+      <!-- 租户和用户选择（同一行） -->
+      <el-row :gutter="10">
+        <el-col :span="12">
+          <el-form-item label="所属租户" prop="tenantId">
+            <el-select
+              v-model="knowledgeForm.tenantId"
+              placeholder="请选择租户（可选）"
+              clearable
+              style="width: 100%"
+              @change="handleTenantChange"
+            >
+              <el-option
+                v-for="tenant in tenants"
+                :key="tenant.id"
+                :label="tenant.name"
+                :value="tenant.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="指定人员" prop="userId">
+            <el-select
+              v-model="knowledgeForm.userId"
+              placeholder="请选择人员（可选）"
+              clearable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="user in users"
+                :key="user.id"
+                :label="user.nickname || user.username"
+                :value="user.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
       <el-form-item label="知识类型" prop="type" required>
-        <el-select
-          v-model="knowledgeForm.type"
-          placeholder="请选择知识类型"
-          :disabled="isEdit"
-          style="width: 100%"
-        >
-          <el-option label="文档 (文件上传)" value="DOCUMENT" />
-          <el-option label="问答对 (Q&A)" value="QA" />
-          <el-option label="常见问题 (FAQ)" value="FAQ" />
-        </el-select>
+        <el-radio-group v-model="knowledgeForm.type" :disabled="isEdit">
+          <el-radio-button value="DOCUMENT">文档 (文件上传)</el-radio-button>
+          <el-radio-button value="QA">问答对 (Q&A)</el-radio-button>
+          <el-radio-button value="FAQ">常见问题 (FAQ)</el-radio-button>
+        </el-radio-group>
       </el-form-item>
 
       <!-- 知识类型说明 -->
@@ -348,7 +419,7 @@
 </template>
 
 <script lang="ts">
-  import { defineComponent, ref, onMounted, Ref, reactive } from 'vue';
+  import { defineComponent, ref, onMounted, Ref, reactive, computed } from 'vue';
   import { ElMessage, ElMessageBox } from 'element-plus';
   import {
     Plus,
@@ -357,7 +428,7 @@
     RefreshLeft,
     UploadFilled,
   } from '@element-plus/icons-vue';
-  import { agentScopeApi, AgentScopeKnowledge } from '@/services/agentScope';
+  import { agentScopeApi, AgentScopeKnowledge, TenantInfo, UserInfo } from '@/services/agentScope';
 
   export default defineComponent({
     name: 'AgentScopeKnowledgeConfig',
@@ -365,6 +436,7 @@
       Search,
       RefreshLeft,
       FilterIcon,
+      UploadFilled,
     },
     props: {
       agentId: {
@@ -383,6 +455,24 @@
       const fileList: Ref<any[]> = ref([]);
       const currentFile: Ref<File | null> = ref(null);
 
+      // 租户和用户相关
+      const tenants: Ref<TenantInfo[]> = ref([]);
+      const users: Ref<UserInfo[]> = ref([]);
+      const selectedTenantId: Ref<number | null> = ref(null);
+      const tenantTree: Ref<any[]> = ref([]);
+      const tenantSearchKeyword: Ref<string> = ref('');
+
+      // 过滤后的租户树
+      const filteredTenantTree = computed(() => {
+        if (!tenantSearchKeyword.value) {
+          return tenantTree.value;
+        }
+        const keyword = tenantSearchKeyword.value.toLowerCase();
+        return tenantTree.value.filter(tenant => 
+          tenant.label.toLowerCase().includes(keyword)
+        );
+      });
+
       const queryParams = reactive({
         title: '',
         type: '',
@@ -391,6 +481,8 @@
 
       const knowledgeForm: Ref<any> = ref({
         agentId: props.agentId,
+        tenantId: null,
+        userId: null,
         title: '',
         type: 'DOCUMENT',
         question: '',
@@ -399,13 +491,91 @@
         splitterType: 'token',
       });
 
+      // ==================== 租户和用户管理 ====================
+
+      /**
+       * 加载租户列表
+       */
+      const loadTenants = async () => {
+        try {
+          const result = await agentScopeApi.getTenants();
+          tenants.value = result.data?.data || result.data || [];
+          
+          // 构建租户树，在顶部添加"公共"选项
+          tenantTree.value = [
+            {
+              id: null,  // 使用 null 表示公共（未绑定租户）
+              label: '公共',
+              isPublic: true,
+            },
+            ...tenants.value.map(tenant => ({
+              id: tenant.id,
+              label: tenant.name,
+              isPublic: false,
+            }))
+          ];
+        } catch (error) {
+          ElMessage.error('加载租户列表失败');
+        }
+      };
+
+      /**
+       * 点击租户节点
+       */
+      const handleTenantClick = (data: any) => {
+        selectedTenantId.value = data.id;
+        loadKnowledgeList();
+      };
+
+      /**
+       * 租户变化时加载用户列表
+       */
+      const handleTenantChange = async (tenantId: number | null) => {
+        // 清空已选择的人员
+        knowledgeForm.value.userId = null;
+        
+        // 如果租户ID为空，清空用户列表并返回
+        if (!tenantId) {
+          users.value = [];
+          return;
+        }
+        
+        try {
+          const result = await agentScopeApi.getUsersByTenant(tenantId);
+          users.value = result.data?.data || result.data || [];
+        } catch (error) {
+          ElMessage.error('加载用户列表失败');
+          users.value = [];
+        }
+      };
+
+      // ==================== 知识库管理 ====================
+
       const loadKnowledgeList = async () => {
         loading.value = true;
         try {
-          const result = await agentScopeApi.knowledge.list(props.agentId, {
-            type: queryParams.type || undefined,
-            embeddingStatus: queryParams.embeddingStatus || undefined,
-          });
+          let result;
+          
+          // 如果选择了租户，按租户查询
+          if (selectedTenantId.value !== null && selectedTenantId.value !== undefined) {
+            result = await agentScopeApi.knowledge.listByTenant(selectedTenantId.value, {
+              type: queryParams.type || undefined,
+              embeddingStatus: queryParams.embeddingStatus || undefined,
+            });
+          } else if (selectedTenantId.value === null) {
+            // 如果 selectedTenantId 为 null，表示选择的是“公共”
+            result = await agentScopeApi.knowledge.listPublicKnowledge({
+              type: queryParams.type || undefined,
+              embeddingStatus: queryParams.embeddingStatus || undefined,
+            });
+          } else {
+            // 否则按 Agent 查询（默认行为）
+            result = await agentScopeApi.knowledge.list(props.agentId, {
+              type: queryParams.type || undefined,
+              embeddingStatus: queryParams.embeddingStatus || undefined,
+            });
+          }
+          
           knowledgeList.value = result.data?.data || result.data || result || [];
         } catch (error) {
           ElMessage.error('加载知识列表失败');
@@ -439,12 +609,24 @@
         resetForm();
       };
 
-      const editKnowledge = (knowledge: AgentScopeKnowledge) => {
+      const editKnowledge = async (knowledge: AgentScopeKnowledge) => {
         isEdit.value = true;
         currentEditId.value = knowledge.id;
         knowledgeForm.value = {
           ...knowledge,
         };
+        
+        // 如果有租户ID，加载该租户下的人员列表
+        if (knowledge.tenantId) {
+          try {
+            const result = await agentScopeApi.getUsersByTenant(knowledge.tenantId);
+            users.value = result.data?.data || result.data || [];
+          } catch (error) {
+            console.error('加载用户列表失败:', error);
+            users.value = [];
+          }
+        }
+        
         dialogVisible.value = true;
       };
 
@@ -524,20 +706,32 @@
         saveLoading.value = true;
         try {
           if (isEdit.value && currentEditId.value) {
-            await agentScopeApi.knowledge.update(currentEditId.value, {
+            // 确保 tenantId 和 userId 即使为 null 也会被传递
+            const updateData = {
               title: knowledgeForm.value.title,
               content: knowledgeForm.value.content,
               question: knowledgeForm.value.question,
-            });
+              tenantId: knowledgeForm.value.tenantId ?? null,
+              userId: knowledgeForm.value.userId ?? null,
+            };
+            console.log('更新数据:', updateData);
+            await agentScopeApi.knowledge.update(currentEditId.value, updateData);
             ElMessage.success('更新成功');
           } else {
-            const result = await agentScopeApi.knowledge.create(props.agentId, {
+            await agentScopeApi.knowledge.create(props.agentId, {
               title: knowledgeForm.value.title,
               type: knowledgeForm.value.type,
               content: knowledgeForm.value.content,
               question: knowledgeForm.value.question,
               isRecall: knowledgeForm.value.isRecall,
               splitterType: knowledgeForm.value.splitterType,
+              tenantId: knowledgeForm.value.tenantId,
+              userId: knowledgeForm.value.userId,
+            }, {
+              params: {
+                tenantId: knowledgeForm.value.tenantId,
+                userId: knowledgeForm.value.userId || undefined,
+              }
             });
             ElMessage.success('添加成功');
           }
@@ -554,6 +748,8 @@
       const resetForm = () => {
         knowledgeForm.value = {
           agentId: props.agentId,
+          tenantId: selectedTenantId.value, // 默认使用当前选中的租户
+          userId: null,
           title: '',
           type: 'DOCUMENT',
           question: '',
@@ -564,9 +760,15 @@
         currentEditId.value = null;
         fileList.value = [];
         currentFile.value = null;
+        
+        // 如果已选择租户，加载该租户下的用户
+        if (selectedTenantId.value) {
+          handleTenantChange(selectedTenantId.value);
+        }
       };
 
       onMounted(() => {
+        loadTenants();
         loadKnowledgeList();
       });
 
@@ -585,6 +787,16 @@
         knowledgeForm,
         filterVisible,
         fileList,
+        // 租户和用户相关
+        tenants,
+        users,
+        selectedTenantId,
+        tenantTree,
+        tenantSearchKeyword,
+        filteredTenantTree,
+        loadTenants,
+        handleTenantClick,
+        handleTenantChange,
         toggleFilter,
         clearFilters,
         loadKnowledgeList,

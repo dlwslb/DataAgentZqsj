@@ -15,8 +15,12 @@
  */
 package com.jldaren.agent.ai.datascope.controller;
 
+import com.jldaren.agent.ai.datascope.dto.TenantDTO;
+import com.jldaren.agent.ai.datascope.dto.UserDTO;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeKnowledge;
 import com.jldaren.agent.ai.datascope.mapper.AgentScopeKnowledgeMapper;
+import com.jldaren.agent.ai.datascope.mapper.SystemTenantMapper;
+import com.jldaren.agent.ai.datascope.mapper.SystemUserMapper;
 import com.jldaren.agent.ai.datascope.service.RagService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,10 +44,12 @@ import java.util.Map;
 public class AgentScopeKnowledgeController {
 
     private final AgentScopeKnowledgeMapper knowledgeMapper;
+    private final SystemTenantMapper tenantMapper;
+    private final SystemUserMapper userMapper;
     private final RagService ragService;
 
     /**
-     * 获取知识列表
+     * 获取知识列表（按 Agent）
      */
     @GetMapping("/{agentId}/list")
     @Operation(summary = "获取知识列表", description = "获取指定Agent的知识列表")
@@ -54,6 +60,39 @@ public class AgentScopeKnowledgeController {
             return knowledgeMapper.findByConditions(agentId, type, embeddingStatus);
         }
         return knowledgeMapper.findByAgentId(agentId);
+    }
+
+    /**
+     * 获取知识列表（按租户）
+     */
+    @GetMapping("/tenant/{tenantId}/list")
+    @Operation(summary = "按租户获取知识列表", description = "获取指定租户的知识列表，支持按用户过滤")
+    public List<AgentScopeKnowledge> listByTenant(@PathVariable Long tenantId,
+                                                   @RequestParam(required = false) Long userId,
+                                                   @RequestParam(required = false) String type,
+                                                   @RequestParam(required = false) String embeddingStatus) {
+        return knowledgeMapper.findByTenantId(tenantId, userId, type, embeddingStatus);
+    }
+
+    /**
+     * 获取公共知识列表（未绑定租户）
+     */
+    @GetMapping("/public/list")
+    @Operation(summary = "获取公共知识列表", description = "获取未绑定租户的公共知识")
+    public List<AgentScopeKnowledge> listPublicKnowledge(@RequestParam(required = false) String type,
+                                                          @RequestParam(required = false) String embeddingStatus) {
+        return knowledgeMapper.findPublicKnowledge(type, embeddingStatus);
+    }
+
+    /**
+     * 获取知识列表（按用户）
+     */
+    @GetMapping("/user/{userId}/list")
+    @Operation(summary = "按用户获取知识列表", description = "获取指定用户的知识列表（跨租户）")
+    public List<AgentScopeKnowledge> listByUser(@PathVariable Long userId,
+                                                 @RequestParam(required = false) String type,
+                                                 @RequestParam(required = false) String embeddingStatus) {
+        return knowledgeMapper.findByUserId(userId, type, embeddingStatus);
     }
 
     /**
@@ -74,8 +113,26 @@ public class AgentScopeKnowledgeController {
      */
     @PostMapping("/{agentId}")
     @Operation(summary = "创建知识", description = "为指定Agent创建知识")
-    public AgentScopeKnowledge create(@PathVariable Long agentId, @RequestBody AgentScopeKnowledge knowledge) {
+    public AgentScopeKnowledge create(@PathVariable Long agentId,
+                                      @RequestParam(required = false) Long tenantId,
+                                      @RequestParam(required = false) Long userId,
+                                      @RequestBody AgentScopeKnowledge knowledge) {
         knowledge.setAgentId(agentId);
+        
+        // 设置租户ID（可选）
+        if (tenantId != null) {
+            knowledge.setTenantId(tenantId);
+        } else if (knowledge.getTenantId() != null) {
+            knowledge.setTenantId(knowledge.getTenantId());
+        }
+        
+        // 设置用户ID（可选）
+        if (userId != null) {
+            knowledge.setUserId(userId);
+        } else {
+            knowledge.setUserId(knowledge.getUserId()); // 保持前端传入的值
+        }
+        
         if (knowledge.getIsRecall() == null) {
             knowledge.setIsRecall(1);
         }
@@ -87,7 +144,8 @@ public class AgentScopeKnowledgeController {
         }
 
         knowledgeMapper.insert(knowledge);
-        log.info("✅ Knowledge 创建成功: id={}, agentId={}, title={}", knowledge.getId(), agentId, knowledge.getTitle());
+        log.info("✅ Knowledge 创建成功: id={}, agentId={}, tenantId={}, userId={}, title={}",
+                knowledge.getId(), agentId, knowledge.getTenantId(), knowledge.getUserId(), knowledge.getTitle());
 
         // 异步处理向量化
         ragService.embedAndStoreKnowledge(knowledge);
@@ -181,6 +239,26 @@ public class AgentScopeKnowledgeController {
     @Operation(summary = "获取可召回知识", description = "获取指定Agent可召回的知识列表")
     public List<AgentScopeKnowledge> getRecallable(@PathVariable Long agentId) {
         return knowledgeMapper.findRecallableByAgentId(agentId);
+    }
+
+    // ==================== 租户和用户管理接口 ====================
+
+    /**
+     * 获取所有启用的租户列表
+     */
+    @GetMapping("/tenants")
+    @Operation(summary = "获取租户列表", description = "获取所有启用的租户")
+    public List<TenantDTO> getTenants() {
+        return tenantMapper.findAllActiveTenants();
+    }
+
+    /**
+     * 根据租户ID获取用户列表
+     */
+    @GetMapping("/tenants/{tenantId}/users")
+    @Operation(summary = "获取租户下的用户列表", description = "获取指定租户下的所有启用用户")
+    public List<UserDTO> getUsersByTenant(@PathVariable Long tenantId) {
+        return userMapper.findByTenantId(tenantId);
     }
 
 }

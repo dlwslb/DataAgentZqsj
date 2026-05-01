@@ -800,7 +800,15 @@ export default {
     };
 
     const sendStreamingMessage = async (userMessage: string) => {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>(async (resolve, reject) => {
+        // 🔑 关键修复：SSE 请求前检查并刷新 Token
+        try {
+          await ensureValidToken();
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        
         const token = localStorage.getItem('accessToken');
         const userInfoStr = localStorage.getItem('userInfo');
         const extraHeaders: Record<string, string> = {};
@@ -834,6 +842,26 @@ export default {
           headers: { 'Content-Type': 'application/json', ...extraHeaders },
           body,
         }).then(async response => {
+          // 🔑 处理 401 错误：Token 过期时刷新后重试
+          if (response.status === 401) {
+            try {
+              await refreshToken();
+              // 刷新成功后重新获取 Token
+              const newToken = localStorage.getItem('accessToken');
+              if (newToken) {
+                extraHeaders['Authorization'] = `Bearer ${newToken}`;
+              }
+              // 重新发起请求
+              return fetch(`${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...extraHeaders },
+                body,
+              });
+            } catch (refreshError) {
+              throw new Error('Token 刷新失败，请重新登录');
+            }
+          }
+          
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
           const reader = response.body?.getReader();
           if (!reader) throw new Error('ReadableStream not supported');
@@ -1117,6 +1145,119 @@ export default {
       }
     };
 
+    // 🔑 SSE 请求前确保 Token 有效
+    const ensureValidToken = async (): Promise<void> => {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('未登录，请先登录');
+      }
+
+      // 🔑 主动检查：如果 Token 即将过期（剩余时间 < 5 分钟），主动刷新
+      try {
+        const decoded = decodeJWT(token);
+        if (decoded && decoded.exp) {
+          const now = Math.floor(Date.now() / 1000); // 当前时间戳（秒）
+          const expiresIn = decoded.exp - now; // 剩余有效期（秒）
+          
+          console.log(`🔑 Token 剩余有效期: ${expiresIn} 秒 (${Math.floor(expiresIn / 60)} 分钟)`);
+          
+          // 如果剩余时间小于 5 分钟（300 秒），主动刷新
+          if (expiresIn < 300) {
+            console.log('⚠️ Token 即将过期，主动刷新...');
+            await refreshToken();
+            console.log('✅ Token 刷新成功');
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Token 解码失败，将在请求时被动刷新:', error);
+      }
+    };
+
+    // 🔑 解码 JWT Token（不验证签名，仅读取 payload）
+    const decodeJWT = (token: string): { exp?: number; [key: string]: any } | null => {
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+          return null;
+        }
+        
+        // 解码 payload（第二部分）
+        const payload = parts[1];
+        const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        
+        return JSON.parse(jsonPayload);
+      } catch (error) {
+        console.error('JWT 解码失败:', error);
+        return null;
+      }
+    };
+
+    // 🔑 刷新 Token
+    let isRefreshingToken = false; // 防止并发刷新
+    const refreshToken = async (): Promise<void> => {
+      // 🔑 如果正在刷新，等待完成
+      if (isRefreshingToken) {
+        console.log('⏳ Token 正在刷新中，等待...');
+        return new Promise((resolve, reject) => {
+          const checkInterval = setInterval(() => {
+            if (!isRefreshingToken) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+          
+          // 超时保护（5秒）
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            reject(new Error('Token 刷新超时'));
+          }, 5000);
+        });
+      }
+
+      const refreshTokenValue = localStorage.getItem('refreshToken');
+      if (!refreshTokenValue) {
+        throw new Error('没有 refresh token，请重新登录');
+      }
+
+      isRefreshingToken = true;
+      try {
+        const response = await fetch('/api/auth/refresh-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: refreshTokenValue }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Token 刷新失败');
+        }
+
+        const result = await response.json();
+        if (result.code === 0 && result.data) {
+          localStorage.setItem('accessToken', result.data.accessToken);
+          localStorage.setItem('refreshToken', result.data.refreshToken);
+          console.log('✅ Token 已更新');
+        } else {
+          throw new Error(result.message || 'Token 刷新失败');
+        }
+      } catch (error) {
+        console.error('❌ Token 刷新失败:', error);
+        // 清除所有认证信息并跳转到登录页
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('userInfo');
+        window.location.href = '/login';
+        throw error;
+      } finally {
+        isRefreshingToken = false;
+      }
+    };
+
     onMounted(async () => {
       // 🔑 初始化 marked 自定义渲染器
       initMarkedRenderer();
@@ -1143,6 +1284,8 @@ export default {
       thinkingPreview,
       hasFinalMessage,
       currentPreviewType,
+      ensureValidToken,
+      refreshToken,
     };
   },
 };

@@ -143,7 +143,7 @@
   </BaseLayout>
 </template>
 
-<script lang="ts">
+<script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { ElMessage } from 'element-plus';
@@ -157,148 +157,112 @@
   import ToolConfig from '@/components/agent/ToolConfig.vue';
   import { agentScopeApi, AgentScope } from '@/services/agentScope';
 
-  export default {
-    name: 'AgentScopeDetail',
-    components: {
-      BaseLayout,
-      AgentBaseSetting,
-      AgentPromptConfig,
-      AgentAccessApi,
-      AgentScopeAccessApi,
-      AgentScopeKnowledgeConfig,
-      ToolConfig,
-    },
-    setup() {
-      const router = useRouter();
-      const activeMenuIndex = ref('basic');
-      const agent = ref<AgentScope>({
-        id: 0,
-        name: '加载中...',
-        description: '',
-        avatar: '',
-        status: 'draft',
-        prompt: '',
-        category: '',
-        tags: '',
-        createTime: '',
-        updateTime: '',
-      });
+  const router = useRouter();
+  const activeMenuIndex = ref('basic');
+  const agent = ref<AgentScope>({
+    id: 0,
+    name: '加载中...',
+    description: '',
+    avatar: '',
+    status: 'draft',
+    prompt: '',
+    category: '',
+    tags: '',
+    createTime: '',
+    updateTime: '',
+  });
 
-      const loadAgent = async () => {
-        const id = parseInt(router.currentRoute.value.params.id as string);
-        if (!id) {
-          ElMessage.error('无效的 Agent ID');
-          return;
-        }
+  const loadAgent = async () => {
+    const id = parseInt(router.currentRoute.value.params.id as string);
+    if (!id) {
+      ElMessage.error('无效的 Agent ID');
+      return;
+    }
 
-        try {
-          const response = await agentScopeApi.get(id);
-          agent.value = response.data?.data || response.data || response;
-        } catch (error) {
-          ElMessage.error('加载失败');
-          console.error('加载 Agent 失败:', error);
-        }
-      };
-
-      const handleMenuSelect = (index: string) => {
-        activeMenuIndex.value = index;
-        if (index === 'go-run') {
-          router.push(`/daren-agent/${agent.value.id}/run`);
-        }
-      };
-
-      const handleUpdate = async (updatedAgent: any) => {
-        try {
-          await agentScopeApi.update(agent.value.id, updatedAgent);
-          ElMessage.success('保存成功');
-          await loadAgent();
-        } catch (error) {
-          ElMessage.error('保存失败');
-        }
-      };
-
-      const handleDelete = async () => {
-        try {
-          await agentScopeApi.delete(agent.value.id);
-          ElMessage.success('删除成功');
-          router.push('/daren-agent');
-        } catch (error) {
-          ElMessage.error('删除失败');
-        }
-      };
-
-      const handlePublish = async () => {
-        try {
-          await agentScopeApi.publish(agent.value.id);
-          ElMessage.success('发布成功');
-          await loadAgent();
-        } catch (error) {
-          ElMessage.error('发布失败');
-        }
-      };
-
-      const handleOffline = async () => {
-        try {
-          await agentScopeApi.offline(agent.value.id);
-          ElMessage.success('下线成功');
-          await loadAgent();
-        } catch (error) {
-          ElMessage.error('下线失败');
-        }
-      };
-
-      const handleRepublish = async () => {
-        try {
-          await agentScopeApi.republish(agent.value.id);
-          ElMessage.success('重新发布成功');
-          await loadAgent();
-        } catch (error) {
-          ElMessage.error('重新发布失败');
-        }
-      };
-
-      const handleToolSave = async (toolNames: string) => {
-        agent.value.toolNames = toolNames;
-        await loadAgent();
-      };
-
-      const goBack = () => {
-        router.push('/daren-agent');
-      };
-
-      const getStatusType = (status: string) => {
-        return status === 'published' ? 'success' : status === 'offline' ? 'info' : 'warning';
-      };
-
-      const getStatusText = (status: string) => {
-        return status === 'published' ? '已发布' : status === 'offline' ? '已下线' : '草稿';
-      };
-
-      onMounted(loadAgent);
-
-      return {
-        ArrowLeft,
-        InfoFilled,
-        ChatLineSquare,
-        VideoPlay,
-        Connection,
-        Document,
-        SetUp,
-        activeMenuIndex,
-        agent,
-        goBack,
-        handleMenuSelect,
-        handleUpdate,
-        handleDelete,
-        handlePublish,
-        handleOffline,
-        handleRepublish,
-        handleToolSave,
-        getStatusType,
-        getStatusText,
-      };
-    },
+    try {
+      const response = await agentScopeApi.get(id);
+      agent.value = response.data?.data || response.data || response;
+    } catch (error) {
+      ElMessage.error('加载失败');
+      console.error('加载 Agent 失败:', error);
+    }
   };
+
+  const handleMenuSelect = (index: string) => {
+    activeMenuIndex.value = index;
+    if (index === 'go-run') {
+      router.push(`/daren-agent/${agent.value.id}/run`);
+    }
+  };
+
+  const handleUpdate = async (updatedAgent: any) => {
+    try {
+      await agentScopeApi.update(agent.value.id, updatedAgent);
+      ElMessage.success('保存成功');
+      await loadAgent();
+    } catch (error) {
+      ElMessage.error('保存失败');
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await agentScopeApi.delete(agent.value.id);
+      ElMessage.success('删除成功');
+      router.push('/daren-agent');
+    } catch (error) {
+      ElMessage.error('删除失败');
+    }
+  };
+
+  const handlePublish = async () => {
+    try {
+      await agentScopeApi.publish(agent.value.id);
+      ElMessage.success('发布成功');
+      await loadAgent();
+    } catch (error) {
+      ElMessage.error('发布失败');
+    }
+  };
+
+  const handleOffline = async () => {
+    try {
+      await agentScopeApi.offline(agent.value.id);
+      ElMessage.success('下线成功');
+      await loadAgent();
+    } catch (error) {
+      ElMessage.error('下线失败');
+    }
+  };
+
+  const handleRepublish = async () => {
+    try {
+      await agentScopeApi.republish(agent.value.id);
+      ElMessage.success('重新发布成功');
+      await loadAgent();
+    } catch (error) {
+      ElMessage.error('重新发布失败');
+    }
+  };
+
+  const handleToolSave = async (toolNames: string) => {
+    agent.value.toolNames = toolNames;
+    await loadAgent();
+  };
+
+  const goBack = () => {
+    router.push('/daren-agent');
+  };
+
+  const getStatusType = (status: string) => {
+    return status === 'published' ? 'success' : status === 'offline' ? 'info' : 'warning';
+  };
+
+  const getStatusText = (status: string) => {
+    return status === 'published' ? '已发布' : status === 'offline' ? '已下线' : '草稿';
+  };
+
+  onMounted(loadAgent);
 </script>
 
 <style scoped>
