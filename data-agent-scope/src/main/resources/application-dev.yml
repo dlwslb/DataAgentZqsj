@@ -70,7 +70,7 @@ app:
 agentscope:
   memory:
     enabled: true  # 是否启用长期记忆
-    similarity-threshold: 0.4  # 相似度阈值(COSINE距离范围[0,2],降低阈值提高召回率)
+    similarity-threshold: 0.7  # 相似度阈值(COSINE距离范围[0,2],提高阈值减少无关召回)
     default-topk: 10  # 默认检索数量
     max-topk: 50  # 最大检索数量
     retention-days: 365  # 默认保留天数
