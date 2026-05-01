@@ -48,16 +48,35 @@ public class UserService {
 	 * 分页获取用户列表
 	 */
 	public Map<String, Object> getUsersPage(int page, int pageSize, String keyword) {
+		return getUsersPage(page, pageSize, keyword, null);
+	}
+
+	/**
+	 * 分页获取用户列表（支持按租户筛选）
+	 */
+	public Map<String, Object> getUsersPage(int page, int pageSize, String keyword, Long tenantId) {
 		int offset = (page - 1) * pageSize;
 		List<User> users;
 		int total;
 
-		if (keyword != null && !keyword.trim().isEmpty()) {
-			users = userMapper.searchByKeywordPage(keyword.trim(), offset, pageSize);
-			total = userMapper.countByKeyword(keyword.trim());
+		if (tenantId != null) {
+			// 按租户筛选
+			if (keyword != null && !keyword.trim().isEmpty()) {
+				users = userMapper.searchByTenantAndKeywordPage(tenantId, keyword.trim(), offset, pageSize);
+				total = userMapper.countByTenantAndKeyword(tenantId, keyword.trim());
+			} else {
+				users = userMapper.selectByTenantIdPage(tenantId, offset, pageSize);
+				total = userMapper.countByTenantId(tenantId);
+			}
 		} else {
-			users = userMapper.selectPage(offset, pageSize);
-			total = userMapper.countAll();
+			// 不按租户筛选
+			if (keyword != null && !keyword.trim().isEmpty()) {
+				users = userMapper.searchByKeywordPage(keyword.trim(), offset, pageSize);
+				total = userMapper.countByKeyword(keyword.trim());
+			} else {
+				users = userMapper.selectPage(offset, pageSize);
+				total = userMapper.countAll();
+			}
 		}
 
 		return Map.of(

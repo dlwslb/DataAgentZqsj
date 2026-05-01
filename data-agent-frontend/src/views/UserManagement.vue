@@ -16,7 +16,49 @@
 <template>
   <BaseLayout>
     <div class="user-management-page">
-      <main class="main-content">
+      <main class="main-content" style="display: flex; gap: 20px; padding: 20px; overflow-x: auto;">
+        <!-- 左侧租户树 -->
+        <div style="width: 250px; flex-shrink: 0;">
+          <el-card shadow="never" style="height: calc(100vh - 140px); overflow-y: auto">
+            <template #header>
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <span>租户列表</span>
+                <el-button size="small" @click="loadTenants" :icon="Refresh" circle />
+              </div>
+            </template>
+            <!-- 租户搜索框 -->
+            <div style="padding: 0 10px 10px 10px">
+              <el-input
+                v-model="tenantSearchKeyword"
+                placeholder="搜索租户"
+                clearable
+                size="small"
+                :prefix-icon="Search"
+              />
+            </div>
+            <el-tree
+              v-if="filteredTenantTree.length > 0"
+              :data="filteredTenantTree"
+              node-key="id"
+              default-expand-all
+              :expand-on-click-node="false"
+              @node-click="handleTenantClick"
+            >
+              <template #default="{ node, data }">
+                <span class="custom-tree-node">
+                  <span>{{ data.label }}</span>
+                  <span v-if="selectedTenantId === data.id" style="color: #409eff">✓</span>
+                </span>
+              </template>
+            </el-tree>
+            <div v-else style="text-align: center; color: #909399; padding: 20px 0;">
+              暂无租户数据
+            </div>
+          </el-card>
+        </div>
+
+        <!-- 右侧用户管理内容 -->
+        <div style="flex: 1; min-width: 0;">
         <!-- 操作区域 -->
         <div class="action-section">
           <el-card>
@@ -52,7 +94,7 @@
                   placeholder="搜索用户名/昵称..."
                   clearable
                   @keyup.enter="handleSearch"
-                  style="width: 250px"
+                  style="width: 200px"
                 >
                   <template #prefix>
                     <el-icon><Search /></el-icon>
@@ -193,6 +235,22 @@
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="租户" prop="tenantId">
+              <el-select 
+                v-model="userForm.tenantId" 
+                placeholder="请选择租户" 
+                filterable 
+                clearable 
+                style="width: 100%;"
+              >
+                <el-option
+                  v-for="tenant in tenantTree"
+                  :key="tenant.id"
+                  :label="tenant.label"
+                  :value="tenant.id"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="绑定智能体" prop="agentId">
               <el-select v-model="userForm.agentId" placeholder="请选择绑定的智能体" filterable clearable style="width: 100%;">
                 <el-option
@@ -246,6 +304,7 @@
             <el-button type="primary" @click="handleResetPassword" :loading="resetting">确定</el-button>
           </template>
         </el-dialog>
+        </div>
       </main>
     </div>
   </BaseLayout>
@@ -260,6 +319,7 @@ import BaseLayout from '@/layouts/BaseLayout.vue';
 import userService from '@/services/user';
 import authService from '@/services/auth';
 import { agentScopeApi } from '@/services/agentScope';
+import { apiClient } from '@/services/common';
 
 export default defineComponent({
   name: 'UserManagement',
@@ -292,12 +352,18 @@ export default defineComponent({
     
     // 智能体列表
     const agentList = ref([]);
+    
+    // 租户树相关
+    const tenantTree = ref([]);
+    const selectedTenantId = ref(null);
+    const tenantSearchKeyword = ref('');
 
     // SQL注入过滤正则
     const SQL_INJECTION_REGEX = /['";<>\\%]/g;
 
     // 全国省份列表
     const provinceList = [
+      '全国',
       '北京市', '天津市', '上海市', '重庆市',
       '河北省', '山西省', '辽宁省', '吉林省', '黑龙江省',
       '江苏省', '浙江省', '安徽省', '福建省', '江西省', '山东省',
@@ -322,6 +388,7 @@ export default defineComponent({
       email: '',
       phone: '',
       province: '',
+      tenantId: null,
       agentId: null,
       role: 'user',
       remark: '',
@@ -336,6 +403,17 @@ export default defineComponent({
     const enabledCount = computed(() => users.value.filter(u => u.status === 1).length);
     const disabledCount = computed(() => users.value.filter(u => u.status === 0).length);
     const adminCount = computed(() => users.value.filter(u => u.role === 'admin' || u.role === 'super_admin').length);
+
+    // 过滤后的租户树
+    const filteredTenantTree = computed(() => {
+      if (!tenantSearchKeyword.value) {
+        return tenantTree.value;
+      }
+      const keyword = tenantSearchKeyword.value.toLowerCase();
+      return tenantTree.value.filter(tenant => 
+        tenant.label.toLowerCase().includes(keyword)
+      );
+    });
 
     const formRules = {
       username: [
@@ -374,7 +452,17 @@ export default defineComponent({
     const loadUsers = async () => {
       loading.value = true;
       try {
-        const result = await userService.getUsers(currentPage.value, pageSize.value, searchKeyword.value || undefined);
+        const params = {
+          page: currentPage.value,
+          pageSize: pageSize.value,
+        };
+        if (searchKeyword.value) {
+          params.keyword = searchKeyword.value;
+        }
+        if (selectedTenantId.value) {
+          params.tenantId = selectedTenantId.value;
+        }
+        const result = await userService.getUsers(params);
         users.value = result.list;
         totalCount.value = result.total;
       } catch (error) {
@@ -395,6 +483,37 @@ export default defineComponent({
         console.error('加载智能体列表失败:', error);
         agentList.value = [];
       }
+    };
+    
+    // 加载租户列表
+    const loadTenants = async () => {
+      try {
+        console.log('🔍 开始加载租户列表...');
+        const response = await apiClient.get('/api/users/tenants');
+        console.log('📦 租户接口响应:', response.data);
+        if (response.data.code === 0) {
+          // 将后端返回的 name 字段转换为 el-tree 需要的 label 字段
+          tenantTree.value = (response.data.data || []).map(tenant => ({
+            id: tenant.id,
+            label: tenant.name
+          }));
+          console.log('✅ 租户列表加载成功，数量:', tenantTree.value.length);
+        } else {
+          console.error('❌ 租户接口返回错误:', response.data.message);
+          ElMessage.warning(response.data.message || '获取租户列表失败');
+        }
+      } catch (error) {
+        console.error('❌ 加载租户列表失败:', error);
+        ElMessage.error('加载租户列表失败: ' + (error.message || '未知错误'));
+        tenantTree.value = [];
+      }
+    };
+    
+    // 处理租户树节点点击
+    const handleTenantClick = (data) => {
+      selectedTenantId.value = data.id;
+      currentPage.value = 1; // 重置到第一页
+      loadUsers();
     };
     
     // 根据ID获取智能体名称
@@ -431,6 +550,7 @@ export default defineComponent({
 
     const handleReset = () => {
       searchKeyword.value = '';
+      selectedTenantId.value = null;
       currentPage.value = 1;
       loadUsers();
     };
@@ -455,6 +575,7 @@ export default defineComponent({
         email: '',
         phone: '',
         province: '',
+        tenantId: null,
         agentId: null,
         role: 'user',
         remark: '',
@@ -472,6 +593,7 @@ export default defineComponent({
         email: user.email || '',
         phone: user.phone || '',
         province: user.province || '',
+        tenantId: user.tenantId || null,
         agentId: user.agentId || null,
         role: user.role || 'user',
         remark: user.remark || '',
@@ -500,6 +622,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: userForm.province,
+                tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
                 remark: userForm.remark,
@@ -513,6 +636,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: userForm.province,
+                tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
                 remark: userForm.remark,
@@ -584,6 +708,7 @@ export default defineComponent({
     onMounted(() => {
       loadUsers();
       loadAgentList();
+      loadTenants();
       updateTableHeight();
       window.addEventListener('resize', updateTableHeight);
     });
@@ -619,8 +744,15 @@ export default defineComponent({
       currentPage,
       pageSize,
       totalCount,
+      // 租户树相关
+      tenantTree,
+      selectedTenantId,
+      tenantSearchKeyword,
+      filteredTenantTree,
       loadUsers,
       loadAgentList,
+      loadTenants,
+      handleTenantClick,
       getAgentName,
       goToAgentRun,
       handleSearch,
@@ -668,6 +800,11 @@ export default defineComponent({
   align-items: center;
   flex-wrap: wrap;
   gap: 1rem;
+}
+
+.action-info {
+  flex: 1;
+  min-width: 300px;
 }
 
 .stats-row {
@@ -723,6 +860,7 @@ export default defineComponent({
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .table-section {
@@ -789,5 +927,19 @@ export default defineComponent({
 
 .text-muted {
   color: #909399;
+}
+
+/* 租户树样式 */
+.custom-tree-node {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  padding-right: 8px;
+}
+
+.custom-tree-node:hover {
+  background-color: #f5f7fa;
 }
 </style>

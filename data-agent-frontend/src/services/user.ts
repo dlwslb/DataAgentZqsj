@@ -71,13 +71,30 @@ class UserService {
   /**
    * 获取用户列表（分页）
    */
-  async getUsers(page: number = 1, pageSize: number = 10, keyword?: string): Promise<PageResult<UserInfo>> {
-    const params = new URLSearchParams();
-    params.append('page', page.toString());
-    params.append('pageSize', pageSize.toString());
-    if (keyword) {
-      params.append('keyword', keyword);
+  async getUsers(pageOrParams: number | { page?: number; pageSize?: number; keyword?: string; tenantId?: number }, pageSize: number = 10, keyword?: string): Promise<PageResult<UserInfo>> {
+    let params: URLSearchParams;
+    
+    // 兼容旧接口：getUsers(page, pageSize, keyword)
+    if (typeof pageOrParams === 'number') {
+      params = new URLSearchParams();
+      params.append('page', pageOrParams.toString());
+      params.append('pageSize', pageSize.toString());
+      if (keyword) {
+        params.append('keyword', keyword);
+      }
+    } else {
+      // 新接口：getUsers({ page, pageSize, keyword, tenantId })
+      params = new URLSearchParams();
+      params.append('page', (pageOrParams.page || 1).toString());
+      params.append('pageSize', (pageOrParams.pageSize || 10).toString());
+      if (pageOrParams.keyword) {
+        params.append('keyword', pageOrParams.keyword);
+      }
+      if (pageOrParams.tenantId) {
+        params.append('tenantId', pageOrParams.tenantId.toString());
+      }
     }
+    
     const response = await apiClient.get(`/api/users?${params.toString()}`);
     if (response.data.code === 0) {
       return response.data.data;

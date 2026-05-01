@@ -15,7 +15,9 @@
  */
 package com.alibaba.cloud.ai.dataagent.controller;
 
+import com.alibaba.cloud.ai.dataagent.dto.TenantDTO;
 import com.alibaba.cloud.ai.dataagent.entity.User;
+import com.alibaba.cloud.ai.dataagent.mapper.SystemTenantMapper;
 import com.alibaba.cloud.ai.dataagent.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +39,7 @@ import java.util.Map;
 public class UserController {
 
 	private final UserService userService;
+	private final SystemTenantMapper systemTenantMapper;
 
 	/**
 	 * 获取用户列表（分页）
@@ -45,9 +48,10 @@ public class UserController {
 	public ResponseEntity<Map<String, Object>> listUsers(
 			@RequestParam(required = false, defaultValue = "1") int page,
 			@RequestParam(required = false, defaultValue = "10") int pageSize,
-			@RequestParam(required = false) String keyword) {
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) Long tenantId) {
 		try {
-			Map<String, Object> result = userService.getUsersPage(page, pageSize, keyword);
+			Map<String, Object> result = userService.getUsersPage(page, pageSize, keyword, tenantId);
 			List<User> users = (List<User>) result.get("list");
 
 			// 不返回密码
@@ -107,6 +111,10 @@ public class UserController {
 			user.setRemark((String) request.get("remark"));
 			user.setRole((String) request.getOrDefault("role", "user"));
 			user.setAvatar((String) request.get("avatar"));
+			// 处理 tenantId
+			if (request.get("tenantId") != null) {
+				user.setTenantId(((Number) request.get("tenantId")).longValue());
+			}
 
 			String rawPassword = (String) request.get("password");
 			if (rawPassword == null || rawPassword.isEmpty()) {
@@ -150,6 +158,10 @@ public class UserController {
 			user.setRole((String) request.get("role"));
 			user.setAvatar((String) request.get("avatar"));
 			user.setProvince((String) request.get("province"));
+			// 处理 tenantId
+			if (request.get("tenantId") != null) {
+				user.setTenantId(((Number) request.get("tenantId")).longValue());
+			}
 			// 处理 agentId
 			if (request.get("agentId") != null) {
 				user.setAgentId(((Number) request.get("agentId")).longValue());
@@ -252,6 +264,26 @@ public class UserController {
 			return ResponseEntity.status(400).body(Map.of(
 					"code", 400,
 					"message", e.getMessage()
+			));
+		}
+	}
+
+	/**
+	 * 获取所有启用的租户列表
+	 */
+	@GetMapping("/tenants")
+	public ResponseEntity<Map<String, Object>> getTenants() {
+		try {
+			List<TenantDTO> tenants = systemTenantMapper.findAllActiveTenants();
+			return ResponseEntity.ok(Map.of(
+					"code", 0,
+					"data", tenants
+			));
+		} catch (Exception e) {
+			log.error("Get tenants failed", e);
+			return ResponseEntity.status(500).body(Map.of(
+					"code", 500,
+					"message", "获取租户列表失败: " + e.getMessage()
 			));
 		}
 	}
