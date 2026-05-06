@@ -41,13 +41,17 @@ mybatis:
   configuration:
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-logging:
-  level:
-    org.springframework.jdbc: debug
-
 # 开发环境限流配置（宽松）
 app:
   rate-limit:
     enabled: true
     max-requests-per-minute: 60
     llm-paths: /api/agent,/api/conversation
+
+# 基础日志
+logging:
+  level:
+    com.alibaba.cloud.ai.dataagent.service: debug
+    com.alibaba.cloud.ai.dataagent.workflow.node: debug
+    com.alibaba.cloud.ai.mapper: debug
+    org.springframework.jdbc: debug

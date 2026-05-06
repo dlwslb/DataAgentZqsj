@@ -50,10 +50,6 @@ mybatis:
   configuration:
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
-logging:
-  level:
-    root: info
-    com.alibaba.cloud.ai.dataagent: info
 
 # 生产环境禁用 Swagger
 springdoc:
@@ -68,3 +64,11 @@ app:
     enabled: true
     max-requests-per-minute: 20
     llm-paths: /api/agent,/api/conversation
+
+# 基础日志
+logging:
+  level:
+    root: info
+    com.alibaba.cloud.ai.dataagent: info
+    com.alibaba.cloud.ai.mapper: info
+    org.springframework.jdbc: info
