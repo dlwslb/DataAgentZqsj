@@ -106,3 +106,7 @@ logging:
     root: WARN
     com.jldaren.agent.ai.datascope: info
     io.agentscope: WARN
+  # SSE 流式片段日志采样率控制（开发环境较高采样率）
+  sse:
+    fragment:
+      sample-rate: 0.05

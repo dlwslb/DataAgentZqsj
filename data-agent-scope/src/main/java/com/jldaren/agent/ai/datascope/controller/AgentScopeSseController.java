@@ -211,6 +211,7 @@ public class AgentScopeSseController {
 
         // 构建响应式流
         return Flux.<ServerSentEvent<String>>create(sink -> {
+            AtomicReference<Disposable> heartbeatRef = new AtomicReference<>();
             try {
                 ReActAgent baseAgent = agentRegistry.getAgentWithLongTermMemory(id, userId, sessionId, tenantId);
                 if (baseAgent == null) {
@@ -222,6 +223,7 @@ public class AgentScopeSseController {
 
                 // 启动心跳保活
                 Disposable heartbeatDisposable = setupHeartbeat(sink, messageId);
+                heartbeatRef.set(heartbeatDisposable);
 
                 // RAG 增强
                 Mono<String> messageMono = request.isEnableRag()
@@ -252,12 +254,12 @@ public class AgentScopeSseController {
                                     msg -> {
                                         // 处理最终响应
                                         handleAgentResponse(msg, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
-                                        heartbeatDisposable.dispose(); // 停止心跳
+                                        disposeHeartbeat(heartbeatRef.get(), messageId);
                                         sink.complete();
                                     },
                                     error -> {
                                         handleAgentError(error, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
-                                        heartbeatDisposable.dispose(); // 停止心跳
+                                        disposeHeartbeat(heartbeatRef.get(), messageId);
                                         sink.error(error);
                                     }
                             );
@@ -265,6 +267,7 @@ public class AgentScopeSseController {
 
             } catch (Exception e) {
                 log.error("Unexpected error in chatStreamPost: agentId={}, messageId={}", id, messageId, e);
+                disposeHeartbeat(heartbeatRef.get(), messageId);
                 sink.error(e);
             }
         })
@@ -317,6 +320,20 @@ public class AgentScopeSseController {
             log.warn("SSE error send failed: agentId={}, messageId={}", agentId, messageId);
         }
         log.error("SSE stream error: agentId={}, messageId={}", agentId, messageId, error);
+    }
+
+    /**
+     * 安全释放心跳资源
+     */
+    private void disposeHeartbeat(Disposable heartbeatDisposable, String messageId) {
+        if (heartbeatDisposable != null && !heartbeatDisposable.isDisposed()) {
+            try {
+                heartbeatDisposable.dispose();
+                log.debug("💔 [SSE] heartbeat disposed: messageId={}", messageId);
+            } catch (Exception e) {
+                log.warn("Failed to dispose heartbeat: messageId={}", messageId, e);
+            }
+        }
     }
 
     /**

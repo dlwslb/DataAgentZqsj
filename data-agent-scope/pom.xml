@@ -138,10 +138,10 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Druid Spring Boot Starter -->
+        <!-- Druid 连接池（不使用 Spring Boot Starter，避免 Web 相关依赖） -->
         <dependency>
             <groupId>com.alibaba</groupId>
-            <artifactId>druid-spring-boot-3-starter</artifactId>
+            <artifactId>druid</artifactId>
             <version>1.2.23</version>
         </dependency>
 
@@ -178,11 +178,19 @@
             <version>0.13.0</version>
         </dependency>
         
+        <!-- Logstash Logback Encoder (结构化日志 JSON 格式) -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
+        
         <!-- 农历日历计算 (lunar) -->
         <dependency>
-            <groupId>com.nlf.calendar</groupId>
+            <groupId>cn.6tail</groupId>
             <artifactId>lunar</artifactId>
-            <version>1.8.17</version>
+            <version>1.7.7</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

@@ -87,7 +87,16 @@ agentscope:
 
 logging:
   level:
-    org.springframework.jdbc: debug
-    com.alibaba.cloud.ai.datascope: DEBUG
+    root: INFO
     com.jldaren.agent.ai.datascope: DEBUG
     io.agentscope: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.jdbc: DEBUG
+    com.alibaba.druid: INFO
+    org.mybatis: DEBUG
+    reactor.netty: INFO
+
+  # SSE 流式片段日志采样率控制（开发环境较高采样率）
+  sse:
+    fragment:
+      sample-rate: 0.1

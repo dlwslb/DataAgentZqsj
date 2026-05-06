@@ -13,6 +13,31 @@ spring:
     password: ${DATA_AGENT_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
+    # Druid 连接池配置
+    druid:
+      initial-size: 5                    # 初始连接数
+      min-idle: 5                        # 最小空闲连接数
+      max-active: 20                     # 最大活跃连接数
+      max-wait: 60000                    # 获取连接最大等待时间（毫秒）
+      time-between-eviction-runs-millis: 60000  # 检测间隔（毫秒）
+      min-evictable-idle-time-millis: 300000    # 最小空闲时间（毫秒）
+      max-evictable-idle-time-millis: 900000    # 最大空闲时间（毫秒）
+      validation-query: SELECT 1         # 验证连接有效性
+      test-while-idle: true              # 空闲时检测
+      test-on-borrow: false              # 借出时检测（影响性能，建议关闭）
+      test-on-return: false              # 归还时检测
+      pool-prepared-statements: true     # 开启 PSCache
+      max-pool-prepared-statement-per-connection-size: 20  # 每个连接 PSCache 大小
+      filters: stat,wall                 # 监控统计和 SQL 防火墙
+      connection-properties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=5000  # 慢 SQL 阈值 5 秒
+      # WebStatFilter 配置（WebFlux 项目已排除自动配置，此处配置无效）
+      web-stat-filter:
+        enabled: false                   # WebFlux 不支持 Servlet Filter
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+      # StatViewServlet 配置（WebFlux 项目已排除自动配置，此处配置无效）
+      stat-view-servlet:
+        enabled: false                   # WebFlux 不支持 Servlet
 
 # DataAgentScope Web Application Configuration
 server:

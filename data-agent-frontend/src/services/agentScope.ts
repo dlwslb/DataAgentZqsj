@@ -9,6 +9,19 @@ const agentScopeClient = axios.create({
   baseURL: import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064',
 });
 
+// Token 刷新状态管理（与 common.ts 共享）
+let isRefreshing = false;
+let refreshSubscribers: Array<(token: string) => void> = [];
+
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach(cb => cb(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 // 请求拦截器 - 自动添加用户信息（与 common.ts 保持一致）
 agentScopeClient.interceptors.request.use(
   (config) => {
@@ -36,6 +49,65 @@ agentScopeClient.interceptors.request.use(
     return config;
   },
   (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// 响应拦截器 - 处理认证错误和自动刷新（与 common.ts 保持一致）
+agentScopeClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // 登录接口不处理401跳转
+    if (originalRequest.url?.includes('/api/auth/login')) {
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          addRefreshSubscriber((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(agentScopeClient(originalRequest));
+          });
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        try {
+          // 使用 apiClient 调用刷新接口（因为刷新接口在 data-agent-management）
+          const { apiClient } = await import('./common');
+          const res = await apiClient.post('/api/auth/refresh-token', { refreshToken });
+          const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+          
+          localStorage.setItem('accessToken', accessToken);
+          localStorage.setItem('refreshToken', newRefreshToken);
+          
+          onRefreshed(accessToken);
+          
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          return agentScopeClient(originalRequest);
+        } catch (err) {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('userInfo');
+          window.location.href = '/login';
+        } finally {
+          isRefreshing = false;
+        }
+      } else {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('userInfo');
+        window.location.href = '/login';
+      }
+    }
+
     return Promise.reject(error);
   }
 );
