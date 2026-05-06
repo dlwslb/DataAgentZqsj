@@ -5,8 +5,10 @@
 import axios from 'axios';
 
 // AgentScope 专用 API 客户端
+// 生产环境使用相对路径（空字符串），由 Nginx 反向代理
+// 开发环境使用完整 URL（如 http://localhost:58064）
 const agentScopeClient = axios.create({
-  baseURL: import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064',
+  baseURL: import.meta.env.VITE_AGENT_SCOPE_API_TARGET || '',
 });
 
 // Token 刷新状态管理（与 common.ts 共享）
