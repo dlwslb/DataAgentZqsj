@@ -42,7 +42,10 @@ export default defineConfig(({ mode }) => {
       assetsDir: 'assets',
     },
     define: {
-      'import.meta.env.VITE_AGENT_SCOPE_API_TARGET': JSON.stringify(config.agentScope?.apiTarget || 'http://localhost:58064'),
+      // 生产环境使用空字符串（相对路径），开发环境使用完整 URL
+      'import.meta.env.VITE_AGENT_SCOPE_API_TARGET': JSON.stringify(
+        config.agentScope?.apiTarget !== undefined ? config.agentScope.apiTarget : 'http://localhost:58064'
+      ),
     },
   };
 });
