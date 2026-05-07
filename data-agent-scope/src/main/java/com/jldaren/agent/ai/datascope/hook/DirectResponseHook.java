@@ -52,10 +52,9 @@ public class DirectResponseHook implements Hook {
         return Mono.fromCallable(() -> {
             if (event instanceof PostActingEvent postActingEvent) {
                 String toolName = postActingEvent.getToolUse().getName();
-                log.info("🔍 [DirectResponse] PostActingEvent触发: toolName={}", toolName);
-
                 Map<String, Object> toolArgs = postActingEvent.getToolUse().getInput();
                 Object skipReport = toolArgs != null ? toolArgs.get("skipReport") : null;
+                log.info("🔍 [DirectResponse] PostActingEvent触发: toolName={}，skipReport={}", toolName,skipReport);
 
                 if ("get_zqsj_agent".equals(toolName)) {
                     // 从 ToolResultBlock.output 中提取实际文本
@@ -64,7 +63,10 @@ public class DirectResponseHook implements Hook {
                     boolean shouldStop = true; // 默认终止循环
                     
                     // skipReport=true：提取 resultSet 并让 ReAct 继续处理
-                    if (Boolean.parseBoolean(String.valueOf(skipReport))) {
+                    // 检查是否有报告生成标记（$$$markdown-report 或 报告生成完成）
+                    boolean hasReportMarker = resultText.contains("$$$markdown-report") ||
+                            resultText.contains("报告生成完成");
+                    if (!hasReportMarker) {
                         try {
                             // 从 "SQL查询结果：" 后提取 JSON
                             String jsonText = resultText;

@@ -287,7 +287,10 @@ public class AgentScopeRegistry {
               - 今天是生日："🎂🎉 今天是XXX的生日！快去送祝福吧~"
               - 还可以根据关系给出建议："再过3天就是XXX生日啦，可以考虑准备个小礼物~"
             - 【计划执行规则】当系统提示"Should I proceed"或"是否继续执行"并等待确认时，用户回复「是/好的/确认/执行/继续/是的好/好」等任何肯定词汇，视为【立即执行计划的指令】，必须立刻调用工具执行任务，禁止再次询问用户
-            - 【工具参数规则】调用 get_zqsj_agent 工具时，默认设置 skipReport=true；如果需要分析报告，设置 skipReport=false
+            - 【工具参数规则 - 强制执行】调用 get_zqsj_agent 工具时，【必须】显式传递 skipReport 参数：
+                          * 如果只需要原始数据（不生成报告），设置 skipReport=true
+                          * 如果需要生成分析报告，设置 skipReport=false
+                          * 【禁止】省略 skipReport 参数，每次调用都必须明确指定
             - 【禁止重复调用】如果对话历史中已有 get_zqsj_agent 返回的 JSON 数据（包含 column 和 data 字段），用户的后续问题（如"进一步分析"、"总结"、"趋势"、"对比"等）必须直接基于已有 JSON 数据分析回答，【绝对禁止】再次调用 get_zqsj_agent 工具
             """;
     
