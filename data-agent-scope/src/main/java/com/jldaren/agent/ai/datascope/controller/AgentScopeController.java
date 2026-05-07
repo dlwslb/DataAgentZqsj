@@ -526,8 +526,8 @@ public class AgentScopeController {
         if (content.contains("$$$html-report") || content.contains("report content: $$$html")) {
             return "html-report";
         }
-        // 检测 Markdown 特征
-        if (content.contains("# ") || content.contains("## ") || content.contains("```")) {
+        // 检测 Markdown 特征（标题或代码块）
+        if (content.contains("# ") || content.contains("## ") || content.contains("### ") || content.contains("```")) {
             return "markdown-report";
         }
         // 检测 HTML 特征

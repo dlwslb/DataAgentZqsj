@@ -66,7 +66,7 @@ public class A2ARemoteCallTool {
     }
 
     @Tool(name = "get_zqsj_agent", description = "商机查询智能体：当用户询问中标、招标、采购、商机、项目数据等相关问题时，应调用此工具获取实时数据。" +
-            "默认设置 skipReport=true；如果需要完整分析报告，设置 skipReport=false。")
+            "【重要】skipReport 参数规则：如果用户要求'分析'、'报告'、'总结'、'趋势'、'对比'、'建议'等，设置 skipReport=false；如果只是查询数据，设置 skipReport=true。")
     public String callRemoteAgent(
             @ToolParam(name = "question", description = "问题内容", required = true) String question,
             @ToolParam(name = "skipReport", description = "是否跳过报告生成", required = false) Boolean skipReport) {

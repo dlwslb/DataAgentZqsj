@@ -48,8 +48,18 @@ public class MessageFormatDetector {
         }
         // 代码块
         if (content.contains("```")) return "markdown";
-        // 标题（从大到小匹配）
-        if (containsAny(content, "######", "#####", "####", "###", "##", "# ")) return "markdown";
+        // 标题（从大到小匹配）- 检测到多级标题认为是报告
+        if (containsAny(content, "######", "#####", "####", "###", "##", "# ")) {
+            // 如果有多个级别的标题或较长的内容，判定为报告
+            int headerCount = 0;
+            if (content.contains("# ")) headerCount++;
+            if (content.contains("## ")) headerCount++;
+            if (content.contains("### ")) headerCount++;
+            if (headerCount >= 2 || content.length() > 200) {
+                return "markdown-report";
+            }
+            return "markdown";
+        }
         // 强调符号
         if (containsAny(content, "**", "__", "* ", "_ ")) return "markdown";
         // 无序/有序列表

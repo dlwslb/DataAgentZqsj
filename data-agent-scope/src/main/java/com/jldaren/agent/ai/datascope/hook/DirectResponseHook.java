@@ -62,28 +62,42 @@ public class DirectResponseHook implements Hook {
                     
                     boolean shouldStop = true; // 默认终止循环
                     
-                    // skipReport=true：提取 resultSet 并让 ReAct 继续处理
-                    // 检查是否有报告生成标记（$$$markdown-report 或 报告生成完成）
-                    boolean hasReportMarker = resultText.contains("$$$markdown-report") ||
-                            resultText.contains("报告生成完成");
-                    if (!hasReportMarker) {
+                    // 判断是否包含 SQL 查询结果标记
+                    int sqlResultIndex = resultText.indexOf("SQL查询结果：");
+                    if (sqlResultIndex >= 0) {
+                        // 有 SQL 查询结果，需要进一步判断是原始数据还是完整报告
                         try {
-                            // 从 "SQL查询结果：" 后提取 JSON
-                            String jsonText = resultText;
-                            int sqlResultIndex = resultText.indexOf("SQL查询结果：");
-                            if (sqlResultIndex >= 0) {
-                                jsonText = resultText.substring(sqlResultIndex + "SQL查询结果：".length()).trim();
-                            }
+                            // 提取 JSON 部分
+                            String jsonText = resultText.substring(sqlResultIndex + "SQL查询结果：".length()).trim();
                             
-                            JsonNode rootNode = OBJECT_MAPPER.readTree(jsonText);
-                            JsonNode resultSetNode = rootNode.get("resultSet");
-                            if (resultSetNode != null) {
-                                resultText = OBJECT_MAPPER.writeValueAsString(resultSetNode);
-                                log.info("📊 [DirectResponse] 已提取 resultSet 数据，长度={}", resultText.length());
-                                shouldStop = false; // 不终止，让 ReAct 继续处理
+                            // 先检查是否是有效的 JSON（以 { 或 [ 开头）
+                            if (jsonText.startsWith("{") || jsonText.startsWith("[")) {
+                                JsonNode rootNode = OBJECT_MAPPER.readTree(jsonText);
+                                JsonNode resultSetNode = rootNode.get("resultSet");
+                                
+                                if (resultSetNode != null) {
+                                    // 检查是否有报告生成的迹象（Markdown 标题、报告内容等）
+                                    boolean hasReportContent = resultText.contains("# ") || 
+                                                              resultText.contains("## ") ||
+                                                              resultText.contains("### ") ||
+                                                              (resultText.length() > 200); // 报告通常较长
+                                    
+                                    if (!hasReportContent) {
+                                        // skipReport=true：只有原始数据，提取 resultSet 让 ReAct 继续处理
+                                        resultText = OBJECT_MAPPER.writeValueAsString(resultSetNode);
+                                        log.info("📊 [DirectResponse] skipReport=true，已提取 resultSet 数据，长度={}", resultText.length());
+                                        shouldStop = false; // 不终止，让 ReAct 继续处理
+                                    } else {
+                                        // skipReport=false：有完整报告，直接返回
+                                        log.info("📊 [DirectResponse] skipReport=false，检测到完整报告，直接返回，长度={}", resultText.length());
+                                    }
+                                }
+                            } else {
+                                // 不是 JSON 格式，说明已经是报告内容（Markdown 等）
+                                log.info("📊 [DirectResponse] 检测到非 JSON 格式内容（可能是 Markdown 报告），直接返回，长度={}", resultText.length());
                             }
                         } catch (Exception e) {
-                            log.warn("⚠️ [DirectResponse] 提取 resultSet 失败: {}", e.getMessage(), e);
+                            log.warn("⚠️ [DirectResponse] 解析 SQL 查询结果失败: {}", e.getMessage());
                         }
                     }
                     

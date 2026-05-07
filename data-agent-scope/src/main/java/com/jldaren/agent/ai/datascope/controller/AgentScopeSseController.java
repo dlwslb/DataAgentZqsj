@@ -415,12 +415,22 @@ public class AgentScopeSseController {
 
     private String detectMessageType(String content) {
         if (content == null || content.isBlank()) return "text";
+        
+        // 检测 JSON 格式
         if (content.trim().startsWith("{") || content.trim().startsWith("[")) {
             return "json";
         }
+        
+        // 检测 Markdown 报告（包含 Markdown 标题或报告特征）
+        if (content.contains("# ") || content.contains("## ") || content.contains("### ")) {
+            return "markdown-report";
+        }
+        
+        // 检测 HTML 表格
         if (content.contains("<table>") || content.contains("|")) {
             return "table";
         }
+        
         return "text";
     }
 
