@@ -148,7 +148,8 @@ public class BoundedRedisMemory implements Memory {
             
             // 1. 如果是 USER 消息，清理 RAG/长期记忆增强内容后再序列化
             Msg messageToSave = message;
-            if (message.getRole() == io.agentscope.core.message.MsgRole.USER) {
+            //这开启了的话rag增强的内容就丢了，agentscope 的逻辑是先把信息保存，再拉出来进行处理
+     /*       if (message.getRole() == io.agentscope.core.message.MsgRole.USER) {
                 String originalText = message.getTextContent();
                 if (originalText != null && !originalText.isEmpty()) {
                     // 提取原始用户问题（去除 RAG 知识、长期记忆等噪声）
@@ -168,7 +169,7 @@ public class BoundedRedisMemory implements Memory {
                         log.debug("USER 消息无需清理: {}", originalText.substring(0, Math.min(50, originalText.length())));
                     }
                 }
-            }
+            }*/
             
             // 2. 序列化消息
             String json = objectMapper.writeValueAsString(messageToSave);
