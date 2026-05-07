@@ -20,7 +20,7 @@ public class WebFluxConfig {
      */
     @Bean
     public Scheduler blockingScheduler() {
-        log.info("WebFlux blocking scheduler initialized");
+        log.info("✅WebFlux blocking scheduler initialized");
         return Schedulers.boundedElastic();
     }
 }
