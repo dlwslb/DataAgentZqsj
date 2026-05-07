@@ -20,7 +20,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jldaren.agent.ai.datascope.entity.AgentScopeKnowledge;
 import com.jldaren.agent.ai.datascope.mapper.AgentScopeKnowledgeMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;

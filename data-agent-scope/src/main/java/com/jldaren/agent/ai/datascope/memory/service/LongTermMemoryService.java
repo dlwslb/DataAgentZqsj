@@ -26,16 +26,13 @@ import com.jldaren.agent.ai.datascope.memory.mapper.LongTermMemoryMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -43,7 +40,6 @@ import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 /**
  * 长期记忆服务类  [长期记忆] 分析内容: importance=0.65, threshold=0.60数据库配置 大于这个才能保存

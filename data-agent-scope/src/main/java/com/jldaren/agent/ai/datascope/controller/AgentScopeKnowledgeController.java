@@ -24,7 +24,6 @@ import com.jldaren.agent.ai.datascope.mapper.SystemUserMapper;
 import com.jldaren.agent.ai.datascope.service.RagService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
