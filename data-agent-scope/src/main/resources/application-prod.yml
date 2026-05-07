@@ -94,7 +94,7 @@ agentscope:
     auto-record-enabled: true  # 是否启用自动记录
     memory-type: semantic  # 默认记忆类型: semantic-语义, episodic-情景, procedural-程序性
     cleanup-cron: "0 0 3 * * ?"  # 清理过期任务 cron 表达式 (生产环境凌晨3点)
-    cleanup-enabled: true  # 是否启用定时清理
+    cleanup-enabled: false  # 是否启用定时清理
     max-content-length: 2000  # 向量存储时最大内容长度(避免token超限)
   # A2A Protocol A2A 协议
   a2a:
@@ -104,7 +104,9 @@ agentscope:
 logging:
   level:
     root: WARN
-    com.jldaren.agent.ai.datascope: info
+    com.jldaren.agent.ai.datascope: INFO
+    org.springframework.jdbc: WARN
+    org.mybatis: WARN
     io.agentscope: WARN
   # SSE 流式片段日志采样率控制（开发环境较高采样率）
   sse:

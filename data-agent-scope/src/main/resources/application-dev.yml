@@ -78,25 +78,22 @@ agentscope:
     auto-record-enabled: true  # 是否启用自动记录
     memory-type: semantic  # 默认记忆类型: semantic-语义, episodic-情景, procedural-程序性
     cleanup-cron: "0 0 2 * * ?"  # 清理过期任务 cron 表达式 (每天凌晨2点)
-    cleanup-enabled: true  # 是否启用定时清理
+    cleanup-enabled: false  # 是否启用定时清理
     max-content-length: 2000  # 向量存储时最大内容长度(避免token超限)
   # A2A Protocol A2A 协议
   a2a:
     remote-agent-url: http://192.168.3.177:58065
     remote-agent-id: "5"
 
+# 日志配置
 logging:
   level:
-    root: INFO
-    com.jldaren.agent.ai.datascope: DEBUG
-    io.agentscope: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.jdbc: DEBUG
+    com.jldaren.agent.ai.datascope: INFO  # 项目代码 DEBUG 级别
+    io.agentscope: INFO  # ⭐ AgentScope 框架 DEBUG 级别（会打印调用模型的完整历史）
+    org.springframework.web: INFO
+    org.springframework.jdbc: INFO
     com.alibaba.druid: INFO
-    org.mybatis: DEBUG
+    org.mybatis: INFO
     reactor.netty: INFO
+    com.alibaba.cloud.ai.vectorstore: INFO
 
-  # SSE 流式片段日志采样率控制（开发环境较高采样率）
-  sse:
-    fragment:
-      sample-rate: 0.1

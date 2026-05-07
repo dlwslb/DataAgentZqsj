@@ -706,11 +706,15 @@
         saveLoading.value = true;
         try {
           if (isEdit.value && currentEditId.value) {
-            // 确保 tenantId 和 userId 即使为 null 也会被传递
+            // ⭐ 关键：传递完整的字段，包括 agentId、type、isRecall 等
             const updateData = {
+              agentId: props.agentId,  // 确保 agentId 不丢失
               title: knowledgeForm.value.title,
+              type: knowledgeForm.value.type,
               content: knowledgeForm.value.content,
               question: knowledgeForm.value.question,
+              isRecall: knowledgeForm.value.isRecall,
+              splitterType: knowledgeForm.value.splitterType,
               tenantId: knowledgeForm.value.tenantId ?? null,
               userId: knowledgeForm.value.userId ?? null,
             };
@@ -718,7 +722,9 @@
             await agentScopeApi.knowledge.update(currentEditId.value, updateData);
             ElMessage.success('更新成功');
           } else {
+            // ⭐ 关键：传递完整的字段，包括 agentId
             await agentScopeApi.knowledge.create(props.agentId, {
+              agentId: props.agentId,  // 确保 agentId 不丢失
               title: knowledgeForm.value.title,
               type: knowledgeForm.value.type,
               content: knowledgeForm.value.content,

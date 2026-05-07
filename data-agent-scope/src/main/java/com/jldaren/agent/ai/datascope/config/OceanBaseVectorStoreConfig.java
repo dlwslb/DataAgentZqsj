@@ -23,6 +23,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.sql.DataSource;
+
 /**
  * OceanBase VectorStore 配置
  * 手动创建 VectorStore Bean,避免自动配置问题
@@ -57,14 +59,11 @@ public class OceanBaseVectorStoreConfig {
     private String driverClassName;
 
     /**
-     * 创建 VectorStore Bean
-     * 使用 Spring AI Alibaba 的 OceanBaseVectorStore
+     * 创建 DataSource Bean
+     * ⭐ 暴露 DataSource 供其他 Service 使用（如 LongTermMemoryService）
      */
-    @Bean
-    public com.alibaba.cloud.ai.vectorstore.oceanbase.OceanBaseVectorStore oceanBaseVectorStore(EmbeddingModel embeddingModel) {
-        log.info("Configuring OceanBase VectorStore with table: {}", tableName);
-
-        // 创建数据源
+    @Bean(name = "oceanbaseDataSource")
+    public DataSource oceanbaseDataSource() {
         DruidDataSource dataSource = new DruidDataSource();
         dataSource.setUrl(datasourceUrl);
         dataSource.setUsername(datasourceUsername);
@@ -77,11 +76,21 @@ public class OceanBaseVectorStoreConfig {
 
         try {
             dataSource.init();
-            log.info("✅OceanBase VectorStore DataSource initialized successfully");
+            log.info("✅OceanBase DataSource initialized successfully");
         } catch (Exception e) {
-            log.error("Failed to initialize OceanBase VectorStore DataSource", e);
+            log.error("Failed to initialize OceanBase DataSource", e);
             throw new RuntimeException("Failed to initialize DataSource", e);
         }
+        return dataSource;
+    }
+
+    /**
+     * 创建 VectorStore Bean
+     * 使用 Spring AI Alibaba 的 OceanBaseVectorStore
+     */
+    @Bean
+    public com.alibaba.cloud.ai.vectorstore.oceanbase.OceanBaseVectorStore oceanBaseVectorStore(EmbeddingModel embeddingModel, DataSource dataSource) {
+        log.info("Configuring OceanBase VectorStore with table: {}", tableName);
 
         // 使用 Builder 创建 OceanBaseVectorStore
         try {
@@ -91,7 +100,7 @@ public class OceanBaseVectorStoreConfig {
                     embeddingModel
             )
                     .build();
-            
+
             log.info("✅OceanBase VectorStore created successfully with table: {}", tableName);
             return vectorStore;
         } catch (Exception e) {

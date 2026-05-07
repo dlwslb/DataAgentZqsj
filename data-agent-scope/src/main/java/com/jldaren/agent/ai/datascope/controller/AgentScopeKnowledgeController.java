@@ -26,11 +26,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 /**
  * AgentScope Knowledge Controller
@@ -39,7 +41,6 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/scope/knowledge")
-@RequiredArgsConstructor
 @Tag(name = "AgentScope Knowledge", description = "AgentScope 知识库管理接口")
 public class AgentScopeKnowledgeController {
 
@@ -47,6 +48,20 @@ public class AgentScopeKnowledgeController {
     private final SystemTenantMapper tenantMapper;
     private final SystemUserMapper userMapper;
     private final RagService ragService;
+    private final ExecutorService ragExecutor;
+
+    public AgentScopeKnowledgeController(
+            AgentScopeKnowledgeMapper knowledgeMapper,
+            SystemTenantMapper tenantMapper,
+            SystemUserMapper userMapper,
+            RagService ragService,
+            @Qualifier("ragExecutor") ExecutorService ragExecutor) {
+        this.knowledgeMapper = knowledgeMapper;
+        this.tenantMapper = tenantMapper;
+        this.userMapper = userMapper;
+        this.ragService = ragService;
+        this.ragExecutor = ragExecutor;
+    }
 
     /**
      * 获取知识列表（按 Agent）
@@ -147,8 +162,8 @@ public class AgentScopeKnowledgeController {
         log.info("✅ Knowledge 创建成功: id={}, agentId={}, tenantId={}, userId={}, title={}",
                 knowledge.getId(), agentId, knowledge.getTenantId(), knowledge.getUserId(), knowledge.getTitle());
 
-        // 异步处理向量化
-        ragService.embedAndStoreKnowledge(knowledge);
+        // ⚠️ 异步处理向量化，避免阻塞 WebFlux 响应式线程
+        ragExecutor.submit(() -> ragService.embedAndStoreKnowledge(knowledge));
 
         return knowledge;
     }
@@ -167,10 +182,46 @@ public class AgentScopeKnowledgeController {
         knowledge.setId(id);
         knowledgeMapper.updateById(knowledge);
 
-        // 如果内容发生变化，重新向量化
-        if (knowledge.getContent() != null && !knowledge.getContent().equals(existing.getContent())) {
-            ragService.deleteKnowledgeVectors(id);
-            ragService.embedAndStoreKnowledge(knowledge);
+        // 如果内容发生变化，或者当前状态是 FAILED，重新向量化
+        boolean contentChanged = knowledge.getContent() != null && !knowledge.getContent().equals(existing.getContent());
+        boolean wasFailed = "FAILED".equals(existing.getEmbeddingStatus());
+        
+        log.info("🔍 检查是否需要重新向量化: id={}, contentChanged={}, wasFailed={}, currentStatus={}", 
+                id, contentChanged, wasFailed, existing.getEmbeddingStatus());
+        
+        if (contentChanged || wasFailed) {
+            String reason = contentChanged ? "内容变化" : "之前失败，重试";
+            log.info("🔄 开始异步重新向量化: id={}, 原因={}", id, reason);
+            ragExecutor.submit(() -> {
+                try {
+                    log.info("📤 [异步任务] 开始删除旧向量: id={}", id);
+                    // 先删除旧的向量数据
+                    ragService.deleteKnowledgeVectors(id);
+                    log.info("✅ [异步任务] 旧向量删除成功: id={}", id);
+                    
+                    // ⭐ 关键：从数据库重新查询完整的知识记录（确保 agentId、tenantId、userId 等字段完整）
+                    log.info("📥 [异步任务] 查询完整知识记录: id={}", id);
+                    AgentScopeKnowledge fullKnowledge = knowledgeMapper.findById(id);
+                    if (fullKnowledge != null) {
+                        log.info("✅ [异步任务] 查询成功，开始向量化: id={}, agentId={}, tenantId={}, userId={}", 
+                                id, fullKnowledge.getAgentId(), fullKnowledge.getTenantId(), fullKnowledge.getUserId());
+                        ragService.embedAndStoreKnowledge(fullKnowledge);
+                        log.info("✅ 知识重新向量化成功: id={}", id);
+                    } else {
+                        log.warn("⚠️ 知识记录不存在，跳过向量化: id={}", id);
+                        knowledgeMapper.updateEmbeddingStatusWithError(id, "FAILED", "知识记录不存在");
+                    }
+                } catch (Exception e) {
+                    String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    if (errorMsg.length() > 500) {
+                        errorMsg = errorMsg.substring(0, 500);
+                    }
+                    knowledgeMapper.updateEmbeddingStatusWithError(id, "FAILED", errorMsg);
+                    log.error("❌ 重新向量化失败: id={}, error={}", id, e.getMessage(), e);
+                }
+            });
+        } else {
+            log.info("ℹ️ 内容未变化，跳过向量化: id={}", id);
         }
 
         log.info("✅ Knowledge 更新成功: id={}, title={}", id, knowledge.getTitle());
@@ -188,8 +239,8 @@ public class AgentScopeKnowledgeController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge not found: " + id);
         }
 
-        // 先删除向量数据
-        ragService.deleteKnowledgeVectors(id);
+        // ⚠️ 先异步删除向量数据，避免阻塞 WebFlux 响应式线程
+        ragExecutor.submit(() -> ragService.deleteKnowledgeVectors(id));
 
         // 软删除
         knowledgeMapper.softDelete(id);
@@ -223,11 +274,21 @@ public class AgentScopeKnowledgeController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge not found: " + id);
         }
 
-        // 先删除旧的向量数据
-        ragService.deleteKnowledgeVectors(id);
-
-        // 重新向量化
-        ragService.embedAndStoreKnowledge(knowledge);
+        // ⚠️ 异步重试向量化，避免阻塞 WebFlux 响应式线程
+        ragExecutor.submit(() -> {
+            try {
+                ragService.deleteKnowledgeVectors(id);
+                ragService.embedAndStoreKnowledge(knowledge);
+                log.info("✅ 知识重试向量化成功: id={}", id);
+            } catch (Exception e) {
+                String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                if (errorMsg.length() > 500) {
+                    errorMsg = errorMsg.substring(0, 500);
+                }
+                knowledgeMapper.updateEmbeddingStatusWithError(id, "FAILED", errorMsg);
+                log.error("❌ 重试向量化失败: id={}, error={}", id, e.getMessage(), e);
+            }
+        });
 
         log.info("✅ 知识向量化重试完成: id={}", id);
     }

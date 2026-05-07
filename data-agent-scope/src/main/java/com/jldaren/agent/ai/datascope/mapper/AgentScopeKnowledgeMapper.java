@@ -150,6 +150,9 @@ public interface AgentScopeKnowledgeMapper {
     @Update("UPDATE agent_scope_knowledge SET embedding_status = #{status}, update_time = NOW() WHERE id = #{id}")
     int updateEmbeddingStatus(@Param("id") Long id, @Param("status") String status);
 
+    @Update("UPDATE agent_scope_knowledge SET embedding_status = #{status}, error_msg = #{errorMsg}, update_time = NOW() WHERE id = #{id}")
+    int updateEmbeddingStatusWithError(@Param("id") Long id, @Param("status") String status, @Param("errorMsg") String errorMsg);
+
     @Update("UPDATE agent_scope_knowledge SET is_deleted = 1, update_time = NOW() WHERE id = #{id}")
     int softDelete(@Param("id") Long id);
 

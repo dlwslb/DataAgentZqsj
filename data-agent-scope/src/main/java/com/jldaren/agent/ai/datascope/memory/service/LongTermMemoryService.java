@@ -15,6 +15,9 @@
  */
 package com.jldaren.agent.ai.datascope.memory.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jldaren.agent.ai.datascope.memory.config.LongTermMemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.entity.MemoryConfig;
 import com.jldaren.agent.ai.datascope.memory.entity.MemoryRecord;
@@ -28,29 +31,48 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 /**
- * 长期记忆服务类
+ * 长期记忆服务类  [长期记忆] 分析内容: importance=0.65, threshold=0.60数据库配置 大于这个才能保存
  * 提供记忆的存储、检索和管理功能
  */
 @Slf4j
 @Service
 public class LongTermMemoryService {
 
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final String VECTOR_TABLE = "agent_scope_vector_store";
+    private static final String MEMORY_TABLE = "long_term_memory";
+
     private final LongTermMemoryMapper memoryMapper;
     private final VectorStore vectorStore;
     private final EmbeddingModel embeddingModel;
     private final LongTermMemoryConfig config;
     private final ChatModel chatModel;
+    private final DataSource dataSource;  // ⭐ 手写 SQL 用
+
+    // ⭐ 阻塞线程池：用于在响应式线程中执行阻塞的 Embedding 调用
+    private static final java.util.concurrent.ExecutorService blockingThreadPool =
+            java.util.concurrent.Executors.newFixedThreadPool(
+                    Runtime.getRuntime().availableProcessors(),
+                    r -> {
+                        Thread t = new Thread(r, "embedding-blocking");
+                        t.setDaemon(true);
+                        return t;
+                    });
 
     /**
      * 配置缓存 (agentName:tenantId -> MemoryConfig)
@@ -77,14 +99,16 @@ public class LongTermMemoryService {
             @Autowired(required = false) VectorStore vectorStore,
             @Autowired(required = false) EmbeddingModel embeddingModel,
             @Autowired(required = false) ChatModel chatModel,
+            @Autowired @Qualifier("oceanbaseDataSource") DataSource dataSource,
             LongTermMemoryConfig config) {
         this.memoryMapper = memoryMapper;
         this.vectorStore = vectorStore;
         this.embeddingModel = embeddingModel;
         this.chatModel = chatModel;
+        this.dataSource = dataSource;
         this.config = config;
-        log.info("LongTermMemoryService initialized: vectorStore={}, embeddingModel={}, chatModel={}",
-                vectorStore != null, embeddingModel != null, chatModel != null);
+        log.info("✅LongTermMemoryService initialized: vectorStore={}, embeddingModel={}, chatModel={}, dataSource={}",
+                vectorStore != null, embeddingModel != null, chatModel != null, dataSource != null);
     }
 
     // ========== 记忆 CRUD ==========
@@ -171,36 +195,98 @@ public class LongTermMemoryService {
                     importanceScore != null ? importanceScore : existing.getImportanceScore());
             if (rows <= 0) return false;
 
-            // 更新 VectorStore 中的向量（删除旧的，添加新的）
-            if (vectorStore != null && existing.getContentVectorId() != null) {
-                try {
-                    vectorStore.delete(List.of(existing.getContentVectorId()));
-                } catch (Exception e) {
-                    log.warn("Failed to delete old vector during update: {}", e.getMessage());
-                }
-                // 添加新向量（ID 保持不变 = memoryId）
-                Map<String, Object> docMetadata = new HashMap<>();
-                if (existing.getMetadata() != null) {
-                    docMetadata.putAll(existing.getMetadata());
-                }
-                docMetadata.put("agentName", existing.getAgentName());
-                docMetadata.put("userId", existing.getUserId());
-                docMetadata.put("tenantId", existing.getTenantId());
+            // ⭐ 更新向量（先删后插，使用手写 SQL）
+            if (existing.getContentVectorId() != null) {
+                // 1. 删除旧向量
+                deleteVectorById(existing.getContentVectorId());
 
-                int maxLength = config != null ? config.getMaxContentLength() : 2000;
-                String truncatedContent = newContent.length() > maxLength
-                        ? newContent.substring(0, maxLength) + "..." : newContent;
-
-                Document document = new Document(memoryId, truncatedContent, docMetadata);
-                vectorStore.add(List.of(document));
+                // 2. 生成新向量
+                if (embeddingModel != null && dataSource != null) {
+                    updateVector(memoryId, newContent, existing);
+                }
+            } else if (dataSource != null && embeddingModel != null) {
+                // 如果之前没有向量，直接创建新的
+                updateVector(memoryId, newContent, existing);
             }
 
-            log.info("Updated memory: id={}, oldLen={}, newLen={}", memoryId,
-                    existing.getContent().length(), newContent.length());
+            log.info("✅ [长期记忆更新] 记忆更新成功: id={}, oldLen={}, newLen={}", memoryId,
+                    existing.getContent() != null ? existing.getContent().length() : 0, newContent.length());
             return true;
         } catch (Exception e) {
-            log.error("Failed to update memory: id={}", memoryId, e);
+            log.error("❌ [长期记忆更新] 记忆更新失败: id={}, error={}", memoryId, e.getMessage(), e);
             return false;
+        }
+    }
+
+    /**
+     * ⭐ 手写 SQL 更新向量
+     */
+    private void updateVector(String memoryId, String newContent, MemoryRecord existing) {
+        try {
+            // 1. 生成向量（使用阻塞线程池，避免在 WebFlux 响应式线程中阻塞）
+            CompletableFuture<List<float[]>> future = CompletableFuture.supplyAsync(
+                () -> embeddingModel.embed(List.of(newContent)),
+                blockingThreadPool
+            );
+            List<float[]> embeddings = future.get(30, TimeUnit.SECONDS);
+            if (embeddings == null || embeddings.isEmpty()) {
+                log.error("❌ [长期记忆更新] 无法生成向量: id={}", memoryId);
+                return;
+            }
+
+            float[] vector = embeddings.get(0);
+            String vectorStr = arrayToString(vector);
+
+            // 2. 构建 metadata JSON
+            Map<String, Object> docMetadata = new HashMap<>();
+            if (existing.getMetadata() != null) {
+                docMetadata.putAll(existing.getMetadata());
+            }
+            docMetadata.put("agentName", existing.getAgentName());
+            docMetadata.put("userId", existing.getUserId());
+            docMetadata.put("tenantId", existing.getTenantId());
+            String metadataJson = objectMapper.writeValueAsString(docMetadata);
+
+            // 3. 截断内容
+            int maxLength = config != null ? config.getMaxContentLength() : 2000;
+            String truncatedContent = newContent.length() > maxLength
+                    ? newContent.substring(0, maxLength) + "..." : newContent;
+
+            // 4. 插入新向量
+            String sql = String.format(
+                    "INSERT INTO %s (id, description, metadata, vector) VALUES (?, ?, ?, '%s')",
+                    VECTOR_TABLE, vectorStr);
+
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, memoryId);
+                ps.setString(2, truncatedContent);
+                ps.setString(3, metadataJson);
+
+                int rows = ps.executeUpdate();
+                log.info("✅ [长期记忆更新] 向量更新成功: id={}, 影响行数={}", memoryId, rows);
+            }
+        } catch (Exception e) {
+            log.error("❌ [长期记忆更新] 向量更新失败: id={}, error={}", memoryId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * ⭐ 手写 SQL 删除向量
+     */
+    private void deleteVectorById(String vectorId) {
+        if (vectorId == null || dataSource == null) return;
+
+        try {
+            String sql = "DELETE FROM " + VECTOR_TABLE + " WHERE id = ?";
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, vectorId);
+                int rows = ps.executeUpdate();
+                log.info("🗑️ [长期记忆] 删除向量: id={}, 影响行数={}", vectorId, rows);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ [长期记忆] 删除向量失败: id={}, error={}", vectorId, e.getMessage());
         }
     }
 
@@ -246,92 +332,175 @@ public class LongTermMemoryService {
         }
     }
 
+    /**
+     * ⭐ 手写 SQL 检索相关记忆（支持 similarityThreshold 阈值过滤）
+     * ⭐ OceanBase 向量参数必须直接拼接在 SQL 中，不能用 ? 占位符
+     */
     private List<MemorySearchResult> retrieveViaVectorStore(String agentName, String userId,
                                                             String query, int limit, double threshold,
-                                                            MemoryConfig config, String sessionId) {
-        // 使用 filterExpression 在向量库层面过滤，避免全量搜索后内存过滤
-        StringBuilder filterBuilder = new StringBuilder();
-        filterBuilder.append(String.format("agentName == '%s' && userId == '%s'", agentName, userId));
+                                                            MemoryConfig config, String sessionId) throws ExecutionException, InterruptedException, TimeoutException {
+        log.debug("🔍 [长期记忆SQL搜索] agentName={}, userId={}, query={}, limit={}, threshold={}, sessionId={}",
+                agentName, userId, query, limit, threshold, sessionId);
+
+        // 1. 生成查询向量（使用阻塞线程池，避免在 WebFlux 响应式线程中阻塞）
+        CompletableFuture<List<float[]>> future = CompletableFuture.supplyAsync(
+            () -> embeddingModel.embed(List.of(query)),
+            blockingThreadPool
+        );
+        List<float[]> embeddings = future.get(30, TimeUnit.SECONDS);
+        if (embeddings == null || embeddings.isEmpty()) {
+            log.warn("⚠️ [长期记忆SQL搜索] 无法生成查询向量");
+            return Collections.emptyList();
+        }
+
+        float[] queryVector = embeddings.get(0);
+        String vectorStr = arrayToString(queryVector);
+
+        // 2. 构建 SQL（使用子查询结构：先从长期记忆表筛选ID，再关联向量表）
+        StringBuilder sql = new StringBuilder();
+
+        // 主查询：从向量表查询
+        sql.append(String.format(
+                "SELECT k.id, k.description, k.metadata, " +
+                "cosine_distance(k.vector, '%s') AS distance " +
+                "FROM %s k " +
+                "INNER JOIN (",
+                vectorStr, VECTOR_TABLE));
+
+        // 子查询：从长期记忆表筛选符合条件的 ID
+        sql.append("SELECT content_vector_id FROM ").append(MEMORY_TABLE).append(" WHERE is_deleted = 0 ");
+        sql.append("AND agent_name = ? ");
+        List<Object> params = new ArrayList<>();
+        params.add(agentName);
+
+        // 用户过滤
+        if (userId != null && !userId.isEmpty()) {
+            sql.append("AND (user_id = ? OR user_id IS NULL)");
+            params.add(userId);
+        }
+
+        // 会话过滤（可选）
         if (sessionId != null && !sessionId.isEmpty()) {
-            filterBuilder.append(String.format(" && sessionId == '%s'", sessionId));
+            sql.append("AND session_id = ?");
+            params.add(sessionId);
         }
-        String filterExpr = filterBuilder.toString();
-        SearchRequest searchRequest = SearchRequest.builder()
-                .query(query)
-                .topK(limit)
-                .similarityThreshold(threshold)
-                .filterExpression(filterExpr)
-                .build();
 
-        List<Document> documents;
-        try {
-            documents = vectorStore.similaritySearch(searchRequest);
-        } catch (Exception e) {
-            // 降级：不带 filterExpression 搜索，手动过滤
-            log.warn("Vector search with filter failed, falling back to post-filter: {}", e.getMessage());
-            SearchRequest fallbackRequest = SearchRequest.builder()
-                    .query(query)
-                    .topK(limit * 3)
-                    .similarityThreshold(threshold)
-                    .build();
-            documents = vectorStore.similaritySearch(fallbackRequest).stream()
-                    .filter(doc -> {
-                        String docAgentName = (String) doc.getMetadata().get("agentName");
-                        String docUserId = (String) doc.getMetadata().get("userId");
-                        boolean match = Objects.equals(agentName, docAgentName) && Objects.equals(userId, docUserId);
-                        if (match && sessionId != null && !sessionId.isEmpty()) {
-                            String docSessionId = (String) doc.getMetadata().get("sessionId");
-                            match = sessionId.equals(docSessionId);
+        // 记忆类型过滤
+        if (config != null && config.getMemoryType() != null) {
+            sql.append("AND memory_type = ?");
+            params.add(config.getMemoryType());
+        }
+
+        sql.append(") v ON k.id = v.content_vector_id ");
+        sql.append(String.format("ORDER BY distance ASC APPROXIMATE LIMIT ? ", limit));
+        params.add(limit);
+
+        // ⭐ 构建完整可执行的 SQL
+//        String fullSql = sql.toString();
+//        log.debug("📝 [长期记忆SQL搜索] 可执行SQL:\n{}", fullSql);
+//        log.debug("📝 [长期记忆SQL搜索] 参数: {}", params);
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+
+            // 设置参数
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+
+            try (ResultSet rs = ps.executeQuery()) {
+                List<MemorySearchResult> results = new ArrayList<>();
+                List<String> accessedIds = new ArrayList<>();
+                int count = 0;
+
+                while (rs.next()) {
+                    String memoryId = rs.getString("id");
+                    String content = rs.getString("description");
+                    String metadataJson = rs.getString("metadata");
+                    double distance = rs.getDouble("distance");
+
+                    // ⭐ 计算相似度 = 1 - cosine_distance（distance 越小，相似度越高）
+                    double similarity = 1.0 - distance;
+
+                    // ⭐ 应用 similarityThreshold 阈值过滤
+                    if (similarity >= threshold) {
+                        count++;
+                        log.debug("  [{}] id={}, distance={}, similarity={}, contentLength={}",
+                                count, memoryId, distance, similarity, content != null ? content.length() : 0);
+
+                        // 解析 metadata
+                        Map<String, Object> metadata = parseMetadata(metadataJson);
+
+                        // 从数据库查询完整的记忆记录
+                        MemoryRecord record = null;
+                        if (memoryMapper != null) {
+                            record = memoryMapper.selectById(memoryId);
+                            if (record != null) {
+                                accessedIds.add(memoryId);
+                            }
                         }
-                        return match;
-                    })
-                    .limit(limit)
-                    .collect(Collectors.toList());
-        }
 
-        log.debug("Vector search returned {} docs for agent={}, user={}",
-                documents.size(), agentName, userId);
-
-        List<MemorySearchResult> results = new ArrayList<>();
-        List<String> accessedIds = new ArrayList<>();
-
-        for (Document doc : documents) {
-            String memoryId = doc.getId();
-            MemoryRecord record = null;
-
-            if (memoryMapper != null) {
-                record = memoryMapper.selectById(memoryId);
-                if (record != null) {
-                    accessedIds.add(memoryId);
+                        results.add(MemorySearchResult.builder()
+                                .id(memoryId)
+                                .content(content)
+                                .memoryType(record != null ? record.getMemoryType() : "semantic")
+                                .similarityScore(similarity)
+                                .importanceScore(record != null ? record.getImportanceScore() : 0.5)
+                                .metadata(metadata)
+                                .sessionId(record != null ? record.getSessionId() : null)
+                                .createTime(record != null && record.getCreateTime() != null ?
+                                        record.getCreateTime().toString() : null)
+                                .isAuto(record != null ? record.getIsAuto() == 1 : true)
+                                .build());
+                    }
                 }
+
+                log.debug("✅ [长期记忆SQL搜索] 检索到 {} 条相关记忆 (threshold={}, 共扫描 {} 条)",
+                        results.size(), threshold, count);
+
+                // 批量更新访问信息
+                if (memoryMapper != null && !accessedIds.isEmpty()) {
+                    try {
+                        memoryMapper.batchUpdateAccessInfo(accessedIds);
+                    } catch (Exception e) {
+                        log.warn("⚠️ 批量更新访问信息失败: {}", e.getMessage());
+                    }
+                }
+
+                return results;
             }
-
-            double similarityScore = computeSimilarity(doc.getMetadata());
-
-            results.add(MemorySearchResult.builder()
-                    .id(memoryId)
-                    .content(doc.getText())
-                    .memoryType(record != null ? record.getMemoryType() : "semantic")
-                    .similarityScore(similarityScore)
-                    .importanceScore(record != null ? record.getImportanceScore() : 0.5)
-                    .metadata(doc.getMetadata())
-                    .sessionId(record != null ? record.getSessionId() : null)
-                    .createTime(record != null && record.getCreateTime() != null ?
-                            record.getCreateTime().toString() : null)
-                    .isAuto(record != null ? record.getIsAuto() == 1 : true)
-                    .build());
+        } catch (Exception e) {
+            log.error("❌ [长期记忆SQL搜索] 执行失败: {}", e.getMessage(), e);
+            return Collections.emptyList();
         }
+    }
 
-        // 批量更新访问信息（避免 N+1 写问题）
-        if (memoryMapper != null && !accessedIds.isEmpty()) {
-            try {
-                memoryMapper.batchUpdateAccessInfo(accessedIds);
-            } catch (Exception e) {
-                log.warn("Failed to batch update access info: {}", e.getMessage());
-            }
+    /**
+     * 将 float[] 数组转换为 SQL 字符串格式
+     */
+    private String arrayToString(float[] array) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < array.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(array[i]);
         }
+        sb.append("]");
+        return sb.toString();
+    }
 
-        return results;
+    /**
+     * 解析 metadata JSON
+     */
+    private Map<String, Object> parseMetadata(String metadataJson) {
+        if (metadataJson == null || metadataJson.isEmpty()) {
+            return new HashMap<>();
+        }
+        try {
+            return objectMapper.readValue(metadataJson, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonProcessingException e) {
+            log.warn("⚠️ 解析 metadata 失败: {}", e.getMessage());
+            return new HashMap<>();
+        }
     }
 
     private double computeSimilarity(Map<String, Object> metadata) {
@@ -378,7 +547,7 @@ public class LongTermMemoryService {
 
             int result = memoryMapper.delete(memoryId);
             if (result > 0 && record.getContentVectorId() != null) {
-                deleteVector(record.getContentVectorId());
+                deleteVectorById(record.getContentVectorId());
             }
 
             log.info("Deleted memory: id={}", memoryId);
@@ -409,7 +578,7 @@ public class LongTermMemoryService {
 
             int deleted = memoryMapper.batchDelete(memoryIds);
             for (String vectorId : vectorIds) {
-                deleteVector(vectorId);
+                deleteVectorById(vectorId);
             }
 
             log.info("Cleared {} memories for agent={}, user={}", deleted, agentName, userId);
@@ -435,15 +604,36 @@ public class LongTermMemoryService {
 
     // ========== 向量存储 ==========
 
+    /**
+     * ⭐ 手写 SQL 存储向量到 agent_scope_vector_store 表
+     */
     private String storeVector(String content, Map<String, Object> metadata,
                                 String agentName, String userId, String sessionId,
                                 String tenantId, String memoryId) {
-        if (vectorStore == null || embeddingModel == null) {
-            log.debug("VectorStore or EmbeddingModel is null, skipping vector storage");
+        if (embeddingModel == null || dataSource == null) {
+            log.warn("⚠️ [长期记忆向量存储] EmbeddingModel 或 DataSource 为空，跳过向量存储");
             return null;
         }
 
         try {
+            // 1. 生成向量（使用阻塞线程池，避免在 WebFlux 响应式线程中阻塞）
+            log.debug("🔄 [长期记忆向量存储] 生成向量: id={}, contentLength={}，content", memoryId, content.length(),content);
+            
+            CompletableFuture<List<float[]>> future = CompletableFuture.supplyAsync(
+                () -> embeddingModel.embed(List.of(content)),
+                blockingThreadPool
+            );
+            List<float[]> embeddings = future.get(30, TimeUnit.SECONDS);
+            if (embeddings == null || embeddings.isEmpty()) {
+                log.error("❌ [长期记忆向量存储] 无法生成向量: id={}", memoryId);
+                return null;
+            }
+
+            float[] vector = embeddings.get(0);
+            String vectorStr = arrayToString(vector);
+            log.debug("✅ [长期记忆向量存储] 向量生成成功: id={}, dimension={}", memoryId, vector.length);
+
+            // 2. 构建 metadata JSON
             Map<String, Object> docMetadata = new HashMap<>();
             docMetadata.put("agentName", agentName);
             docMetadata.put("userId", userId);
@@ -454,32 +644,34 @@ public class LongTermMemoryService {
             if (metadata != null) {
                 docMetadata.putAll(metadata);
             }
+            String metadataJson = objectMapper.writeValueAsString(docMetadata);
 
+            // 3. 截断内容
             int maxLength = config != null ? config.getMaxContentLength() : 2000;
             String truncatedContent = content;
             if (content.length() > maxLength) {
                 truncatedContent = content.substring(0, maxLength) + "...";
-                log.debug("Truncated content from {} to {} chars", content.length(), maxLength);
             }
 
-            Document document = new Document(memoryId, truncatedContent, docMetadata);
-            vectorStore.add(List.of(document));
+            // 4. 手写 SQL 插入向量
+            log.debug("💾 [长期记忆向量存储] 插入向量: id={}, contentLength={}", memoryId, truncatedContent.length());
+            String sql = String.format(
+                    "INSERT INTO %s (id, description, metadata, vector) VALUES (?, ?, ?, '%s')",
+                    VECTOR_TABLE, vectorStr);
 
-            log.debug("Stored vector: id={}", memoryId);
-            return memoryId;
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, memoryId);  // 使用 memoryId 作为向量 ID
+                ps.setString(2, truncatedContent);  // 存储内容
+                ps.setString(3, metadataJson);  // 存储 metadata
+
+                int rows = ps.executeUpdate();
+                log.debug("✅ [长期记忆向量存储] 插入成功: id={}, 影响行数={}", memoryId, rows);
+                return memoryId;
+            }
         } catch (Exception e) {
-            log.error("Failed to store vector", e);
+            log.error("❌ [长期记忆向量存储] 存储失败: id={}, error={}", memoryId, e.getMessage(), e);
             return null;
-        }
-    }
-
-    private void deleteVector(String vectorId) {
-        if (vectorStore == null || vectorId == null) return;
-        try {
-            vectorStore.delete(List.of(vectorId));
-            log.debug("Deleted vector: id={}", vectorId);
-        } catch (Exception e) {
-            log.error("Failed to delete vector: id={}", vectorId, e);
         }
     }
 
@@ -626,7 +818,7 @@ public class LongTermMemoryService {
         double importance = 0.3;
         String lowerContent = content.toLowerCase();
 
-        importance += matchKeywordScore(lowerContent, STRONG_KEYWORDS, 0.2);
+        importance += matchKeywordScore(lowerContent, STRONG_KEYWORDS, 0.25);  // ⭐ 提高"记住"类关键词权重
         importance += matchKeywordScore(lowerContent, PERSONAL_INFO_KEYWORDS, 0.15);
         importance -= matchKeywordScore(lowerContent, CASUAL_KEYWORDS, 0.15);
 

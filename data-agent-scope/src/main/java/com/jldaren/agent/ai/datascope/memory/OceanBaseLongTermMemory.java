@@ -92,7 +92,10 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
      */
     @Override
     public Mono<Void> record(List<Msg> messages) {
+        log.info("🔔 [长期记忆] record() 被调用: enabled={}, memoryService={}, messagesSize={}",
+                enabled, memoryService != null, messages != null ? messages.size() : 0);
         if (!enabled || memoryService == null || messages == null || messages.isEmpty()) {
+            log.debug("🔔 [长期记忆] record() 被跳过: enabled={}, memoryService={}", enabled, memoryService != null);
             return Mono.empty();
         }
 
@@ -113,9 +116,11 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
         }
 
         if (userContents.isEmpty()) {
-            log.debug("No user messages to record as memory");
+            log.debug("🔔 [长期记忆] userContents 为空，跳过记录");
             return Mono.empty();
         }
+
+        log.debug("🔔 [长期记忆] 准备记录 {} 条用户消息", userContents.size());
 
         for (String content : userContents) {
             if (content.length() > MAX_CONTENT_LENGTH) {
@@ -125,11 +130,14 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
 
             double importance = memoryService.analyzeImportance(content);
             double threshold = getAutoRecordThreshold();
+//            log.info("🔔 [长期记忆] 分析内容: importance={}, threshold={}, contentLength={}, content={}",
+//                    String.format("%.2f", importance), String.format("%.2f", threshold), content.length(),
+//                    content.length() > 50 ? content.substring(0, 50) + "..." : content);
 
             if (importance < threshold) {
-                log.debug("Memory importance {} below threshold {}, skipping: {}",
-                        String.format("%.2f", importance), String.format("%.2f", threshold),
-                        content.length() > 50 ? content.substring(0, 50) + "..." : content);
+//                log.info("🔔 [长期记忆] importance {} < threshold {}，跳过: {}",
+//                        String.format("%.2f", importance), String.format("%.2f", threshold),
+//                        content.length() > 50 ? content.substring(0, 50) + "..." : content);
                 continue;
             }
 
@@ -144,10 +152,28 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
                 // 更新失败则继续走新增流程
             }
 
-            // 去重：检查是否已有相同内容
-            if (isDuplicateMemory(content)) {
-                log.debug("Duplicate memory skipped: {}", content.length() > 50 ? content.substring(0, 50) + "..." : content);
-                continue;
+            // 去重 + 更新：检查是否已有相似内容
+            String duplicateId = findDuplicateOrSimilarMemory(content);
+            if (duplicateId != null) {
+                // ⭐ 检查内容是否完全相同，如果相同则跳过（避免重复更新）
+                MemorySearchResult existingMemory = memoryService.retrieveMemories(
+                        agentName, userId, content, 1, tenantId, null
+                ).stream().filter(r -> r.getId().equals(duplicateId)).findFirst().orElse(null);
+                
+                if (existingMemory != null && existingMemory.getContent().equals(content)) {
+//                    log.info("✅ [去重] 内容完全相同，跳过更新: id={}, content={}",
+//                            duplicateId, content.length() > 30 ? content.substring(0, 30) + "..." : content);
+                    continue; // 内容相同，跳过
+                }
+                
+                // 发现重复或相似内容，更新为最新版本
+                boolean updated = memoryService.updateMemoryContent(duplicateId, content, importance);
+                if (updated) {
+                    log.info("✅ [去重更新] 更新相似记忆: id={}, similarity=0.98+, content={}", 
+                            duplicateId, content.length() > 30 ? content.substring(0, 30) + "..." : content);
+                    continue; // 已更新，不再新增
+                }
+                // 更新失败则继续走新增流程
             }
 
             memoryService.recordMemory(
@@ -198,15 +224,59 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
     // ---- 辅助方法 ----
 
     /**
-     * 检查是否已存在相似记忆（基于精确内容匹配）
-     * 使用 DB 查询避免全量加载用户记忆
+     * 查找重复或相似的记忆 ID
+     * 1. 先检查精确匹配
+     * 2. 再检查向量相似度 > 0.95 的语义重复
+     * @return 重复记忆的 ID，如果没有则返回 null
      */
-    private boolean isDuplicateMemory(String content) {
+    private String findDuplicateOrSimilarMemory(String content) {
         try {
-            return memoryService.isDuplicateContent(agentName, userId, tenantId, content);
+            // 1. 精确匹配去重
+            if (memoryService.isDuplicateContent(agentName, userId, tenantId, content)) {
+                log.debug("✅ [去重] 精确匹配发现重复: {}", content.length() > 30 ? content.substring(0, 30) + "..." : content);
+                // 返回第一条匹配的记忆 ID
+                List<MemorySearchResult> exactMatches = memoryService.retrieveMemories(
+                        agentName, userId, content, 1, tenantId, null
+                );
+                if (exactMatches != null && !exactMatches.isEmpty()) {
+                    return exactMatches.get(0).getId();
+                }
+            }
+            
+            // 2. 向量相似度去重（避免语义相似的冗余记忆）
+            // ⭐ 关键：这里需要获取所有结果，然后手动过滤 >= 0.95 的
+            // retrieveMemories 会使用配置的 threshold (0.4)，可能返回低相似度结果
+            List<MemorySearchResult> similarMemories = memoryService.retrieveMemories(
+                    agentName, userId, content, 10, tenantId, null  // 取 top 10，增加找到高相似度的概率
+            );
+            
+            if (similarMemories != null && !similarMemories.isEmpty()) {
+                for (MemorySearchResult result : similarMemories) {
+                    // ⭐ 相似度 >= 0.98 且长度差异 < 50% 才认为是重复内容
+                    double similarity = result.getSimilarityScore();
+                    String existingContent = result.getContent();
+                    
+                    if (similarity >= 0.98 && existingContent != null) {
+                        // 检查长度差异：避免短句误匹配
+                        double lengthRatio = Math.min(content.length(), existingContent.length()) 
+                                           / (double) Math.max(content.length(), existingContent.length());
+                        
+                        if (lengthRatio >= 0.5) {
+                            log.debug("✅ [去重] 向量相似度 {:.2f}, 长度比 {:.2f} 发现语义重复: {}",
+                                    similarity, lengthRatio,
+                                    content.length() > 30 ? content.substring(0, 30) + "..." : content);
+                            return result.getId();
+                        } else {
+                            log.debug("⚠️ [去重] 跳过：相似度 {:.2f} 但长度比 {:.2f} 过低", similarity, lengthRatio);
+                        }
+                    }
+                }
+            }
+            
+            return null;
         } catch (Exception e) {
-            log.warn("Failed to check duplicate memory: {}", e.getMessage());
-            return false;
+            log.warn("⚠️ [去重] 检查失败，跳过: {}", e.getMessage());
+            return null;
         }
     }
 
