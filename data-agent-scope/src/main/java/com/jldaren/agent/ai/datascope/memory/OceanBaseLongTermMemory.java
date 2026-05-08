@@ -153,27 +153,12 @@ public class OceanBaseLongTermMemory implements LongTermMemory {
             }
 
             // 去重 + 更新：检查是否已有相似内容
+            // ⭐ 关键：使用原始内容进行去重检查，recordMemory 内部会进行格式化
             String duplicateId = findDuplicateOrSimilarMemory(content);
             if (duplicateId != null) {
-                // ⭐ 检查内容是否完全相同，如果相同则跳过（避免重复更新）
-                MemorySearchResult existingMemory = memoryService.retrieveMemories(
-                        agentName, userId, content, 1, tenantId, null
-                ).stream().filter(r -> r.getId().equals(duplicateId)).findFirst().orElse(null);
-                
-                if (existingMemory != null && existingMemory.getContent().equals(content)) {
-//                    log.info("✅ [去重] 内容完全相同，跳过更新: id={}, content={}",
-//                            duplicateId, content.length() > 30 ? content.substring(0, 30) + "..." : content);
-                    continue; // 内容相同，跳过
-                }
-                
-                // 发现重复或相似内容，更新为最新版本
-                boolean updated = memoryService.updateMemoryContent(duplicateId, content, importance);
-                if (updated) {
-                    log.info("✅ [去重更新] 更新相似记忆: id={}, similarity=0.98+, content={}", 
-                            duplicateId, content.length() > 30 ? content.substring(0, 30) + "..." : content);
-                    continue; // 已更新，不再新增
-                }
-                // 更新失败则继续走新增流程
+                // ⭐ 直接使用 findDuplicateOrSimilarMemory 返回的 ID，不再重复查询
+                log.info("✅ [去重] 发现重复记忆，跳过新增: id={}", duplicateId);
+                continue; // 已存在，跳过
             }
 
             memoryService.recordMemory(

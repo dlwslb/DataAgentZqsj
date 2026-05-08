@@ -169,9 +169,13 @@ public class LongTermMemoryService {
             }
 
             return memoryId;
+        } catch (RuntimeException e) {
+            // ⭐ 重新抛出 RuntimeException，触发 @Transactional 回滚
+            log.error("❌ [长期记忆] 记录失败（将回滚）: agent={}, user={}, error={}", agentName, userId, e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to record memory: agent={}, user={}", agentName, userId, e);
-            return null;
+            log.error("❌ [长期记忆] 记录失败（将回滚）: agent={}, user={}", agentName, userId, e);
+            throw new RuntimeException("记录长期记忆失败", e);
         }
     }
 
@@ -509,10 +513,24 @@ public class LongTermMemoryService {
 
     /**
      * 检查是否已存在相同内容的记忆（DB 精确匹配，避免全量加载）
+     * ⭐ 同时检查原始内容和格式化后的内容，确保去重逻辑有效
      */
     public boolean isDuplicateContent(String agentName, String userId, String tenantId, String content) {
         if (memoryMapper == null || content == null) return false;
-        return memoryMapper.existsByContent(agentName, userId, tenantId, content.trim()) > 0;
+        
+        // 检查原始内容
+        boolean originalExists = memoryMapper.existsByContent(agentName, userId, tenantId, content.trim()) > 0;
+        if (originalExists) {
+            return true;
+        }
+        
+        // 检查格式化后的内容（以防数据库中已存格式化内容）
+        String formattedContent = standardizeMemoryContent(content, userId);
+        if (!content.equals(formattedContent)) {  // 只有在内容确实被格式化时才检查
+            return memoryMapper.existsByContent(agentName, userId, tenantId, formattedContent.trim()) > 0;
+        }
+        
+        return false;
     }
 
     // ========== 向量存储 ==========
@@ -548,16 +566,19 @@ public class LongTermMemoryService {
             log.debug("💾 [长期记忆向量存储] 开始存储向量: id={}, contentLength={}", memoryId, content.length());
             boolean success = vectorStoreService.storeVector(memoryId, content, docMetadata, maxLength);
             
-            if (success) {
-                log.debug("✅ [长期记忆向量存储] 存储成功: id={}", memoryId);
-                return memoryId;
-            } else {
-                log.error("❌ [长期记忆向量存储] 存储失败: id={}", memoryId);
-                return null;
+            if (!success) {
+                log.error("❌ [长期记忆向量存储] 存储失败，将回滚事务: id={}", memoryId);
+                throw new RuntimeException("向量存储失败: " + memoryId);
             }
+            
+            log.debug("✅ [长期记忆向量存储] 存储成功: id={}", memoryId);
+            return memoryId;
+        } catch (RuntimeException e) {
+            // ⭐ 重新抛出 RuntimeException，触发事务回滚
+            throw e;
         } catch (Exception e) {
-            log.error("❌ [长期记忆向量存储] 异常: id={}, error={}", memoryId, e.getMessage(), e);
-            return null;
+            log.error("❌ [长期记忆向量存储] 异常，将回滚事务: id={}, error={}", memoryId, e.getMessage(), e);
+            throw new RuntimeException("向量存储异常: " + memoryId, e);
         }
     }
 
@@ -740,18 +761,93 @@ public class LongTermMemoryService {
     public String findContradictingMemory(String agentName, String userId, String content, String tenantId) {
         if (memoryMapper == null) return null;
 
-        // 检测矛盾的关键词模式（新信息覆盖旧信息）
+        // ⭐ 检测矛盾的关键词模式（新信息覆盖旧信息）
+// 格式：{"新输入中的触发词", "已有记忆中的检索词"}
+// 若第二个元素为 null，代表通用纠正/否定词，需结合上下文判断
         String[][] contradictionPatterns = {
-                // {"新模式", "旧模式"} — 新信息包含前者时，检查是否有包含后者的已有记忆
+
+                // ================= 1. 身份与称呼 =================
                 {"我改名叫", "我叫"},
                 {"我现在叫", "我叫"},
-                {"我现在住在", "我住在"},
-                {"我搬到了", "我住在"},
-                {"我换工作了", "我的工作"},
+                {"我的名字是", "我叫"},
+                {"以后叫我", "我叫"},
+                {"别叫我", "我叫"},  // 纠正称呼
+                {"请叫我", "我叫"},
+                {"我改了网名", "我的网名"},
+                {"我换了昵称", "我的昵称"},
+                {"我是", "我是"},    // ⚠️ 注意：需配合后缀值比对（如"我是张三"覆盖"我是李四"）
+
+                // ================= 2. 联系方式 =================
                 {"我现在的电话", "我的电话"},
-                {"我换了", null},  // 通用变更模式
-                {"不再是", null},  // 否定旧信息
+                {"我新手机号", "我的手机号"},
+                {"我换了手机", "我的手机"},
+                {"联系我请打", "我的电话"},
+                {"我微信换了", "我的微信"},
+                {"我换了邮箱", "我的邮箱"},
+                {"我的新邮箱", "我的邮箱"},
+                {"我微信号改了", "我的微信"},
+
+                // ================= 3. 居住地与位置 =================
+                {"我搬到了", "我住在"},
+                {"我现在住在", "我住在"},
+                {"我搬家了", "我的地址"},
+                {"我的新地址", "我的地址"},
+                {"我回老家了", "我住在"},  // 状态变更
+                {"我去了", "我在"},       // 动态位置变更（如"我去了北京" vs "我在上海"）
+
+                // ================= 4. 工作与职业 =================
+                {"我换工作了", "我的工作"},
+                {"我跳槽了", "我的公司"},
+                {"我现在在", "我在"},       // ⚠️ 需过滤非地名（如"我现在在阿里"）
+                {"我入职了", "我的公司"},
+                {"我离职了", "我的公司"},
+                {"我辞职了", "我的工作"},
+                {"我换部门了", "我的部门"},
+                {"我升职了", "我的职位"},
+                {"我不干了", "我的工作"},
+
+                // ================= 5. 人生状态与关系 =================
+                {"我结婚了", "我单身"},
+                {"我离婚了", "我已婚"},
+                {"我分手了", "我的对象"},
+                {"我有对象了", "我单身"},
+                {"我毕业了", "我是学生"},
+                {"我退学了", "我是学生"},
+                {"我退休了", "我的工作"},
+                {"我怀孕了", "我没孩子"},
+                {"我生二胎了", "我有一个孩子"},
+
+                // ================= 6. 偏好与习惯（软性覆盖） =================
+                {"我现在不爱吃", "我爱吃"},
+                {"我开始喜欢", "我喜欢"},
+                {"我戒了", "我抽烟"},  // 或 "我喝酒"
+                {"我改喝", "我喝"},    // 如 "我改喝冰美式" 覆盖 "我喝拿铁"
+                {"我不怎么玩了", "我喜欢玩"},
+
+                // ================= 7. 资产与物品 =================
+                {"我换手机了", "我的手机"},  // 如"我换iPhone了"覆盖"我用华为"
+                {"我买车了", "我的车"},
+                {"我换车了", "我的车"},
+                {"我换了电脑", "我的电脑"},
+
+                // ================= 8. 宠物相关 =================
+                {"我的狗走了", "我的狗"},
+                {"我送人了", "我的猫"},  // ⚠️ 需结合上下文指代
+                {"我又养了", "我的宠物"},
+
+                // ================= 9. 通用否定与纠正词 =================
+                // 这些没有特定的匹配目标，一旦出现，应触发对整句实体的检索与比对
+                {"之前说错", null},
+                {"我记错了", null},
+                {"不是", null},           // ⚠️ 极高误判率，建议只在前缀出现时触发，如"不是我之前说的..."
+                {"忘了我之前说的", null},
+                {"以这次为准", null},
+                {"我改了", null},
+                {"我换了", null},
+                {"不再是", null},
+                {"以前是", null},         // 暗示现在不是了
         };
+
 
         String lowerContent = content.toLowerCase();
 
@@ -764,23 +860,38 @@ public class LongTermMemoryService {
             }
         }
 
-        if (oldPattern == null) {
-            return null;
-        }
-
-        // 使用 DB LIKE 查询直接查找矛盾记忆（替代全量加载+内存遍历）
-        try {
-            MemoryRecord contradicting = memoryMapper.selectFirstByContentLike(
-                    agentName, userId, tenantId, oldPattern);
-            if (contradicting != null) {
-                log.debug("Found contradicting memory: id={}, content={}", contradicting.getId(),
-                        contradicting.getContent().length() > 50
-                                ? contradicting.getContent().substring(0, 50) + "..."
-                                : contradicting.getContent());
-                return contradicting.getId();
+        if (oldPattern != null) {
+            // 使用 DB LIKE 查询直接查找矛盾记忆（替代全量加载+内存遍历）
+            try {
+                MemoryRecord contradicting = memoryMapper.selectFirstByContentLike(
+                        agentName, userId, tenantId, oldPattern);
+                if (contradicting != null) {
+                    log.debug("Found contradicting memory: id={}, content={}", contradicting.getId(),
+                            contradicting.getContent().length() > 50
+                                    ? contradicting.getContent().substring(0, 50) + "..."
+                                    : contradicting.getContent());
+                    return contradicting.getId();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to find contradicting memory: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("Failed to find contradicting memory: {}", e.getMessage());
+        }
+        
+        // ⭐ 增强：即使没有明确的矛盾关键词，也检查是否有相同类型的格式化内容
+        // 例如：新内容是【用户信息-姓名】，旧内容也是【用户信息-姓名】，则认为可能矛盾
+        String newFormatted = standardizeMemoryContent(content, userId);
+        if (newFormatted.startsWith("【用户信息-姓名】")) {
+            // 查找已有的姓名信息
+            try {
+                MemoryRecord existingName = memoryMapper.selectFirstByContentLike(
+                        agentName, userId, tenantId, "【用户信息-姓名】");
+                if (existingName != null && !existingName.getContent().equals(newFormatted)) {
+                    log.info("⚠️ [矛盾检测] 发现同名类型记忆，可能需更新: id={}", existingName.getId());
+                    return existingName.getId();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to find same-type memory: {}", e.getMessage());
+            }
         }
 
         return null;
@@ -848,6 +959,7 @@ public class LongTermMemoryService {
         return content.contains("我叫") 
             || content.contains("我的名字") 
             || content.contains("我姓")
+            || content.contains("请叫我")  // ⭐ 新增：支持“请叫我xxx”
             || content.matches(".*我是[\u4e00-\u9fa5]{2,4}.*");
     }
 
