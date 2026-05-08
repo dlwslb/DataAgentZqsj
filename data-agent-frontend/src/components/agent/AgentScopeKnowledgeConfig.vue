@@ -55,6 +55,32 @@
       <div style="display: flex; justify-content: space-between; align-items: center">
         <h3>知识列表</h3>
         <div style="display: flex; gap: 10px; align-items: center">
+          <!-- 筛选条件（直接显示在搜索框前） -->
+          <el-select
+            v-model="queryParams.type"
+            placeholder="全部类型"
+            clearable
+            @change="handleSearch"
+            style="width: 120px"
+            size="large"
+          >
+            <el-option label="文档" value="DOCUMENT" />
+            <el-option label="问答对" value="QA" />
+            <el-option label="常见问题" value="FAQ" />
+          </el-select>
+          <el-select
+            v-model="queryParams.embeddingStatus"
+            placeholder="全部状态"
+            clearable
+            @change="handleSearch"
+            style="width: 130px"
+            size="large"
+          >
+            <el-option label="已完成" value="COMPLETED" />
+            <el-option label="处理中" value="PROCESSING" />
+            <el-option label="失败" value="FAILED" />
+            <el-option label="待处理" value="PENDING" />
+          </el-select>
           <el-input
             v-model="queryParams.title"
             placeholder="请输入知识标题搜索"
@@ -68,14 +94,11 @@
               <el-icon><Search /></el-icon>
             </template>
           </el-input>
-          <el-button
-            @click="toggleFilter"
-            size="large"
-            :type="filterVisible ? 'primary' : ''"
-            round
-            :icon="FilterIcon"
-          >
-            筛选
+          <el-button @click="handleSearch" type="primary" round :icon="Search">
+            搜索
+          </el-button>
+          <el-button @click="clearFilters" :icon="RefreshLeft" round>
+            清空
           </el-button>
           <el-button @click="openCreateDialog" size="large" type="primary" round :icon="Plus">
             添加知识
@@ -83,46 +106,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 筛选面板 -->
-    <el-collapse-transition>
-      <div v-show="filterVisible" style="margin-bottom: 20px">
-        <el-card shadow="never">
-          <el-form :inline="true" :model="queryParams">
-            <el-form-item label="知识类型">
-              <el-select
-                v-model="queryParams.type"
-                placeholder="全部类型"
-                clearable
-                @change="handleSearch"
-                style="width: 150px"
-              >
-                <el-option label="文档" value="DOCUMENT" />
-                <el-option label="问答对" value="QA" />
-                <el-option label="常见问题" value="FAQ" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="处理状态">
-              <el-select
-                v-model="queryParams.embeddingStatus"
-                placeholder="全部状态"
-                clearable
-                @change="handleSearch"
-                style="width: 150px"
-              >
-                <el-option label="COMPLETED" value="COMPLETED" />
-                <el-option label="PROCESSING" value="PROCESSING" />
-                <el-option label="FAILED" value="FAILED" />
-                <el-option label="PENDING" value="PENDING" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button @click="clearFilters" :icon="RefreshLeft">清空筛选</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
-      </div>
-    </el-collapse-transition>
 
     <!-- 表格区域 -->
     <el-table :data="knowledgeList" style="width: 100%" border v-loading="loading">
@@ -424,7 +407,6 @@
   import {
     Plus,
     Search,
-    Filter as FilterIcon,
     RefreshLeft,
     UploadFilled,
   } from '@element-plus/icons-vue';
@@ -435,7 +417,6 @@
     components: {
       Search,
       RefreshLeft,
-      FilterIcon,
       UploadFilled,
     },
     props: {
@@ -451,7 +432,6 @@
       const isEdit: Ref<boolean> = ref(false);
       const saveLoading: Ref<boolean> = ref(false);
       const currentEditId: Ref<number | null> = ref(null);
-      const filterVisible: Ref<boolean> = ref(false);
       const fileList: Ref<any[]> = ref([]);
       const currentFile: Ref<File | null> = ref(null);
 
@@ -588,13 +568,10 @@
         loadKnowledgeList();
       };
 
-      const toggleFilter = () => {
-        filterVisible.value = !filterVisible.value;
-      };
-
       const clearFilters = () => {
         queryParams.type = '';
         queryParams.embeddingStatus = '';
+        queryParams.title = '';  // ⭐ 同时清除搜索框内容
         loadKnowledgeList();
       };
 
@@ -743,7 +720,11 @@
           }
 
           dialogVisible.value = false;
-          loadKnowledgeList();
+          
+          // ⭐ 延迟3秒后再刷新列表，等待后台异步向量化处理完成
+          setTimeout(() => {
+            loadKnowledgeList();
+          }, 3000);
         } catch (error) {
           ElMessage.error(`${isEdit.value ? '更新' : '添加'}失败`);
         } finally {
@@ -782,7 +763,6 @@
         Plus,
         Search,
         RefreshLeft,
-        FilterIcon,
         UploadFilled,
         knowledgeList,
         loading,
@@ -791,7 +771,6 @@
         saveLoading,
         queryParams,
         knowledgeForm,
-        filterVisible,
         fileList,
         // 租户和用户相关
         tenants,
@@ -803,7 +782,6 @@
         loadTenants,
         handleTenantClick,
         handleTenantChange,
-        toggleFilter,
         clearFilters,
         loadKnowledgeList,
         handleSearch,
