@@ -196,8 +196,11 @@ public class LongTermMemoryService {
             MemoryRecord existing = memoryMapper.selectById(memoryId);
             if (existing == null) return false;
 
-            // 更新 MySQL 内容
-            int rows = memoryMapper.updateContent(memoryId, newContent,
+            // ⭐ 关键：对更新内容进行智能格式化，保持与首次保存一致的格式
+            String formattedContent = standardizeMemoryContent(newContent, existing.getUserId());
+            
+            // 更新 MySQL 内容（使用格式化后的内容）
+            int rows = memoryMapper.updateContent(memoryId, formattedContent,
                     importanceScore != null ? importanceScore : existing.getImportanceScore());
             if (rows <= 0) return false;
 
@@ -206,17 +209,17 @@ public class LongTermMemoryService {
                 // 1. 删除旧向量
                 deleteVectorById(existing.getContentVectorId());
 
-                // 2. 生成新向量
+                // 2. 生成新向量（使用格式化后的内容）
                 if (embeddingModel != null && dataSource != null) {
-                    updateVector(memoryId, newContent, existing);
+                    updateVector(memoryId, formattedContent, existing);
                 }
             } else if (dataSource != null && embeddingModel != null) {
                 // 如果之前没有向量，直接创建新的
-                updateVector(memoryId, newContent, existing);
+                updateVector(memoryId, formattedContent, existing);
             }
 
             log.info("✅ [长期记忆更新] 记忆更新成功: id={}, oldLen={}, newLen={}", memoryId,
-                    existing.getContent() != null ? existing.getContent().length() : 0, newContent.length());
+                    existing.getContent() != null ? existing.getContent().length() : 0, formattedContent.length());
             return true;
         } catch (Exception e) {
             log.error("❌ [长期记忆更新] 记忆更新失败: id={}, error={}", memoryId, e.getMessage(), e);
