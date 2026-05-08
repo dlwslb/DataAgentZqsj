@@ -29,13 +29,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
@@ -47,9 +42,10 @@ import java.util.stream.Collectors;
 public class RagService {
 
     private final AgentScopeKnowledgeMapper knowledgeMapper;
-    private final VectorStore vectorStore;  // ⭐ 用于存储向量
+    private final VectorStore vectorStore;  // ⭐ 用于检索（保留兼容性）
     private final EmbeddingModel embeddingModel;  // ⭐ 用于生成查询向量
     private final DataSource dataSource;  // ⭐ 用于手写 SQL 查询
+    private final VectorStoreService vectorStoreService;  // ⭐ 统一的向量存储服务
 
     // ⭐ 阻塞线程池：用于在响应式线程中执行阻塞的 Embedding 调用
     private static final java.util.concurrent.ExecutorService blockingThreadPool =
@@ -67,13 +63,14 @@ public class RagService {
             AgentScopeKnowledgeMapper knowledgeMapper,
             VectorStore vectorStore,
             EmbeddingModel embeddingModel,
-            @Qualifier("oceanbaseDataSource") DataSource dataSource) {
+            @Qualifier("oceanbaseDataSource") DataSource dataSource,
+            VectorStoreService vectorStoreService) {
         this.knowledgeMapper = knowledgeMapper;
         this.vectorStore = vectorStore;
         this.embeddingModel = embeddingModel;
         this.dataSource = dataSource;
+        this.vectorStoreService = vectorStoreService;
         log.info(" ✅RagService initialized");
-        //log.info("RagService initialized: dataSource={}", dataSource);
     }
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -91,7 +88,7 @@ public class RagService {
             knowledgeMapper.updateEmbeddingStatus(knowledge.getId(), "PROCESSING");
             log.info("✅ [向量化] 状态更新为 PROCESSING: id={}", knowledge.getId());
 
-            // 创建 Document
+            // 构建 metadata
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("knowledgeId", knowledge.getId());
             metadata.put("agentId", knowledge.getAgentId());
@@ -100,27 +97,25 @@ public class RagService {
             metadata.put("type", knowledge.getType());
             metadata.put("title", knowledge.getTitle());
             
-            log.info("📝 [向量化] 创建 Document: id={}, contentLength={}, metadataKeys={}", 
+            log.info("📝 [向量化] 准备元数据: id={}, contentLength={}, metadataKeys={}", 
                     knowledge.getId(), 
                     knowledge.getContent() != null ? knowledge.getContent().length() : 0,
                     metadata.keySet());
 
-            // ⭐ 关键：使用 knowledgeId 作为向量 ID，确保与知识库数据一致
-            Document document = new Document(
-                    String.valueOf(knowledge.getId()),  // 使用 knowledgeId 作为向量 ID
+            // ⭐ 修改时：使用 updateVector（先删除再插入）
+            log.info("💾 [向量化] 开始更新向量: id={}", knowledge.getId());
+            boolean success = vectorStoreService.updateVector(
+                    String.valueOf(knowledge.getId()),
                     knowledge.getContent(),
-                    metadata
+                    metadata,
+                    2000  // 最大长度
             );
-
-            // ⭐ 修改时：先删除旧记录，再插入新记录（手写 SQL 删除，避免 Spring AI bug）
-            log.info("💾 [向量化] 先删除旧向量: id={}", knowledge.getId());
-            deleteVectorById(String.valueOf(knowledge.getId()));
-            log.info("✅ [向量化] 旧向量删除完成: id={}", knowledge.getId());
-
-            // 存储到向量数据库
-            log.info("💾 [向量化] 调用 vectorStore.add(): id={}", knowledge.getId());
-            vectorStore.add(List.of(document));
-            log.info("✅ [向量化] vectorStore.add() 完成: id={}", knowledge.getId());
+            
+            if (!success) {
+                throw new RuntimeException("向量更新失败");
+            }
+            
+            log.info("✅ [向量化] 向量更新完成: id={}", knowledge.getId());
 
             // 更新状态为完成
             knowledgeMapper.updateEmbeddingStatus(knowledge.getId(), "COMPLETED");
@@ -142,132 +137,37 @@ public class RagService {
 
 
     /**
-     * ⭐ 手写 SQL 检索相关知识（支持 similarityThreshold 阈值过滤）
-     * ⭐ OceanBase 向量参数必须直接拼接在 SQL 中，不能用 ? 占位符
+     * ⭐ 使用统一的 VectorStoreService 检索相关知识
      */
     private List<Document> searchWithSql(Long agentId, Long tenantId, Long userId, String query, int topK, double threshold) throws ExecutionException, InterruptedException, TimeoutException {
-        log.debug("🔍 [知识库SQL搜索] agentId={}, tenantId={}, userId={}, query={}, topK={}, threshold={}",
-                agentId, tenantId, userId, query, topK, threshold);
-
-        // 1. 生成查询向量（使用阻塞线程池，避免在 WebFlux 响应式线程中阻塞）
-        CompletableFuture<List<float[]>> future = CompletableFuture.supplyAsync(
-            () -> embeddingModel.embed(List.of(query)),
-            blockingThreadPool
-        );
-        List<float[]> embeddings = future.get(30, TimeUnit.SECONDS);
-        if (embeddings == null || embeddings.isEmpty()) {
-            log.warn("⚠️ [SQL搜索] 无法生成查询向量");
+        if (vectorStoreService == null) {
+            log.warn("⚠️ [知识库查询] VectorStoreService 为空，无法执行查询");
             return Collections.emptyList();
         }
 
-        float[] queryVector = embeddings.get(0);
-        String vectorStr = arrayToString(queryVector);
+        log.debug("🔍 [知识库SQL搜索] agentId={}, tenantId={}, userId={}, query={}, topK={}, threshold={}",
+                agentId, tenantId, userId, query, topK, threshold);
 
-        // 2. 构建 SQL（使用子查询结构：先从知识表筛选ID，再关联向量表）
-        // ⭐ 关键：向量参数必须用 String.format 拼接，不能用 PreparedStatement 的 ? 占位符
-        StringBuilder sql = new StringBuilder();
-        String knowledgeTable = "agent_scope_knowledge";  // 知识表名
+        try {
+            // 1. 调用统一的 VectorStoreService 进行查询
+            List<Document> documents = vectorStoreService.searchKnowledgeBase(
+                    query,
+                    agentId,
+                    tenantId,
+                    userId,
+                    topK,
+                    threshold
+            );
 
-        // 子查询：从知识表筛选符合条件的 ID
-        sql.append(String.format(
-                "SELECT k.id, k.description, k.metadata, " +
-                "cosine_distance(k.vector, '%s') AS similarity " +
-                "FROM %s k " +
-                "INNER JOIN (",
-                vectorStr, tableName));
-
-        // 子查询部分
-        sql.append("SELECT id FROM ").append(knowledgeTable).append(" WHERE is_deleted = 0 and agent_id = ? ");
-        List<Object> params = new ArrayList<>();
-        params.add(String.valueOf(agentId));
-
-        // 租户过滤
-        if (tenantId != null) {
-            sql.append(" AND (tenant_id = ? OR tenant_id is null)");
-            params.add(String.valueOf(tenantId));
-        }
-
-        // 用户过滤
-        if (userId != null) {
-            sql.append(" AND (user_id = ? OR user_id is null)");
-            params.add(String.valueOf(userId));
-        }
-
-        sql.append(") v ON k.id = v.id ");
-        sql.append(String.format("ORDER BY similarity desc APPROXIMATE LIMIT ? ", topK));
-        params.add(topK);
-
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-
-            // 设置参数
-            for (int i = 0; i < params.size(); i++) {
-                ps.setObject(i + 1, params.get(i));
+            if (documents.isEmpty()) {
+                return Collections.emptyList();
             }
 
-            // ⭐ 构建完整可执行的 SQL（向量已直接拼接）
-            String fullSql = sql.toString();
-            // 将 ? 替换为实际参数值（LIMIT 参数不加引号）
-            int paramIndex = 0;
-            for (Object param : params) {
-                if (paramIndex == params.size() - 1) {
-                    // LIMIT 参数不加引号
-                    fullSql = fullSql.replaceFirst("\\?", String.valueOf(param));
-                } else {
-                    fullSql = fullSql.replaceFirst("\\?", "'" + param + "'");
-                }
-                paramIndex++;
-            }
-            //log.debug("📝 [SQL搜索] 可执行SQL:\n{}", fullSql);
+            log.info("✅ [知识库查询] 检索到 {} 条相关知识", documents.size());
+            return documents;
 
-            try (ResultSet rs = ps.executeQuery()) {
-                List<Document> documents = new ArrayList<>();
-                int count = 0;
-                while (rs.next()) {
-                    String id = rs.getString("id");
-                    String content = rs.getString("description");
-                    String metadataJson = rs.getString("metadata");
-                    double distance = rs.getDouble("similarity");
-
-                    // ⭐ 计算相似度 = 1 - cosine_distance（distance 越小，相似度越高）
-                    double similarity = 1.0 - distance;
-
-                    // ⭐ 应用 similarityThreshold 阈值过滤
-                    if (similarity >= threshold) {
-                        count++;
-                        log.debug("  [{}] id={}, distance={}, similarity={}, contentLength={}",
-                                count, id, distance, similarity, content != null ? content.length() : 0);
-
-                        // 解析 metadata
-                        Map<String, Object> metadata = parseMetadata(metadataJson);
-                        
-                        // ⭐ 处理嵌套的 metadata：向量表中 metadata 字段可能包含嵌套的 metadata 字符串
-                        if (metadata.containsKey("metadata") && metadata.get("metadata") instanceof String) {
-                            String nestedMetadataJson = (String) metadata.get("metadata");
-                            try {
-                                Map<String, Object> nestedMetadata = objectMapper.readValue(
-                                    nestedMetadataJson, new TypeReference<Map<String, Object>>() {}
-                                );
-                                // 将嵌套的 metadata 合并到外层
-                                metadata.putAll(nestedMetadata);
-                            } catch (Exception e) {
-                                log.warn("⚠️ [RAG] 解析嵌套 metadata 失败: {}", e.getMessage());
-                            }
-                        }
-
-                        metadata.put("knowledgeId", id);
-                        metadata.put("similarity", similarity);  // 存储相似度分数
-
-                        Document doc = new Document(id, content, metadata);
-                        documents.add(doc);
-                    }
-                }
-                log.info("✅ [SQL搜索] 检索到 {} 条相关知识 (threshold={}, 共扫描 {} 条)",
-                        documents.size(), threshold, count);
-                return documents;
-            }
         } catch (Exception e) {
-            log.error("❌ [SQL搜索] 执行失败: {}", e.getMessage(), e);
+            log.error("❌ [知识库查询] 搜索失败: {}", e.getMessage(), e);
             return Collections.emptyList();
         }
     }
@@ -381,35 +281,35 @@ public class RagService {
     }
 
     /**
-     * 删除知识的向量数据（手写 SQL，避免 Spring AI Alibaba delete bug）
+     * 删除知识的向量数据（使用统一的 VectorStoreService）
      */
     public void deleteKnowledgeVectors(Long knowledgeId) {
+        if (vectorStoreService == null) {
+            log.warn("⚠️ [删除向量] VectorStoreService 为空");
+            return;
+        }
+
         try {
             String vectorId = String.valueOf(knowledgeId);
-            String sql = "DELETE FROM " + tableName + " WHERE id = ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, vectorId);
-                int rows = ps.executeUpdate();
-                log.info("🗑️ 删除知识向量: knowledgeId={}, vectorId={}, 影响行数={}", knowledgeId, vectorId, rows);
-            }
+            boolean success = vectorStoreService.deleteVector(vectorId);
+            log.info("🗑️ 删除知识向量: knowledgeId={}, vectorId={}, success={}", knowledgeId, vectorId, success);
         } catch (Exception e) {
             log.error("❌ 删除知识向量失败: knowledgeId={}, error={}", knowledgeId, e.getMessage(), e);
         }
     }
 
     /**
-     * 删除知识向量（手写 SQL 版本，供内部调用）
+     * 删除知识向量（使用统一的 VectorStoreService，供内部调用）
      */
     private void deleteVectorById(String vectorId) {
+        if (vectorStoreService == null) {
+            log.warn("⚠️ [删除向量] VectorStoreService 为空");
+            return;
+        }
+
         try {
-            String sql = "DELETE FROM " + tableName + " WHERE id = ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, vectorId);
-                int rows = ps.executeUpdate();
-                log.info("🗑️ 删除向量: vectorId={}, 影响行数={}", vectorId, rows);
-            }
+            boolean success = vectorStoreService.deleteVector(vectorId);
+            log.info("🗑️ 删除向量: vectorId={}, success={}", vectorId, success);
         } catch (Exception e) {
             log.warn("⚠️ 删除向量失败（或记录不存在）: vectorId={}, error={}", vectorId, e.getMessage());
         }

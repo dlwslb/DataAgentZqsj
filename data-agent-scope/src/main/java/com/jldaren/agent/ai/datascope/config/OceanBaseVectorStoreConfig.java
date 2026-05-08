@@ -15,13 +15,19 @@
  */
 package com.jldaren.agent.ai.datascope.config;
 
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel;
 import com.alibaba.druid.pool.DruidDataSource;
+import com.jldaren.agent.ai.datascope.entity.ModelConfig;
+import com.jldaren.agent.ai.datascope.mapper.ModelConfigMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import javax.sql.DataSource;
 
@@ -33,6 +39,8 @@ import javax.sql.DataSource;
 @Configuration
 @ConditionalOnProperty(name = "spring.ai.vectorstore.type", havingValue = "oceanbase")
 public class OceanBaseVectorStoreConfig {
+
+    private final ModelConfigMapper modelConfigMapper;
 
     @Value("${spring.ai.vectorstore.oceanbase.table-name:agent_scope_vector_store}")
     private String tableName;
@@ -57,6 +65,75 @@ public class OceanBaseVectorStoreConfig {
 
     @Value("${spring.ai.vectorstore.oceanbase.datasource.driver-class-name:com.mysql.cj.jdbc.Driver}")
     private String driverClassName;
+
+    // 默认配置（当数据库没有配置时使用）
+    @Value("${agentscope.api-key:}")
+    private String defaultApiKey;
+
+    @Value("${agentscope.model-name:text-embedding-v4}")
+    private String defaultModelName;
+
+    public OceanBaseVectorStoreConfig(@Lazy ModelConfigMapper modelConfigMapper) {
+        this.modelConfigMapper = modelConfigMapper;
+    }
+
+    /**
+     * 创建 DashScope EmbeddingModel Bean
+     * ⭐ 从数据库读取配置，优先使用数据库配置，回退到默认配置
+     */
+    @Bean
+    public EmbeddingModel dashscopeEmbeddingModel() {
+        ModelConfig dbConfig = null;
+        try {
+            log.info("🔍 开始从数据库查询 Embedding 模型配置: model_type='EMBEDDING'");
+            dbConfig = modelConfigMapper.selectActiveByType("EMBEDDING");
+            if (dbConfig != null) {
+                log.info("✅ 数据库查询成功: provider={}, model_name={}", 
+                        dbConfig.getProvider(), dbConfig.getModelName());
+            } else {
+                log.warn("⚠️ 数据库查询返回 null，未找到 model_type='EMBEDDING' 且 is_active=1 的记录，使用默认配置");
+            }
+        } catch (Exception e) {
+            log.error("❌ 从数据库读取 Embedding 模型配置失败，使用默认配置: {}", e.getMessage(), e);
+        }
+
+        // 如果数据库有配置，使用数据库的值；否则使用默认值
+        String apiKey = (dbConfig != null && dbConfig.getApiKey() != null) ? dbConfig.getApiKey() : defaultApiKey;
+        String modelName = (dbConfig != null && dbConfig.getModelName() != null) ? dbConfig.getModelName() : defaultModelName;
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            log.warn("⚠️ DashScope API Key 未配置，Embedding Model 可能无法正常工作");
+        }
+        
+        // 创建 DashScopeApi
+        DashScopeApi dashScopeApi = DashScopeApi.builder()
+                .apiKey(apiKey)
+                .build();
+        
+        // 创建 EmbeddingOptions（设置模型名称和维度）
+        com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingOptions options = 
+                com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingOptions.builder()
+                        .withModel(modelName)
+                        .withDimensions(embeddingDimension)  // 使用配置的维度
+                        .build();
+        
+        // 使用 Builder 创建 EmbeddingModel
+        DashScopeEmbeddingModel embeddingModel = DashScopeEmbeddingModel.builder()
+                .dashScopeApi(dashScopeApi)
+                .defaultOptions(options)
+                .metadataMode(MetadataMode.NONE)
+                .build();
+        
+        if (dbConfig != null) {
+            log.info("✅Using database embedding model config: provider={}, model={}, dimensions={}", 
+                    dbConfig.getProvider(), modelName, embeddingDimension);
+        } else {
+            log.info("✅Using default embedding model config: model={}, dimensions={}", 
+                    modelName, embeddingDimension);
+        }
+        
+        return embeddingModel;
+    }
 
     /**
      * 创建 DataSource Bean
