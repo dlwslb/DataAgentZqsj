@@ -137,7 +137,7 @@ public class AgentScopeConfig {
         try {
             dbConfig = modelConfigMapper.selectActiveByType("CHAT");
         } catch (Exception e) {
-            log.warn("从数据库读取模型配置失败，使用默认配置: {}", e.getMessage());
+            log.warn("❌从数据库读取模型配置失败，使用默认配置: {}", e.getMessage());
         }
 
         String apiKey = (dbConfig != null && dbConfig.getApiKey() != null) ? dbConfig.getApiKey() : defaultApiKey;
@@ -148,9 +148,9 @@ public class AgentScopeConfig {
         Boolean enableSearch = (dbConfig != null && dbConfig.getEnableSearch() != null) ? dbConfig.getEnableSearch() : false;
 
         if (dbConfig != null) {
-            log.info("Using database model config: provider={}, model={}", dbConfig.getProvider(), modelName);
+            log.info("✅Using database model config: provider={}, model={}✅", dbConfig.getProvider(), modelName);
         } else {
-            log.info("Using default model config: model={}", modelName);
+            log.info("✅Using default model config: model={}✅", modelName);
         }
 
         DashScopeChatModel.Builder builder = DashScopeChatModel.builder()

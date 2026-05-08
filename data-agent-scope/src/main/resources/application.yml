@@ -63,8 +63,7 @@ data-agent-management:
 # AgentScope Configuration
 agentscope:
   # DashScope API Key (set via environment variable: DASHSCOPE_API_KEY)
-  #api-key: ${DASHSCOPE_API_KEY:}
-  api-key: sk-26979f34a1a64da2ad4e695b5f4e9d6a
+  api-key: ${DASHSCOPE_API_KEY}
   # Model name 当前有bug只能使用这种没有版本号的模型名称qwen-max、qwen-plus、qwen-turbo
   model-name: qwen-max
   # Base URL for DashScope API (optional, default is Alibaba Cloud official endpoint)
