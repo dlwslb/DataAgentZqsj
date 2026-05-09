@@ -25,6 +25,7 @@ import com.jldaren.agent.ai.datascope.service.ChatSessionService;
 import com.jldaren.agent.ai.datascope.service.RagService;
 import com.jldaren.agent.ai.datascope.service.UserInfoService;
 import com.jldaren.agent.ai.datascope.util.MessageFormatDetector;
+import com.jldaren.agent.ai.datascope.hook.RagCleanupHook;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
@@ -105,6 +106,7 @@ public class AgentScopeSseController {
     private final ExecutorService chatSaveExecutor;
     private final Semaphore sseSemaphore;
     private final MessageFormatDetector messageFormatDetector;
+    private final com.jldaren.agent.ai.datascope.config.AgentScopeConfig agentScopeConfig;
 
     @Autowired
     private UserInfoService userInfoService;
@@ -140,7 +142,8 @@ public class AgentScopeSseController {
             ChatMessageMapper chatMessageMapper,
             @Qualifier("ragExecutor") ExecutorService ragExecutor,
             @Qualifier("chatSaveExecutor") ExecutorService chatSaveExecutor,
-            @Value("${sse.max-concurrent:100}") int maxConcurrent) {
+            @Value("${sse.max-concurrent:100}") int maxConcurrent,
+            com.jldaren.agent.ai.datascope.config.AgentScopeConfig agentScopeConfig) {
 
         this.jsonMapper = jsonMapper;
         this.agentRegistry = agentRegistry;
@@ -151,6 +154,7 @@ public class AgentScopeSseController {
         this.chatSaveExecutor = chatSaveExecutor;
         this.sseSemaphore = new Semaphore(maxConcurrent);
         this.messageFormatDetector = new MessageFormatDetector();
+        this.agentScopeConfig = agentScopeConfig;
     }
 
     /**
@@ -253,10 +257,29 @@ public class AgentScopeSseController {
                     Msg msgForAgent = Msg.builder().textContent(ragEnhancedMessage).build();
                     log.debug("📨 [SSE] stream start: agentId={}, userId={}, messageId={}", id, userId, messageId);
 
+                    // ⭐ 判断是否有 RAG 增强（对比原始消息和增强后的消息）
+                    boolean hasRagEnhancement = !request.getMessage().equals(ragEnhancedMessage);
+
                     // 创建 StreamingHook
                     StreamingHook streamingHook = new StreamingHook(sink, messageId, jsonMapper,
                             messageFormatDetector, sseFragmentSampleRate);
-                    ReActAgent agentWithHook = buildAgentWithHooks(baseAgent, streamingHook);
+                    
+                    // ⭐ 优化：只有有 RAG 增强时才创建 RagCleanupHook
+                    ReActAgent agentWithHook;
+                    if (hasRagEnhancement) {
+                        log.debug("✅ [RAG清理] 检测到 RAG 增强，创建清理 Hook");
+                        RagCleanupHook ragCleanupHook = new RagCleanupHook(
+                                agentScopeConfig.getRedisTemplate(),
+                                baseAgent.getName(),         // ⭐ 使用 agentName，与 BoundedRedisMemory 保持一致
+                                tenantId != null ? tenantId : "default",
+                                userId != null ? userId : "anonymous",
+                                sessionId
+                        );
+                        agentWithHook = buildAgentWithHooks(baseAgent, streamingHook, ragCleanupHook);
+                    } else {
+                        log.debug("✅ [RAG清理] 无 RAG 增强，跳过创建清理 Hook");
+                        agentWithHook = buildAgentWithHooks(baseAgent, streamingHook);
+                    }
 
                     // 执行 Agent 调用
                     agentWithHook.call(msgForAgent)
@@ -374,7 +397,7 @@ public class AgentScopeSseController {
                 );
     }
 
-    private ReActAgent buildAgentWithHooks(ReActAgent source, Hook additionalHook) {
+    private ReActAgent buildAgentWithHooks(ReActAgent source, Hook... additionalHooks) {
         ReActAgent.Builder builder = ReActAgent.builder()
                 .name(source.getName())
                 .sysPrompt(source.getSysPrompt())
@@ -384,9 +407,13 @@ public class AgentScopeSseController {
                 .maxIters(source.getMaxIters())
                 .checkRunning(true);
         
-        // 合并原有的 Hooks 和新的 Hook
+        // 合并原有的 Hooks 和新的 Hooks
         List<Hook> mergedHooks = new ArrayList<>(source.getHooks());
-        mergedHooks.add(additionalHook);
+        for (Hook hook : additionalHooks) {
+            if (hook != null) {
+                mergedHooks.add(hook);
+            }
+        }
         return builder.hooks(mergedHooks).build();
     }
 

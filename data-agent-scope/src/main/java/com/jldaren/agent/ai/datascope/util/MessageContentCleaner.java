@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jldaren.agent.ai.datascope.util;
 
 import lombok.extern.slf4j.Slf4j;
@@ -19,9 +34,10 @@ public class MessageContentCleaner {
     private static final Pattern QUESTION_TAG = Pattern.compile("【(?:当前问题|用户问题)】");
     private static final Pattern HINT_PHRASE_1 = Pattern.compile("请结合上述(?:历史记忆|相关知识).*?回答.*?。");
     private static final Pattern HINT_PHRASE_2 = Pattern.compile("如果(?:历史记忆|知识与问题).*?直接回答。");
+    private static final Pattern HINT_PHRASE_3 = Pattern.compile("请基于上述相关知识回答问题.*$");  // ⭐ 新增：匹配“请基于...”
     private static final Pattern SEPARATOR = Pattern.compile("\\n\\s*\\n\\s*\\n");
     private static final Pattern EXTRACT_QUESTION = Pattern.compile("【(?:用户问题|当前问题)】\\s*([\\s\\S]+)");
-    private static final Pattern TRAILING_HINT = Pattern.compile("请结合上述.*$");
+    private static final Pattern TRAILING_HINT = Pattern.compile("请(?:结合|基于)上述.*$");  // ⭐ 修改：同时匹配“请结合”和“请基于”
 
     /**
      * 清除文本中被注入的噪声内容
@@ -42,6 +58,7 @@ public class MessageContentCleaner {
         cleaned = QUESTION_TAG.matcher(cleaned).replaceAll("");
         cleaned = HINT_PHRASE_1.matcher(cleaned).replaceAll("");
         cleaned = HINT_PHRASE_2.matcher(cleaned).replaceAll("");
+        cleaned = HINT_PHRASE_3.matcher(cleaned).replaceAll("");  // ⭐ 新增：清理“请基于...”提示语
         cleaned = SEPARATOR.matcher(cleaned).replaceAll("\n");
 
         return cleaned.trim();
