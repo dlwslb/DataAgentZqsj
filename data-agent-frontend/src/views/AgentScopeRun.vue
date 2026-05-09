@@ -312,6 +312,33 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- 🔑 链接弹窗 -->
+    <el-dialog
+        v-model="linkDialogVisible"
+        title="链接详情"
+        width="80%"
+        top="5vh"
+        :close-on-click-modal="true"
+        destroy-on-close
+    >
+      <div class="link-dialog-content">
+        <div class="link-iframe-container">
+          <iframe
+              :src="currentLinkUrl"
+              frameborder="0"
+              class="link-iframe"
+              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          ></iframe>
+        </div>
+        <div class="link-actions">
+          <el-button type="primary" @click="openLinkInNewTab">
+            <el-icon><Promotion /></el-icon>
+            在新标签页打开
+          </el-button>
+        </div>
+      </div>
+    </el-dialog>
   </BaseLayout>
 </template>
 
@@ -377,6 +404,10 @@ export default {
     const fullscreenReportContent = ref('');
     const inputControlsCollapsed = ref(false);
     const autoScroll = ref(true);
+    
+    // 🔑 链接弹窗相关
+    const linkDialogVisible = ref(false);
+    const currentLinkUrl = ref('');
 
     // 人工反馈相关数据
     const showHumanFeedback = ref(false);
@@ -539,9 +570,16 @@ export default {
         return `<li style="margin: 4px 0 4px 12px;">${text}</li>`;
       };
 
-      // 段落：确保标准间距 + 中文两端对齐
+      // 🔑 段落：确保标准间距 + 中文两端对齐
       renderer.paragraph = (text: string) => {
         return `<p style="margin: 8px 0; line-height: 1.6; text-align: justify; text-justify: inter-ideograph;">${text}</p>`;
+      };
+      
+      // 🔑 链接：点击时触发 Vue 方法，在 Dialog 中打开
+      renderer.link = (href: string, title: string | null, text: string) => {
+        const titleAttr = title ? ` title="${title}"` : '';
+        // 🔑 关键：添加 data-href 属性，通过事件委托处理点击
+        return `<a href="#" class="markdown-link" data-href="${href}"${titleAttr}>${text}</a>`;
       };
 
       marked.use({ renderer });
@@ -573,6 +611,14 @@ export default {
       if (messageType === 'html-report' || messageType === 'html') {
         return stripReportPrefix(content);
       }
+      
+      // 🔑 关键修复：即使是 text 类型，也要检测并渲染 Markdown 链接
+      // 如果内容包含 Markdown 链接语法，使用 marked 渲染
+      if (/\[.+?\]\(.+?\)/.test(content)) {
+        return markdownToHtml(content);
+      }
+      
+      // 纯文本：只处理换行
       return content.replace(/\n/g, '<br>');
     };
 
@@ -1145,6 +1191,28 @@ export default {
       }
     };
 
+    // 🔑 处理 Markdown 链接点击
+    const handleLinkClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const link = target.closest('a.markdown-link');
+      
+      if (link) {
+        event.preventDefault();
+        const href = link.getAttribute('data-href');
+        if (href) {
+          currentLinkUrl.value = href;
+          linkDialogVisible.value = true;
+        }
+      }
+    };
+    
+    // 🔑 在新标签页打开链接
+    const openLinkInNewTab = () => {
+      if (currentLinkUrl.value) {
+        window.open(currentLinkUrl.value, '_blank', 'noopener,noreferrer');
+      }
+    };
+
     // 🔑 SSE 请求前确保 Token 有效
     const ensureValidToken = async (): Promise<void> => {
       const token = localStorage.getItem('accessToken');
@@ -1268,6 +1336,13 @@ export default {
         currentSession.value = sessions.value[0];
         await loadMessages(sessions.value[0].id);
       }
+      
+      // 🔑 添加全局链接点击事件监听（事件委托）
+      nextTick(() => {
+        if (chatContainer.value) {
+          chatContainer.value.addEventListener('click', handleLinkClick);
+        }
+      });
     });
 
     return {
@@ -1286,6 +1361,10 @@ export default {
       currentPreviewType,
       ensureValidToken,
       refreshToken,
+      // 🔑 链接弹窗相关
+      linkDialogVisible,
+      currentLinkUrl,
+      openLinkInNewTab,
     };
   },
 };
@@ -1532,6 +1611,7 @@ export default {
 .thinking-preview .markdown-container a {
   color: #409eff;
   text-decoration: none;
+  cursor: pointer;
 }
 .message-text .markdown-container a:hover,
 .thinking-preview .markdown-container a:hover {
@@ -1638,4 +1718,27 @@ export default {
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .thinking-placeholder { display: flex; align-items: center; gap: 8px; color: var(--theme-text-secondary); font-size: 14px; }
 @media (max-width: 768px) { .thinking-preview { font-size: 13px; } .thinking-placeholder { font-size: 13px; } }
+
+/* 🔑 链接弹窗样式 */
+.link-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.link-iframe-container {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.link-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.link-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 </style>
