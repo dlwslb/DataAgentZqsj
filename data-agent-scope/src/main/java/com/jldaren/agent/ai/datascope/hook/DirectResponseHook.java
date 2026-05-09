@@ -102,6 +102,9 @@ public class DirectResponseHook implements Hook {
                         resultText = "未找到相关数据,请等待数据更新。";
                         shouldStop = true;
                     }
+                    if(Boolean.parseBoolean(String.valueOf(skipReport))==false){
+                        shouldStop = true;
+                    }
                     //兜底：处理澄清需求，去掉技术细节（表名等）
                     if(resultText.startsWith("正在进行意图识别")){
                         // ⭐ 提取澄清问题中的自然语言部分，去掉技术细节
