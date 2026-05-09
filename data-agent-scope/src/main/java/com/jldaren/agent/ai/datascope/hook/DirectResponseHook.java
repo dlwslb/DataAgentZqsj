@@ -60,7 +60,7 @@ public class DirectResponseHook implements Hook {
                     // 从 ToolResultBlock.output 中提取实际文本
                     String resultText = extractToolResultText(postActingEvent);
                     
-                    boolean shouldStop = true; // 默认终止循环
+                    boolean shouldStop = false; // 不终止，让 ReAct 继续处理
                     
                     // 判断是否包含 SQL 查询结果标记
                     int sqlResultIndex = resultText.indexOf("SQL查询结果：");
@@ -74,31 +74,47 @@ public class DirectResponseHook implements Hook {
                             if (jsonText.startsWith("{") || jsonText.startsWith("[")) {
                                 JsonNode rootNode = OBJECT_MAPPER.readTree(jsonText);
                                 JsonNode resultSetNode = rootNode.get("resultSet");
-                                
                                 if (resultSetNode != null) {
-                                    // 检查是否有报告生成的迹象（Markdown 标题、报告内容等）
-                                    boolean hasReportContent = resultText.contains("# ") || 
-                                                              resultText.contains("## ") ||
-                                                              resultText.contains("### ") ||
-                                                              (resultText.length() > 200); // 报告通常较长
-                                    
-                                    if (!hasReportContent) {
+                                    if (Boolean.parseBoolean(String.valueOf(skipReport))==true) {
                                         // skipReport=true：只有原始数据，提取 resultSet 让 ReAct 继续处理
                                         resultText = OBJECT_MAPPER.writeValueAsString(resultSetNode);
                                         log.info("📊 [DirectResponse] skipReport=true，已提取 resultSet 数据，长度={}", resultText.length());
-                                        shouldStop = false; // 不终止，让 ReAct 继续处理
                                     } else {
+                                        shouldStop = true;
+                                        resultText = "未找到相关数据,请等待数据更新。";
                                         // skipReport=false：有完整报告，直接返回
                                         log.info("📊 [DirectResponse] skipReport=false，检测到完整报告，直接返回，长度={}", resultText.length());
                                     }
                                 }
                             } else {
+                                shouldStop = true;
+                                resultText = "未找到相关数据,请等待数据更新。";
                                 // 不是 JSON 格式，说明已经是报告内容（Markdown 等）
                                 log.info("📊 [DirectResponse] 检测到非 JSON 格式内容（可能是 Markdown 报告），直接返回，长度={}", resultText.length());
                             }
                         } catch (Exception e) {
+                            resultText = "未找到相关数据,请等待数据更新。";
                             log.warn("⚠️ [DirectResponse] 解析 SQL 查询结果失败: {}", e.getMessage());
                         }
+                    }
+
+                    if(!resultText.contains("resultSet") && resultText.contains("未找到相关数据。") && resultText.endsWith("结果分析完成。")){
+                        resultText = "未找到相关数据,请等待数据更新。";
+                        shouldStop = true;
+                    }
+                    //兜底：处理澄清需求，去掉技术细节（表名等）
+                    if(resultText.startsWith("正在进行意图识别")){
+                        // ⭐ 提取澄清问题中的自然语言部分，去掉技术细节
+                        String cleanText = extractClarificationQuestion(resultText);
+                        if (cleanText != null && !cleanText.isEmpty()) {
+                            resultText = cleanText;
+                            log.info("✅ [DirectResponse] 澄清问题已清理技术细节");
+                        } else {
+                            // 如果无法提取，才使用默认提示
+                            resultText = "未找到相关数据,请等待数据更新。";
+                            log.warn("⚠️ 远程调用结果可能有错误，未解析到结果或报告！");
+                        }
+                        shouldStop = true;
                     }
                     
                     // 用纯文本 Msg 替换 toolResultMsg
@@ -168,9 +184,39 @@ public class DirectResponseHook implements Hook {
             try {
                 return OBJECT_MAPPER.readValue(text, String.class);
             } catch (Exception e) {
-                log.warn("⚠️ [DirectResponse] JSON反序列化TextBlock失败，保持原文: {}", e.getMessage());
+                log.debug("Failed to unwrap JSON string", e);
             }
         }
         return text;
+    }
+
+    /**
+     * ⭐ 提取澄清问题中的自然语言部分，去掉技术细节（表名、字段名等）
+     * 
+     * 示例输入：
+     * "正在进行意图识别...请问您想查询的“XXX项目”是指哪个表中的具体项目？是中标信息（bid_biz_win_bid）、招标信息（bid_biz_bidding）还是采购意向（bid_biz_purchase_intention）中的记录？另外，您希望获取哪些明细字段？例如项目名称、预算金额、中标单位或产品信息等？"
+     * 
+     * 示例输出：
+     * "请问您想查询的“XXX项目”是指哪个表中的具体项目？是中标信息、招标信息还是采购意向中的记录？另外，您希望获取哪些明细字段？例如项目名称、预算金额、中标单位或产品信息等？"
+     */
+    private String extractClarificationQuestion(String text) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+
+        // 1. 去掉开头的“正在进行意图识别...”
+        String cleaned = text.replaceFirst("^正在进行意图识别[^。]*。\\s*", "");
+        
+        // 2. 去掉括号内的技术细节（如表名、字段名）
+        // 匹配模式：中文+（英文或下划线） -> 只保留中文部分
+        cleaned = cleaned.replaceAll("([\u4e00-\u9fa5]+)（[a-zA-Z0-9_]+）", "$1");
+        
+        // 3. 去掉单独的括号内容（如 (bid_biz_win_bid)）
+        cleaned = cleaned.replaceAll("\\([a-zA-Z0-9_]+\\)", "");
+        
+        // 4. 清理多余的空格
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        
+        return cleaned.isEmpty() ? null : cleaned;
     }
 }
