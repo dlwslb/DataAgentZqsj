@@ -78,7 +78,7 @@ agentscope:
     enabled: false
 
 sse:
-  timeout-ms: 300000          # SSE 连接超时（5分钟）
+  timeout-ms: 900000          # SSE 连接超时（15分钟，必须 > agent.call.timeout-seconds * 1000）
   max-concurrent: 100         # 最大并发连接数
 
 heartbeat:
