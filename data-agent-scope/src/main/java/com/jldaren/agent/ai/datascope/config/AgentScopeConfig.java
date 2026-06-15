@@ -38,6 +38,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.plan.storage.PlanStorage;
 import io.agentscope.core.tool.Toolkit;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -101,6 +102,95 @@ public class AgentScopeConfig {
     }
 
     /**
+     * 启动时主动校验模型配置
+     * 目的：让"DB 没配 / DB 配错 / key 没开通模型"这类问题在启动时就暴露在日志里，
+     *      而不是等到第一次 stream 请求才异步报错（还会被缓存兜底掩盖）。
+     *
+     * 校验策略：
+     * 1. 查 DB model_config 表里激活的 CHAT 配置
+     * 2. 没查到 → WARN 提示会走 application.yml 兜底
+     * 3. 查到了 → 打印关键信息（id/model/provider/apiKey 前缀/baseUrl）
+     *    同时打兜底配置作为对比，方便一眼看出 DB 配置 vs 兜底配置是否一致
+     * 4. DB 查询异常 → ERROR 级别（比 buildChatModel 里的 WARN 更醒目）
+     */
+    @PostConstruct
+    public void validateModelConfigOnStartup() {
+        log.info("================== [ChatModel 配置启动校验] ==================");
+
+        // 兜底配置（从 application.yml 注入）
+        log.info("[兜底配置] agentscope.model-name = {}", defaultModelName);
+        log.info("[兜底配置] agentscope.api-key 前 8 位 = {}", maskApiKey(defaultApiKey));
+        log.info("[兜底配置] agentscope.base-url = {}",defaultBaseUrl == null || defaultBaseUrl.isEmpty() ? "(空)" : defaultBaseUrl);
+
+        // DB 激活配置
+        ModelConfig dbConfig = null;
+        Exception dbException = null;
+        try {
+            dbConfig = modelConfigMapper.selectActiveByType("CHAT");
+        } catch (Exception e) {
+            dbException = e;
+        }
+
+        if (dbException != null) {
+            log.error("❌ [启动校验失败] 无法查询 model_config 表（is_active=1 的 CHAT 配置），请检查：");
+            log.error("    1. DB 连接是否正常（datasource.url 配置）");
+            log.error("    2. model_config 表是否存在（schema 是否初始化）");
+            log.error("    3. 是否有 model_type='CHAT' AND is_active=1 AND is_deleted=0 的记录");
+            log.error("    根因: {}", dbException.getMessage(), dbException);
+            log.warn("⚠️  ChatModel 将回退到 application.yml 兜底配置: model={}", defaultModelName);
+        } else if (dbConfig == null) {
+            log.warn("⚠️ [启动校验] model_config 表里没有激活的 CHAT 配置（model_type='CHAT' AND is_active=1 AND is_deleted=0）");
+            log.warn("    → ChatModel 将回退到 application.yml 兜底配置: model={}, apiKey 前 8 位={}",
+                    defaultModelName, maskApiKey(defaultApiKey));
+            log.warn("    → 如果 management 服务的 CHAT 配置已激活但 scope 看不到，请检查：");
+            log.warn("       - 两服务是否连同一个 DB（对比 datasource.url）");
+            log.warn("       - DB 查询时区/字符集是否一致");
+        } else {
+            log.info("✅ [启动校验] 数据库激活配置: id={}, provider={}, model={}, baseUrl={}",
+                    dbConfig.getId(), dbConfig.getProvider(), dbConfig.getModelName(), dbConfig.getBaseUrl());
+            log.info("✅ [启动校验] 数据库 apiKey 前 8 位 = {}", maskApiKey(dbConfig.getApiKey()));
+
+            // 关键：对比 DB 配置 vs 兜底配置
+            boolean modelMatches = java.util.Objects.equals(dbConfig.getModelName(), defaultModelName);
+            boolean apiKeyMatches = java.util.Objects.equals(dbConfig.getApiKey(), defaultApiKey);
+            boolean baseUrlMatches = java.util.Objects.equals(dbConfig.getBaseUrl(), defaultBaseUrl);
+
+            if (modelMatches && apiKeyMatches && baseUrlMatches) {
+                log.info("✅ [启动校验] DB 配置与 application.yml 兜底配置完全一致，无歧义");
+            } else {
+                log.warn("⚠️ [启动校验] DB 配置与兜底配置不一致，运行时将优先使用 DB 配置:");
+                if (!modelMatches) {
+                    log.warn("    - model_name: DB='{}' vs 兜底='{}' → 使用 DB",
+                            dbConfig.getModelName(), defaultModelName);
+                }
+                if (!apiKeyMatches) {
+                    log.warn("    - api_key: DB 前缀='{}' vs 兜底前缀='{}' → 使用 DB",
+                            maskApiKey(dbConfig.getApiKey()), maskApiKey(defaultApiKey));
+                }
+                if (!baseUrlMatches) {
+                    log.warn("    - base_url: DB='{}' vs 兜底='{}' → 使用 DB",
+                            dbConfig.getBaseUrl(), defaultBaseUrl);
+                }
+            }
+        }
+
+        log.info("=================================================================");
+    }
+
+    /**
+     * 掩码 API key，只保留前 8 位（用于日志脱敏）
+     */
+    private String maskApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            return "(空)";
+        }
+        if (apiKey.length() <= 8) {
+            return "***";
+        }
+        return apiKey.substring(0, 8) + "***";
+    }
+
+    /**
      * 获取 ChatModel 实例
      * 优先从数据库读取启用的模型配置，如果为空则使用默认配置
      * 带 5 分钟缓存避免每次调用都查数据库
@@ -150,7 +240,8 @@ public class AgentScopeConfig {
         if (dbConfig != null) {
             log.info("✅Using database model config: provider={}, model={}✅", dbConfig.getProvider(), modelName);
         } else {
-            log.info("✅Using default model config: model={}✅", modelName);
+            log.warn("⚠️ [启动校验] 数据库无激活的 CHAT 配置，将使用 application.yml 兜底配置: model={}, apiKey 前 8 位={}",
+                    modelName, maskApiKey(defaultApiKey));
         }
 
         DashScopeChatModel.Builder builder = DashScopeChatModel.builder()
