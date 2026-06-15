@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>下载神机妙算-政企商机</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 60%, #f8fafc 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      animation: slideUp 0.8s ease 0.15s both;
+    }
+
+    /* App Logo SVG */
+    .logo-wrap {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 20px;
+    }
+
+    .app-name {
+      font-size: 26px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #0891b2 0%, #06b6d4 50%, #0ea5e9 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    .app-name-en {
+      font-size: 11px;
+      color: #94a3b8;
+      letter-spacing: 6px;
+      margin-bottom: 20px;
+    }
+
+    .version {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 20px;
+    }
+
+    .desc {
+      font-size: 14px;
+      color: #475569;
+      line-height: 1.7;
+      margin-bottom: 32px;
+      text-align: left;
+    }
+
+    /* Download Button - Android */
+    .btn-download {
+      display: block;
+      width: 100%;
+      height: 50px;
+      line-height: 50px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      background: linear-gradient(135deg, #0891b2 0%, #06b6d4 50%, #0ea5e9 100%);
+      box-shadow: 0 4px 16px rgba(6, 182, 212, 0.3);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-download:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 8px rgba(6, 182, 212, 0.25);
+    }
+
+    .btn-download:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(6, 182, 212, 0.4);
+    }
+
+    .btn-download .shine {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.25) 45%, rgba(255, 255, 255, 0.25) 55%, transparent 65%);
+      transform: translateX(-130%);
+      pointer-events: none;
+      transition: transform 0.55s ease;
+    }
+
+    .btn-download:hover .shine {
+      transform: translateX(130%);
+    }
+
+    /* Wechat Hint */
+    .wechat-hint {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 20px;
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 32px;
+      font-size: 11px;
+      color: #94a3b8;
+      letter-spacing: 1px;
+      animation: fadeIn 1s ease 0.8s both;
+    }
+
+    /* Animations */
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .card {
+        padding: 36px 28px;
+        border-radius: 16px;
+      }
+
+      .app-name {
+        font-size: 22px;
+      }
+
+      .desc {
+        font-size: 13px;
+      }
+
+      .btn-download {
+        height: 48px;
+        line-height: 48px;
+        font-size: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="logo-wrap">
+      <svg viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg" width="72" height="72">
+        <defs>
+          <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#0891b2"/>
+            <stop offset="50%" style="stop-color:#06b6d4"/>
+            <stop offset="100%" style="stop-color:#0ea5e9"/>
+          </linearGradient>
+        </defs>
+        <rect x="10" y="10" width="52" height="52" rx="14" fill="url(#logoGrad)"/>
+        <text x="36" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="white" font-family="-apple-system, BlinkMacSystemFont, sans-serif">神</text>
+      </svg>
+    </div>
+
+    <div class="app-name">神机妙算</div>
+    <div class="app-name-en">ZHENGQI SHANGJI</div>
+    <div class="version">版本 1.0.0</div>
+
+    <div class="desc">
+      神机妙算-政企商机，智能数据分析，助力企业精准洞察商机，抢占市场先机。
+    </div>
+
+    <a href="https://daren-admin.sjms.online/zqsjAgents/ewm/zqsj.apk" class="btn-download" download>
+      <span class="shine"></span>
+      下载 Android 版
+    </a>
+
+    <div class="wechat-hint">
+      微信内如无法下载<br>
+      请点击右上角 ··· → 用浏览器打开
+    </div>
+  </div>
+
+  <div class="footer">Powered by daren</div>
+
+</body>
+</html>

@@ -33,6 +33,12 @@ public class JwtAuthenticationFilter implements WebFilter {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        String path = exchange.getRequest().getPath().value();
+
+        if (isPublicPath(path)) {
+            return chain.filter(exchange);
+        }
+
         String token = extractToken(exchange);
 
         if (token == null) {
@@ -40,18 +46,15 @@ public class JwtAuthenticationFilter implements WebFilter {
         }
 
         try {
-            // 先解析 Token（会验证是否过期）
             Claims claims = jwtUtil.parseToken(token);
-            
-            // 检查 Token 类型
+
             String tokenType = claims.get("type", String.class);
             if (!"access".equals(tokenType)) {
                 return unauthorized(exchange, "Invalid token type");
             }
 
-            // 检查黑名单
             String jti = claims.getId();
-            
+
             return blacklistService.isBlacklisted(jti)
                     .flatMap(isBlacklisted -> {
                         if (isBlacklisted) {
@@ -61,7 +64,6 @@ public class JwtAuthenticationFilter implements WebFilter {
                         Long userId = claims.get("userId", Long.class);
                         String username = claims.getSubject();
 
-                        // 将用户信息添加到请求头中，供后续使用
                         exchange.getRequest().mutate()
                                 .header("X-User-Id", String.valueOf(userId))
                                 .header("X-Username", username)
@@ -76,6 +78,14 @@ public class JwtAuthenticationFilter implements WebFilter {
         } catch (Exception e) {
             return unauthorized(exchange, "Invalid token");
         }
+    }
+
+    private boolean isPublicPath(String path) {
+        return path.startsWith("/api/scope/app/version")
+                || path.startsWith("/swagger")
+                || path.startsWith("/v3/api-docs")
+                || path.equals("/health")
+                || path.equals("/");
     }
 
     private String extractToken(ServerWebExchange exchange) {
