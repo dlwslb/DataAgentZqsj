@@ -233,10 +233,10 @@ public class DateTimeUtil {
                 
                 long daysUntil = DAYS.between(today, birthdayDate);
                 
-                // 只提醒7天内的生日
-                if (daysUntil > 0 && daysUntil <= 7) {
+                // 只提醒1天内的生日
+                if (daysUntil > 0 && daysUntil <= 1) {
                     if (reminder.length() == 0) {
-                        reminder.append("\n【生日提醒】（7天内）：\n");
+                        reminder.append("\n【生日提醒】（1天内）：\n");
                     }
                     if (daysUntil == 1) {
                         reminder.append("- 🎂明天是【").append(birthday).append("】的生日！别忘了送上祝福哦~\n");
