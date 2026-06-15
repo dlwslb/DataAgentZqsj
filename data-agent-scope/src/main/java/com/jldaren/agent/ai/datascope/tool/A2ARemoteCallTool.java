@@ -28,7 +28,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import jakarta.annotation.PostConstruct;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 远程调用商机智能体工具
@@ -46,6 +48,14 @@ public class A2ARemoteCallTool {
 
     @Value("${jwt.internal-api-key:DataAgentInternalKey2026}")
     private String internalApiKey;
+
+    /**
+     * A2A 远程调用超时（秒）
+     * 默认 540 秒（9 分钟），留 60 秒 buffer 给 SSE 兜底
+     * 必须 < agent.call.timeout-seconds，避免 scope 端先炸
+     */
+    @Value("${agentscope.a2a.remote-call-timeout-seconds:540}")
+    private long remoteCallTimeoutSeconds;
 
     private WebClient webClient;
 
@@ -117,6 +127,7 @@ public class A2ARemoteCallTool {
 
         try {
             // 使用 SSE 专用解码器，直接接收 ServerSentEvent 对象
+            // ⭐ 加 timeout 熔断：避免 management 端 NL2SQL 循环卡死时阻塞 agent 调用线程
             String fullResponse = Mono.fromFuture(
                 webClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -140,7 +151,21 @@ public class A2ARemoteCallTool {
                     .collectList()
                     .map(chunks -> String.join("", chunks))
                     .toFuture()
-            ).subscribeOn(Schedulers.boundedElastic()).block();
+            ).subscribeOn(Schedulers.boundedElastic())
+             .timeout(Duration.ofSeconds(remoteCallTimeoutSeconds),
+                     Mono.error(new TimeoutException(
+                         "远程商机智能体调用超时（" + remoteCallTimeoutSeconds + "秒），可能 NL2SQL 循环未结束")))
+             .onErrorResume(e -> {
+                 if (e instanceof TimeoutException) {
+                     log.warn("⏱️ [远程智能体调用] 调用超时, timeout={}s, question={}",
+                             remoteCallTimeoutSeconds, finalQuestion);
+                     return Mono.just("");  // 返回空串，让后续 if 判断走"无响应"分支
+                 }
+                 log.error("❌ [远程智能体调用] 调用异常, question={}, error={}",
+                         finalQuestion, e.getMessage(), e);
+                 return Mono.just("远程商机智能体调用失败: " + e.getMessage());
+             })
+             .block();
 
             if (fullResponse == null || fullResponse.isBlank()) {
                 log.warn("⚠️ [远程智能体调用] 返回为空, question={}", actualQuestion);
