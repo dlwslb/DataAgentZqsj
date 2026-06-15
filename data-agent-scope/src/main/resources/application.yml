@@ -86,7 +86,7 @@ heartbeat:
 
 agent:
   call:
-    timeout-seconds: 180      # Agent 调用超时
+    timeout-seconds: 600      # Agent 调用超时
   hook:
     flush-delay-ms: 100       # Hook 事件刷新延迟（等待流式事件队列）
 
