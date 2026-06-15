@@ -81,7 +81,7 @@ public class DirectResponseHook implements Hook {
                                         log.info("📊 [DirectResponse] skipReport=true，已提取 resultSet 数据，长度={}", resultText.length());
                                     } else {
                                         shouldStop = true;
-                                        resultText = "未找到相关数据,请等待数据更新。";
+                                        //resultText = "未找到相关数据,请等待数据更新。";
                                         // skipReport=false：有完整报告，直接返回
                                         log.info("📊 [DirectResponse] skipReport=false，检测到完整报告，直接返回，长度={}", resultText.length());
                                     }
@@ -98,7 +98,9 @@ public class DirectResponseHook implements Hook {
                         }
                     }
 
-                    if(!resultText.contains("resultSet") && resultText.contains("未找到相关数据。") && resultText.endsWith("结果分析完成。")){
+                    if((!resultText.contains("resultSet") && resultText.contains("未找到相关数据。") && resultText.endsWith("结果分析完成。"))
+                            ||resultText.contains("SQL次数生成超限，最大尝试次数")
+                            ||resultText.contains("正在进行意图识别... { \"classification\": \"《闲聊或无关指令》\" } 意图识别完成！\n")){
                         resultText = "未找到相关数据,请等待数据更新。";
                         shouldStop = true;
                     }
