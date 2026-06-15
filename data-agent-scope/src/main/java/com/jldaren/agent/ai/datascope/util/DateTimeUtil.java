@@ -184,9 +184,9 @@ public class DateTimeUtil {
 
             if (daysUntil == 0) {
                 upcoming.add("【今天】" + name + "！祝你节日快乐！🎉 " + suggestion);
-            } else if (daysUntil > 0 && daysUntil <= 14) {
+            } /*else if (daysUntil > 0 && daysUntil <= 14) {
                 upcoming.add("【" + daysUntil + "天后】" + name + "(" + holidayDate + ") - " + suggestion);
-            } else if (daysUntil < 0) {
+            }*/ else if (daysUntil < 0) {
                 long daysSince = -daysUntil;
                 if (daysSince <= 30) {
                     passed.add("【" + daysSince + "天前】" + name + "(" + holidayDate + ")");
