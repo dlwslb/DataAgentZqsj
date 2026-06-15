@@ -62,6 +62,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -229,6 +230,8 @@ public class AgentScopeSseController {
         // 构建响应式流
         return Flux.<ServerSentEvent<String>>create(sink -> {
             AtomicReference<Disposable> heartbeatRef = new AtomicReference<>();
+            // ⭐ 保护 sink：onError/done 回调中只允许写一次，避免 "Sink completed" 异常
+            AtomicBoolean terminalSent = new AtomicBoolean(false);
             try {
                 ReActAgent baseAgent = agentRegistry.getAgentWithLongTermMemory(id, userId, sessionId, tenantId);
                 if (baseAgent == null) {
@@ -288,15 +291,19 @@ public class AgentScopeSseController {
                             .subscribeOn(Schedulers.boundedElastic())
                             .subscribe(
                                     msg -> {
-                                        // 处理最终响应
-                                        handleAgentResponse(msg, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
-                                        disposeHeartbeat(heartbeatRef.get(), messageId);
-                                        sink.complete();
+                                        if (terminalSent.compareAndSet(false, true)) {
+                                            // 处理最终响应
+                                            handleAgentResponse(msg, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
+                                            disposeHeartbeat(heartbeatRef.get(), messageId);
+                                            sink.complete();
+                                        }
                                     },
                                     error -> {
-                                        handleAgentError(error, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
-                                        disposeHeartbeat(heartbeatRef.get(), messageId);
-                                        sink.error(error);
+                                        if (terminalSent.compareAndSet(false, true)) {
+                                            handleAgentError(error, sink, id, messageId, sessionId, userIdLong, tenantIdLong);
+                                            disposeHeartbeat(heartbeatRef.get(), messageId);
+                                            sink.error(error);
+                                        }
                                     }
                             );
                 });
@@ -352,6 +359,9 @@ public class AgentScopeSseController {
                     .event("error")
                     .data(jsonMapper.writeValueAsString(errorResp))
                     .build());
+        } catch (IllegalStateException e) {
+            // sink 已 terminated（重复 onError 回调），不再写 SSE
+            log.warn("SSE error skip (sink already terminated): agentId={}, messageId={}", agentId, messageId);
         } catch (Exception e) {
             log.warn("SSE error send failed: agentId={}, messageId={}", agentId, messageId);
         }
