@@ -22,6 +22,7 @@ import com.alibaba.cloud.ai.dataagent.util.StateUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import static com.alibaba.cloud.ai.dataagent.constant.Constant.*;
+import static com.alibaba.cloud.ai.graph.StateGraph.END;
 
 /**
  * @author zhangshenghang
@@ -36,10 +37,14 @@ public class SQLExecutorDispatcher implements EdgeAction {
 			log.warn("SQL运行失败，需要重新生成！");
 			return SQL_GENERATE_NODE;
 		}
-		else {
-			log.info("SQL运行成功，返回PlanExecutorNode。");
-			return PLAN_EXECUTOR_NODE;
+		// 🔑 skipReport=true 时：SQL 已成功跑完并拿到数据库返回数据，
+		// 直接结束，不再回到 PlanExecutorNode 跑 Python/报告等后续步骤。
+		if (Boolean.TRUE.equals(state.value(SKIP_REPORT, false))) {
+			log.info("SQL运行成功，skipReport=true，拿到结果后直接结束。");
+			return END;
 		}
+		log.info("SQL运行成功，返回PlanExecutorNode。");
+		return PLAN_EXECUTOR_NODE;
 	}
 
 }
