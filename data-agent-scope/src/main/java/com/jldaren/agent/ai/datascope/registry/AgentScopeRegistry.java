@@ -288,7 +288,12 @@ public class AgentScopeRegistry {
                 - "有多少"、"是什么"、"有哪些"
                 - 示例："黑龙江联通近期中标项目有哪些？" → skipReport=true
               * 【禁止】省略 skipReport 参数，每次调用都必须根据用户意图明确指定
-            - 【禁止重复调用】如果对话历史中已有 get_zqsj_agent 返回的 JSON 数据（包含 column 和 data 字段），用户的后续问题（如"进一步分析"、"总结"、"趋势"、"对比"等）必须直接基于已有 JSON 数据分析回答，【绝对禁止】再次调用 get_zqsj_agent 工具
+            - 【禁止重复调用】仅当【上一轮 user 消息 + 上一轮 assistant 最终回答】构成完整 Q&A 闭环
+              （即上一轮已经成功调过 get_zqsj_agent 拿到完整结果并给出最终分析），
+              且当前 user 消息是基于该结果的"进一步分析/总结/趋势/对比"等追问时，
+              才禁止再次调用 get_zqsj_agent 工具。
+              【其他场景】必须直接调用 get_zqsj_agent 工具获取实时数据，不要自行编造。
+              【禁止】根据工具描述里出现 "column" / "data" 字段就认为已有数据——这只是工具返回结构说明，不是实际数据。
             """;
     
     private String getDefaultPrompt() {
