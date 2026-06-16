@@ -65,7 +65,7 @@ public class BoundedRedisMemory implements Memory {
     private final String userId;
     private final String sessionId;
 
-    private static final int DEFAULT_MAX_MESSAGES = 120;
+    private static final int DEFAULT_MAX_MESSAGES = 60;
     private static final Duration DEFAULT_TTL = Duration.ofDays(15);
     private static final String KEY_PREFIX = "memory";
 
@@ -275,12 +275,42 @@ public class BoundedRedisMemory implements Memory {
         return KEY_PREFIX + ":" + agentId + ":" + tenantId + ":" + userId + ":" + sessionId + ":messages";
     }
 
+    // 工具返回消息读出时体积上限（字符数）：超过此长度的工具结果在读取时截断，原始数据保留在 Redis 不丢失
+    private static final int TOOL_MESSAGE_READ_MAX_CHARS = 2000;
+
     private List<Msg> getMessagesFromRedisSync() {
         List<String> jsonList = getJsonListFromRedisSync();
         return jsonList.stream()
                 .map(this::jsonToMsg)
                 .filter(Objects::nonNull)
+                //.map(this::jsonToMsg)//存啥那啥 速度越来越慢
+                .map(this::truncateToolMessageContent) // ⭐ 读出时截断 TOOL 消息（原始数据保留在 Redis，仅 LLM 推理时省略）
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 截断 TOOL 消息的 textContent 以节省 LLM 推理 token。
+     * 原始数据**保留在 Redis 中**——通过 Redis 客户端可直接读取完整内容，仅在给 LLM 推理时省略后段。
+     */
+    private Msg truncateToolMessageContent(Msg msg) {
+        if (msg == null || msg.getRole() != io.agentscope.core.message.MsgRole.TOOL) {
+            return msg;
+        }
+        String text = msg.getTextContent();
+        if (text == null || text.length() <= TOOL_MESSAGE_READ_MAX_CHARS) {
+            return msg;
+        }
+        String truncated = text.substring(0, TOOL_MESSAGE_READ_MAX_CHARS)
+                + "\n\n... [内容已截断，原始长度=" + text.length() + " 字符，仅保留前 "
+                + TOOL_MESSAGE_READ_MAX_CHARS + " 字符以节省 token；完整数据保留在 Redis] ...";
+        return io.agentscope.core.message.Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .textContent(truncated)
+                .metadata(msg.getMetadata())
+                .build();
     }
 
     private List<String> getJsonListFromRedisSync() {
