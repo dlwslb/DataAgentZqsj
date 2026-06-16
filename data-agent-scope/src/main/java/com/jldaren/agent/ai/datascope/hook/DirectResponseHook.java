@@ -31,6 +31,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 工具返回直出 Hook - 防止 ReActAgent 二次总结
@@ -120,6 +122,15 @@ public class DirectResponseHook implements Hook {
                             log.warn("⚠️ 远程调用结果可能有错误，未解析到结果或报告！");
                         }
                         shouldStop = true;
+                    }
+
+                    // 需求确认提取
+                    String regex = "【需求内容】：\\s*(.*?)\\s*可行性评估完成！";
+                    Pattern pattern = Pattern.compile(regex);
+                    Matcher matcher = pattern.matcher(resultText);
+                    if (matcher.find()) {
+                        // group(1) 获取第一个括号内匹配的内容
+                        resultText = matcher.group(1);
                     }
                     
                     // 用纯文本 Msg 替换 toolResultMsg
