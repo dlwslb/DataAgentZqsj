@@ -146,8 +146,16 @@ CREATE TABLE leads_table_7864 (
     \}
   ]
 \}
+---
+
+# 当前日期 (Current Date)
+
+{current_date}
+
+**重要**：当用户问题中包含相对时间词（如"这个月"、"上个月"、"近一年"、"6 月"、"最近"）时，必须基于上面的 `current_date` 解析成具体的绝对时间范围（YYYY-MM-DD），并写入 `SQL_GENERATE_NODE` 的 `instruction` 字段中。例如：今天是 2026-06-16，用户问"这个 6 月"应解析为 `2026-06-01 ~ 2026-06-30`；问"近一年"应解析为 `2025-06-16 ~ 2026-06-16`。
 
 ---
+
 # User's Current Request
 
 **User Input**: "{user_question}"

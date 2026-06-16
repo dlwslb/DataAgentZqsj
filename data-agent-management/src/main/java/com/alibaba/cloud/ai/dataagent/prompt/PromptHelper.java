@@ -31,6 +31,7 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -120,6 +121,7 @@ public class PromptHelper {
 		params.put("schema_info", schemaInfo);
 		params.put("evidence", sqlGenerationDTO.getEvidence());
 		params.put("execution_description", sqlGenerationDTO.getExecutionDescription());
+		params.put("current_date", LocalDate.now().toString());
 		return PromptConstant.getNewSqlGeneratorPromptTemplate().render(params);
 	}
 

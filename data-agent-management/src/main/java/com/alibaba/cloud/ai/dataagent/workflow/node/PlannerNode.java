@@ -35,6 +35,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.LocalDate;
 import java.util.Map;
 
 import static com.alibaba.cloud.ai.dataagent.constant.Constant.*;
@@ -94,7 +95,7 @@ public class PlannerNode implements NodeAction {
 		BeanOutputConverter<Plan> beanOutputConverter = new BeanOutputConverter<>(Plan.class);
 		Map<String, Object> params = Map.of("user_question", userPrompt, "schema", schemaStr, "evidence", evidence,
 				"semantic_model", semanticModel, "plan_validation_error", formatValidationError(validationError),
-				"format", beanOutputConverter.getFormat());
+				"format", beanOutputConverter.getFormat(), "current_date", LocalDate.now().toString());
 		// 生成计划
 		String plannerPrompt = PromptConstant.getPlannerPromptTemplate().render(params);
 		log.debug("Planner prompt: as follows \n{}\n", plannerPrompt);
