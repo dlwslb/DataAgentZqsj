@@ -1,0 +1,31 @@
+server:
+  port: 8082
+
+# prod 环境（参考 1.0 prod 配置）
+spring:
+  datasource:
+    url: jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  data:
+    redis:
+      host: 172.26.177.96
+      port: 6379
+      password: Rdlz3%*rrr
+
+agentscope:
+  datasource:
+    business:
+      # prod：业务表跟 1.0 同一个库
+      url: jdbc:mysql://172.26.177.96:2881/tender_agent?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  state-store:
+    type: redis  # 生产用 Redis（多副本跨进程恢复）
+    key-prefix: dataagent-scope2:session:
+  skill:
+    type: mysql  # 生产用 MySQL Skill 仓库
+
+jwt:
+  secret: ${JWT_SECRET:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}
+
+logging:
+  level:
+    root: WARN
+    com.jldaren.agent.ai.datascope2: INFO

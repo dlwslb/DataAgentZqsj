@@ -1,0 +1,137 @@
+server:
+  port: 8082
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: data-agent-scope2
+  profiles:
+    active: dev
+  # Jackson 强制使用 2.x（与 2.0 默认的 Jackson 3.x 错开）
+  jackson:
+    default-property-inclusion: NON_NULL
+  # WebFlux 编码
+  webflux:
+    format:
+      date-time: yyyy-MM-dd HH:mm:ss
+  # 数据源（Druid + MySQL）
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 1.0 的 data_agent 库
+    url: jdbc:mysql://39.102.200.143:2881/data_agent_v2?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:Daren87087766!}
+  # Redis（业务库 + 状态存储共用 - 1.0 同源）
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:Rdlz3%*rrr}
+      database: 0
+      timeout: 5s
+  # Spring AI Alibaba
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: qwen-plus
+
+# ============================================================
+# JWT（必须跟 1.0 一致，否则 1.0 签发的 token 解析不了）
+# ============================================================
+jwt:
+  secret: ${JWT_SECRET:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}
+
+# ============================================================
+# AgentScope 2.0 配置
+# ============================================================
+agentscope:
+  # 模型
+  model:
+    default: ${AGENTSCOPE_MODEL:dashscope:qwen-plus}
+    api-key: ${DASHSCOPE_API_KEY:}
+    base-url: ${DASHSCOPE_BASE_URL:}
+    max-tokens: 4096
+    top-p: 0.9
+    enable-search: false
+  # 状态存储（prod 改 redis）
+  state-store:
+    type: ${STATE_STORE_TYPE:file}  # file | redis
+    base-path: ${user.home}/.agentscope/state/data-agent-scope2
+    key-prefix: "dataagent-scope2:session:"
+  # 业务数据源（Druid 直连 - 2.0 绕开 1.0 的 NL2SQL 慢链路）
+  # 默认连 1.0 的 tender_data_agent 库（4 张业务表 bid_biz_* 应该在这里）
+  # 如果业务表在另一个库，改这里的 URL
+  datasource:
+    business:
+      url: ${BUSINESS_DB_URL:jdbc:mysql://39.102.200.143:2881/tender_data_agent?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+      username: ${BUSINESS_DB_USERNAME:root}
+      password: ${BUSINESS_DB_PASSWORD:Daren87087766!}
+      driver-class: com.mysql.cj.jdbc.Driver
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+  # Skill 仓库
+  skill:
+    type: ${SKILL_REPO_TYPE:classpath}
+    classpath-paths: skills
+    mysql:
+      database: chatbi
+      table: agentscope_skill
+      create-if-not-exist: true
+      writeable: true
+    enable-self-learning: false
+    project-global-dir: ${user.home}/.agentscope/skills
+  # Workspace
+  workspace:
+    base-path: ${user.home}/.agentscope/workspace/data-agent-scope2
+  # Embedding + OceanBase 向量召回（RAG 业务知识用）
+  embedding:
+    api-key: ${DASHSCOPE_API_KEY:}
+    model: ${EMBEDDING_MODEL:text-embedding-v4}
+    dimension: ${EMBEDDING_DIMENSION:1024}
+    similarity-threshold: ${EMBEDDING_THRESHOLD:0.5}  # 召回相似度阈值（0-1，越大越严格）
+    default-topk: ${EMBEDDING_TOPK:5}
+    vector-table: ${EMBEDDING_TABLE:agent_scope_vector_store}  # 跟 1.0 共用
+    datasource:
+      # 业务库 = OceanBase（兼容 MySQL 协议，走 OBProxy 访问）
+      # dev 默认跟业务库同库（39.102.200.143:2881/tender_data_agent）
+      # 生产可拆出来单独建向量库
+      url: ${EMBEDDING_DB_URL:${agentscope.datasource.business.url}}
+      username: ${EMBEDDING_DB_USERNAME:${agentscope.datasource.business.username}}
+      password: ${EMBEDDING_DB_PASSWORD:${agentscope.datasource.business.password}}
+      driver-class: com.mysql.cj.jdbc.Driver
+
+# ============================================================
+# 日志
+# ============================================================
+logging:
+  level:
+    root: INFO
+    com.jldaren.agent.ai.datascope2: DEBUG
+    io.agentscope: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ============================================================
+# SpringDoc
+# ============================================================
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
