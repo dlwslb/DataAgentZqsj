@@ -222,9 +222,13 @@
             <el-form-item label="省份" prop="province">
               <el-select
                 v-model="userForm.province"
-                placeholder="请选择省份"
+                placeholder="请选择省份（可多选）"
                 filterable
                 clearable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                :max-collapse-tags="3"
                 style="width: 100%;"
               >
                 <el-option
@@ -387,7 +391,7 @@ export default defineComponent({
       nickname: '',
       email: '',
       phone: '',
-      province: '',
+      province: [],
       tenantId: null,
       agentId: null,
       role: 'user',
@@ -574,7 +578,7 @@ export default defineComponent({
         nickname: '',
         email: '',
         phone: '',
-        province: '',
+        province: [],
         tenantId: null,
         agentId: null,
         role: 'user',
@@ -586,13 +590,17 @@ export default defineComponent({
     const openEditDialog = (user) => {
       isEdit.value = true;
       currentUserId.value = user.id;
+      // 后端 province 存的是逗号分隔字符串,前端表单用数组承载
+      const provinceArr = user.province
+        ? String(user.province).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
       Object.assign(userForm, {
         username: user.username,
         password: '',
         nickname: user.nickname || '',
         email: user.email || '',
         phone: user.phone || '',
-        province: user.province || '',
+        province: provinceArr,
         tenantId: user.tenantId || null,
         agentId: user.agentId || null,
         role: user.role || 'user',
@@ -614,6 +622,10 @@ export default defineComponent({
       await formRef.value.validate(async (valid) => {
         if (valid) {
           submitting.value = true;
+          // 多选省份:数组 → 逗号串接字符串提交给后端
+          const provinceValue = Array.isArray(userForm.province)
+            ? userForm.province.filter(Boolean).join(',')
+            : (userForm.province || '');
           try {
             if (isEdit.value && currentUserId.value) {
               await userService.updateUser(currentUserId.value, {
@@ -621,7 +633,7 @@ export default defineComponent({
                 nickname: userForm.nickname,
                 email: userForm.email,
                 phone: userForm.phone,
-                province: userForm.province,
+                province: provinceValue,
                 tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
@@ -635,7 +647,7 @@ export default defineComponent({
                 nickname: userForm.nickname,
                 email: userForm.email,
                 phone: userForm.phone,
-                province: userForm.province,
+                province: provinceValue,
                 tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
