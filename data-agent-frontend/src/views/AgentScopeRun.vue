@@ -175,6 +175,12 @@
                   <el-switch v-model="sseEnabled" />
                 </div>
                 <div class="switch-item">
+                  <span class="switch-label">SSE skill模式</span>
+                  <el-tooltip content="开启后走 data-agent-scope2 的 SSE 流式对话接口" placement="top">
+                    <el-switch v-model="sse2Enabled" :disabled="sending" />
+                  </el-tooltip>
+                </div>
+                <div class="switch-item">
                   <span class="switch-label">管理员模式</span>
                   <el-switch
                       v-model="isAdminMode"
@@ -421,6 +427,8 @@ export default {
 
     // SSE 回答开关
     const sseEnabled = ref(true);
+    // SSE 2.0 开关（默认关闭，走 data-agent-scope2 新接口）
+    const sse2Enabled = ref(true);
     
     // 是否为超级管理员
     const isSuperAdmin = ref(false);
@@ -439,6 +447,10 @@ export default {
     // 状态控制
     const thinkingPreview = ref('');
     const hasFinalMessage = ref(false);
+
+    // 🔑 打字机效果：当前正在打字的消息 ID（text 事件来时更新同一条）
+    const streamingMsgId = ref<number | null>(null);
+    const streamingMsgContent = ref('');
 
     // 🔑 跟踪思考预览的当前渲染类型（与后端 messageType 同步）
     const currentPreviewType = ref<'text' | 'markdown' | 'markdown-report' | 'html-report'>('text');
@@ -574,7 +586,7 @@ export default {
       renderer.paragraph = (text: string) => {
         return `<p style="margin: 8px 0; line-height: 1.6; text-align: justify; text-justify: inter-ideograph;">${text}</p>`;
       };
-      
+
       // 🔑 链接：点击时触发 Vue 方法，在 Dialog 中打开
       renderer.link = (href: string, title: string | null, text: string) => {
         const titleAttr = title ? ` title="${title}"` : '';
@@ -584,6 +596,32 @@ export default {
 
       marked.use({ renderer });
     };
+
+    // 🧠 启发式检测 LLM 内心独白/链式思考
+    // 现象：qwen-plus 等模型默认把"思考过程"塞到普通 TEXT_BLOCK_DELTA 里，
+    //       后端没法区分，只能前端做兜底过滤。
+    const MONOLOGUE_PATTERNS: RegExp[] = [
+      /^我需要(查询|执行|调用|先|了解|分析|检查|获取|搜索|汇总|总结|使用|调用|确认)/,
+      /^让我(执行|查询|调用|先|试试|尝试|分析|思考|确认|看看|开始|搜索)/,
+      /^根据(系统知识|上下文|用户需求|系统|用户|历史|已知|配置)/,
+      /^我(将|会|来|应该|可以|准备|接下来|先|已经成功|已|刚刚)?(查询|执行|调用|分析|展示|给出|生成|总结|汇总|返回|列出|看看|处理|处理一下|看一下|思考)/,
+      /^查询结果显示/,
+      /^执行结果[:：]/,
+      /^现在(我|来|开始|准备|可以|需要|将)/,
+    ];
+    const looksLikeLlmMonologue = (text: string): boolean => {
+      if (!text) return false;
+      const trimmed = text.trim();
+      // 太长的话不太可能是独白（独白一般短句）
+      if (trimmed.length > 200) return false;
+      for (const re of MONOLOGUE_PATTERNS) {
+        if (re.test(trimmed)) return true;
+      }
+      return false;
+    };
+
+    // 🔇 调试日志开关（默认关闭，需要时改 true 即可看到 SSE 事件流）
+    const logDebug = false;
 
     const markdownToHtml = (markdown: string): string => {
       if (!markdown) return '';
@@ -788,6 +826,8 @@ export default {
       hasFinalMessage.value = false;
       thinkingPreview.value = '';
       currentPreviewType.value = 'text'; // 🔑 重置预览类型
+      streamingMsgId.value = null;
+      streamingMsgContent.value = '';
       lastRequest.value = {
         agentId: agent.value.id,
         query: userMessage,
@@ -883,7 +923,12 @@ export default {
         });
 
         const baseUrl = import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064';
-        fetch(`${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`, {
+        const baseUrl2 = import.meta.env.VITE_DATA_AGENT_SCOPE2_API_TARGET || 'http://localhost:8082';
+        // SSE 2.0 开关：开启走新接口，关闭走原接口
+        const endpoint = sse2Enabled.value
+            ? `${baseUrl2}/api/chat/stream`
+            : `${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`;
+        fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...extraHeaders },
           body,
@@ -897,8 +942,8 @@ export default {
               if (newToken) {
                 extraHeaders['Authorization'] = `Bearer ${newToken}`;
               }
-              // 重新发起请求
-              return fetch(`${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`, {
+              // 重新发起请求（复用同一个 endpoint）
+              return fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...extraHeaders },
                 body,
@@ -920,7 +965,7 @@ export default {
             reader.read().then(({ done, value }) => {
               if (done) {
                 // 🔹 流结束兜底：用思考预览生成最终消息
-                if (!hasFinalMessage.value && thinkingPreview.value) {
+                if (!hasFinalMessage.value && thinkingPreview.value && streamingMsgId.value === null) {
                   // 🔑 关键修复：对兜底消息也进行预处理
                   const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
                   currentMessages.value.push({
@@ -937,6 +982,8 @@ export default {
                 hasFinalMessage.value = true;
                 thinkingPreview.value = '';
                 currentPreviewType.value = 'text'; // 🔑 重置
+                streamingMsgId.value = null;
+                streamingMsgContent.value = '';
                 nextTick().then(() => scrollToBottom());
                 resolve();
                 return;
@@ -976,14 +1023,18 @@ export default {
                   }
 
                   // 🔑 提取标准化字段
-                  const content = parsedData?.content || '';
+                  // 后端 StreamEvent 字段是 {type, data, sessionId, timestamp}，data 才是真正的内容
+                  // 🔑 关键：后端推的是 `data: {"type":"text","data":"..."}` 一行 JSON，没有 `event:` 头
+                  // 所以 eventType 变量不可靠，必须用 parsedData.type 分发
+                  const streamType = parsedData?.type || eventType;
+                  const content = (typeof parsedData?.data === 'string' ? parsedData.data : (parsedData?.content || '')) || '';
                   const messageType = parsedData?.messageType || 'text';
                   const messageId = parsedData?.messageId;
 
                   // ─────────────────────────────────────
                   // 📡 流式片段：更新思考预览（不创建消息）
                   // ─────────────────────────────────────
-                  if (eventType === 'reasoning' || eventType === 'summary') {
+                  if (streamType === 'reasoning' || streamType === 'summary') {
                     if (content) {
                       // 🔑 关键：预处理内容后再拼接，确保列表/段落语法完整
                       const processedContent = preprocessStreamingContent(content, thinkingPreview.value);
@@ -999,17 +1050,104 @@ export default {
                       nextTick().then(() => scrollToBottom());
                     }
                   }
-                  else if (eventType === 'acting') {
+                  else if (streamType === 'acting') {
                     if (content) {
                       thinkingPreview.value += '\n' + content + '\n';
                       nextTick().then(() => scrollToBottom());
                     }
                   }
+                  // 🛠 工具调用：显示状态（不创建 assistant 消息体）
+                  else if (streamType === 'tool_call') {
+                    const toolName = (parsedData?.data && typeof parsedData.data === 'object')
+                        ? (parsedData.data as any).name || '工具'
+                        : '工具';
+                    thinkingPreview.value += `\n🔧 正在调用 ${toolName}...\n`;
+                    currentPreviewType.value = 'text';
+                    nextTick().then(() => scrollToBottom());
+                  }
+                  // 🎯 框架事件追踪：AgentStartEvent / ModelCallStartEvent / TextBlockStartEvent ...
+                  //    这些是内部事件流追踪，不渲染到聊天列表
+                  else if (streamType === 'event') {
+                    // 静默忽略（但可以打日志调试）
+                    // console.debug('[SSE event]', content);
+                  }
+                  // 💓 心跳：忽略
+                  else if (streamType === 'heartbeat') {
+                    // ignore
+                  }
+                  // 🧠 LLM 思考/推理（chain-of-thought）：不展示给用户
+                  else if (streamType === 'thinking') {
+                    // ignore — 思考过程是 LLM 内部独白，给客户看没价值
+                    // 需要调试时可解开：console.debug('[SSE thinking]', content);
+                  }
+                  // 📦 工具调用结果（流式文本）：默认不展示，LLM 会自己汇总到最终回复
+                  else if (streamType === 'tool_result') {
+                    // ignore
+                  }
 
                       // ─────────────────────────────────────
                       // ✅ 完整消息：创建并推入消息列表
                   // ─────────────────────────────────────
-                  else if ((eventType === 'message' || eventType === 'final') && content) {
+                  // 🔑 新接口 'text' 事件：打字机效果 - 更新同一条消息的内容
+                  else if (streamType === 'text' && content) {
+                    // 跳过空内容
+                    if (!content.trim()) continue;
+                    // 如果还没有"打字中的消息"，先创建一条
+                    if (streamingMsgId.value === null) {
+                      const newMsgId = Date.now();
+                      streamingMsgId.value = newMsgId;
+                      streamingMsgContent.value = '';
+                      const textMsgType = messageType && messageType !== 'text'
+                          ? messageType
+                          : detectMessageType(content);
+                      currentMessages.value.push({
+                        id: newMsgId,
+                        sessionId: currentSession.value.id,
+                        agentId: agent.value.id,
+                        role: 'assistant',
+                        content: '',
+                        messageType: textMsgType,
+                        createTime: new Date().toLocaleString(),
+                      });
+                      hasFinalMessage.value = true;
+                    }
+                    // 累积到打字中的消息（视觉上像打字机效果）
+                    streamingMsgContent.value += content;
+
+                    // 🧠 兜底过滤 LLM 内心独白：text 事件被切成 1-5 字 delta，
+                    //    单 delta 看不出来，但累积 30+ 字符后能识别 monologue 模式
+                    //    命中就回滚：清空累积内容、删掉已创建的消息、重置 streamingMsgId
+                    //    （如果 LLM 在 tool_call 之后才输出正常回复，tool_call 会重置 streamingMsgId）
+                    if (looksLikeLlmMonologue(streamingMsgContent.value) && streamingMsgContent.value.length >= 10) {
+                      if (logDebug) console.debug('[SSE monologue filtered+rolled-back]', streamingMsgContent.value);
+                      // 删掉已渲染的流式消息
+                      const rollbackIdx = currentMessages.value.findIndex(m => m.id === streamingMsgId.value);
+                      if (rollbackIdx !== -1) {
+                        currentMessages.value.splice(rollbackIdx, 1);
+                        currentMessages.value = [...currentMessages.value];
+                      }
+                      // 重置累积状态（下一段 text 重新建消息）
+                      streamingMsgId.value = null;
+                      streamingMsgContent.value = '';
+                      hasFinalMessage.value = false;  // 允许"正在思考"占位再次出现
+                      continue;
+                    }
+
+                    // 找到这条消息，更新 content
+                    const idx = currentMessages.value.findIndex(m => m.id === streamingMsgId.value);
+                    if (idx !== -1) {
+                      currentMessages.value[idx].content = streamingMsgContent.value;
+                      // 重新检测 messageType（防止 LLM 先发纯文本后发 Markdown）
+                      const detected = detectMessageType(streamingMsgContent.value);
+                      if (detected !== 'text') {
+                        currentMessages.value[idx].messageType = detected;
+                      }
+                      // 触发响应式更新
+                      currentMessages.value = [...currentMessages.value];
+                    }
+                    nextTick().then(() => scrollToBottom());
+                  }
+                  else if ((streamType === 'message' || streamType === 'final') && content) {
                     // 🔑 自动修正 messageType：后端返回 'text' 时自动检测是否含 Markdown
                     let finalMessageType = messageType;
                     if (finalMessageType === 'text') {
@@ -1037,8 +1175,8 @@ export default {
                       // ─────────────────────────────────────
                       // 🎯 done 事件：流正常结束
                   // ─────────────────────────────────────
-                  else if (eventType === 'done') {
-                    if (!hasFinalMessage.value && thinkingPreview.value) {
+                  else if (streamType === 'done') {
+                    if (!hasFinalMessage.value && thinkingPreview.value && streamingMsgId.value === null) {
                       // 🔑 关键修复：对兜底消息也进行预处理
                       const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
                       currentMessages.value.push({
@@ -1055,6 +1193,8 @@ export default {
                     hasFinalMessage.value = true;
                     thinkingPreview.value = '';
                     currentPreviewType.value = 'text'; // 🔑 重置
+                    streamingMsgId.value = null;
+                    streamingMsgContent.value = '';
                     nextTick().then(() => scrollToBottom());
                     resolve();
                     return;
@@ -1063,11 +1203,13 @@ export default {
                       // ─────────────────────────────────────
                       // ❌ error 事件：流异常结束
                   // ─────────────────────────────────────
-                  else if (eventType === 'error') {
+                  else if (streamType === 'error') {
                     sending.value = false;
                     hasFinalMessage.value = true;
                     thinkingPreview.value = '';
                     currentPreviewType.value = 'text';
+                    streamingMsgId.value = null;
+                    streamingMsgContent.value = '';
                     reject(new Error(content || dataStr));
                     return;
                   }
@@ -1082,6 +1224,8 @@ export default {
               hasFinalMessage.value = true;
               thinkingPreview.value = '';
               currentPreviewType.value = 'text';
+              streamingMsgId.value = null;
+              streamingMsgContent.value = '';
               reject(error);
             });
           };
@@ -1101,6 +1245,8 @@ export default {
       hasFinalMessage.value = true;
       thinkingPreview.value = '';
       currentPreviewType.value = 'text';
+      streamingMsgId.value = null;
+      streamingMsgContent.value = '';
       ElMessage.success('已停止对话');
     };
 
@@ -1354,11 +1500,13 @@ export default {
       sendMessage, handleEnterKey, downloadMarkdownReport, downloadHtmlReport,
       openReportFullscreen, closeReportFullscreen, inputControlsCollapsed, autoScroll,
       showHumanFeedback, lastRequest, resultSetDisplayConfig, requestOptions,
-      isAdminMode, sseEnabled, isSuperAdmin, isImpersonating, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
+      isAdminMode, sseEnabled, sse2Enabled, isSuperAdmin, isImpersonating, handleNl2sqlOnlyChange, stopStreaming, handleHumanFeedback,
       detectMessageType, preprocessStreamingContent,
       thinkingPreview,
       hasFinalMessage,
       currentPreviewType,
+      streamingMsgId,
+      streamingMsgContent,
       ensureValidToken,
       refreshToken,
       // 🔑 链接弹窗相关
