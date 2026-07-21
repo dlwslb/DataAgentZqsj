@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright 2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  业务数据查询 Mapper XML
+  5 张表的查询结构基本一样（动态条件 + 软删过滤 + 排序 + LIMIT），差别只在：
+    - 表名（tableName）
+    - 查询列（columns）
+    - 金额排序列（win_bid_price / bidding_budget / win_bid_amount / null=按 publishTime）
+    - win_bid 表独有的 winTenderer 模糊匹配
+  为了可读性，5 个 <select> 拆开写，不强行抽 SQL 片段（业务查询不值得过度抽象）
+
+  参数约定（@Param("p") Map<String,Object>）：
+    provinceList: List<String>，省份列表（已归一化），null/空 = 全量（不加省份过滤）
+    city / district / industry / infoType / channel / webSourceName: 精确匹配字符串
+    tenderer: 招标单位，模糊匹配
+    winTenderer: 中标单位，模糊匹配（仅 win_bid / origin_announcement 生效）
+    keyword: 项目名/标题/关键词，多字段 OR 模糊
+    startDate / endDate: yyyy-MM-dd 字符串
+    minBudget / maxBudget: 金额范围（每张表金额列不同）
+-->
+<mapper namespace="com.jldaren.agent.ai.datascope2.mapper.BizQueryMapper">
+
+    <!-- ============================================================ -->
+    <!-- 1. bid_winner —— 中标信息（chatbi.bid_biz_win_bid）              -->
+    <!--    金额列: win_bid_price,排序列: win_bid_price DESC              -->
+    <!--    独有: win_tenderer 模糊匹配                                    -->
+    <!-- ============================================================ -->
+    <select id="queryBidWinner" resultType="java.util.Map">
+        SELECT project_name, win_tenderer, win_bid_price, publish_time
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            deleted = 0
+            <!-- 省份权限：单值 = ，多值 = province = ? OR province = ? ... -->
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+            <!-- 通用精确匹配 -->
+            <if test="p.city != null and p.city != ''">AND city = #{p.city}</if>
+            <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
+            <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
+            <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
+            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
+            <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
+            <!-- win_bid 表独有: 中标单位 -->
+            <if test="p.winTenderer != null and p.winTenderer != ''">AND win_tenderer LIKE CONCAT('%', #{p.winTenderer}, '%')</if>
+            <!-- 关键词: title / project_name / keywords 多字段 OR 模糊 -->
+            <if test="p.keyword != null and p.keyword != ''">
+                AND (title LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+            </if>
+            <!-- 日期范围 -->
+            <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
+            <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
+            <!-- 金额范围: win_bid 用 win_bid_price -->
+            <if test="p.minBudget != null">AND win_bid_price >= #{p.minBudget}</if>
+            <if test="p.maxBudget != null">AND win_bid_price &lt;= #{p.maxBudget}</if>
+        </where>
+        ORDER BY win_bid_price DESC, publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 2. bidding —— 招标信息（chatbi.bid_biz_bidding）                  -->
+    <!--    金额列: bidding_budget                                        -->
+    <!-- ============================================================ -->
+    <select id="queryBidding" resultType="java.util.Map">
+        SELECT project_name, tenderer, bidding_budget, publish_time
+        FROM chatbi.bid_biz_bidding
+        <where>
+            deleted = 0
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+            <if test="p.city != null and p.city != ''">AND city = #{p.city}</if>
+            <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
+            <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
+            <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
+            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
+            <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
+            <if test="p.keyword != null and p.keyword != ''">
+                AND (title LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+            </if>
+            <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
+            <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
+            <!-- 金额列: bidding_budget -->
+            <if test="p.minBudget != null">AND bidding_budget >= #{p.minBudget}</if>
+            <if test="p.maxBudget != null">AND bidding_budget &lt;= #{p.maxBudget}</if>
+        </where>
+        ORDER BY bidding_budget DESC, publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 3. purchase_intention —— 采购意向（chatbi.bid_biz_purchase_intention） -->
+    <!--    金额列: bidding_budget                                        -->
+    <!--    独有: time_bid_open / time_bid_close 字段（暂不参与查询条件） -->
+    <!-- ============================================================ -->
+    <select id="queryPurchaseIntention" resultType="java.util.Map">
+        SELECT project_name, tenderer, bidding_budget, time_bid_open, time_bid_close, publish_time
+        FROM chatbi.bid_biz_purchase_intention
+        <where>
+            deleted = 0
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+            <if test="p.city != null and p.city != ''">AND city = #{p.city}</if>
+            <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
+            <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
+            <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
+            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
+            <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
+            <if test="p.keyword != null and p.keyword != ''">
+                AND (title LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+            </if>
+            <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
+            <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
+            <if test="p.minBudget != null">AND bidding_budget >= #{p.minBudget}</if>
+            <if test="p.maxBudget != null">AND bidding_budget &lt;= #{p.maxBudget}</if>
+        </where>
+        ORDER BY bidding_budget DESC, publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4. prepose —— 前期项目（chatbi.bid_biz_prepose）                  -->
+    <!--    无金额列，排序: publish_time DESC                              -->
+    <!-- ============================================================ -->
+    <select id="queryPrepose" resultType="java.util.Map">
+        SELECT project_name, tenderer, time_bid_open, time_bid_close, publish_time
+        FROM chatbi.bid_biz_prepose
+        <where>
+            deleted = 0
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+            <if test="p.city != null and p.city != ''">AND city = #{p.city}</if>
+            <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
+            <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
+            <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
+            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
+            <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
+            <if test="p.keyword != null and p.keyword != ''">
+                AND (title LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+            </if>
+            <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
+            <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
+        </where>
+        ORDER BY publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 5. origin_announcement —— 原始每日标讯（chatbi.bid_origin_announcement） -->
+    <!--    金额列: win_bid_amount                                        -->
+    <!--    今日/昨日查这个                                                -->
+    <!-- ============================================================ -->
+    <select id="queryOriginAnnouncement" resultType="java.util.Map">
+        SELECT title, province, win_tenderer, win_bid_amount, publish_time
+        FROM chatbi.bid_origin_announcement
+        <where>
+            deleted = 0
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+            <if test="p.city != null and p.city != ''">AND city = #{p.city}</if>
+            <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
+            <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
+            <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
+            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
+            <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
+            <!-- origin_announcement 也有 win_tenderer 字段 -->
+            <if test="p.winTenderer != null and p.winTenderer != ''">AND win_tenderer LIKE CONCAT('%', #{p.winTenderer}, '%')</if>
+            <if test="p.keyword != null and p.keyword != ''">
+                AND (title LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+            </if>
+            <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
+            <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
+            <!-- 金额列: win_bid_amount -->
+            <if test="p.minBudget != null">AND win_bid_amount >= #{p.minBudget}</if>
+            <if test="p.maxBudget != null">AND win_bid_amount &lt;= #{p.maxBudget}</if>
+        </where>
+        ORDER BY win_bid_amount DESC, publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>
