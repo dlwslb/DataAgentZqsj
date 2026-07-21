@@ -17,10 +17,13 @@ package com.jldaren.agent.ai.datascope2.config;
 
 import com.alibaba.druid.pool.DruidDataSource;
 import lombok.extern.slf4j.Slf4j;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
@@ -44,6 +47,10 @@ import javax.sql.DataSource;
  */
 @Slf4j
 @Configuration
+// ⭐ MyBatis Mapper 扫描:只扫 com.jldaren.agent.ai.datascope2.mapper 包下的接口
+//   sqlSessionFactoryRef 指向下面定义的 businessSqlSessionFactory
+@MapperScan(basePackages = "com.jldaren.agent.ai.datascope2.mapper",
+        sqlSessionFactoryRef = "businessSqlSessionFactory")
 public class BusinessDataSourceConfig {
 
     @Value("${agentscope.datasource.business.url:}")
@@ -138,9 +145,35 @@ public class BusinessDataSourceConfig {
     @Bean(name = "businessJdbcTemplate")
     public JdbcTemplate businessJdbcTemplate(@Qualifier("businessDataSource") DataSource dataSource) {
         if (dataSource == null) {
-            log.warn("⚠️ 业务数据源未配置，businessJdbcTemplate 创建为 null");
+            log.warn("⚠️ 业务数据源未配置,businessJdbcTemplate 创建为 null");
             return null;
         }
         return new JdbcTemplate(dataSource);
+    }
+
+    /**
+     * 业务库 SqlSessionFactory(给 MyBatis Mapper XML 用)
+     * <p>跟业务 JdbcTemplate 复用同一个 Druid 数据源,但走 MyBatis 走 XML 动态 SQL
+     * <p>注意:WebFlux 响应式环境下,Mapper 调用必须包 Mono.fromCallable(...).subscribeOn(boundedElastic) 避免阻塞 reactor 线程
+     */
+    @Bean(name = "businessSqlSessionFactory")
+    public SqlSessionFactoryBean businessSqlSessionFactory(@Qualifier("businessDataSource") DataSource dataSource) throws Exception {
+        if (dataSource == null) {
+            log.warn("⚠️ 业务数据源未配置,SqlSessionFactory 无法创建");
+            return null;
+        }
+        SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
+        factory.setDataSource(dataSource);
+        // ⭐ Mapper XML 位置:classpath:mapper/**/*.xml
+        //   ⚠️ 不要配 mybatis-plus 的 VFS,这里就是纯 MyBatis(没有 plus),保持最简
+        factory.setMapperLocations(
+                new PathMatchingResourcePatternResolver()
+                        .getResources("classpath:mapper/**/*.xml"));
+        // 下划线转驼峰:win_tenderer → winTenderer(数据库字段是 snake_case,Java 字段是 camelCase)
+        org.apache.ibatis.session.Configuration config = new org.apache.ibatis.session.Configuration();
+        config.setMapUnderscoreToCamelCase(true);
+        factory.setConfiguration(config);
+        log.info("✅ 业务库 SqlSessionFactory 初始化完成,mapper 位置: classpath:mapper/**/*.xml");
+        return factory;
     }
 }
