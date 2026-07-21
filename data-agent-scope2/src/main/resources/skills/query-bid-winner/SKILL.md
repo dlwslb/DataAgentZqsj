@@ -25,7 +25,7 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
 ```json
 {
   "bizType": "bid_winner",
-  "tenantId": "<从 RuntimeContext 拿，必填>",
+  "province": "<从 System Context 拿，必填，单值如北京/上海，多值如北京,上海>",
   "datePreset": "<快捷日期预设，可选，优先于 startDate/endDate>",
   "conditions": {
     "province": "<省份，如 '贵州省'>",
@@ -64,7 +64,7 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
 
 ## 必传参数
 - `bizType` = "bid_winner"（固定）
-- `tenantId` = **必填**，从 RuntimeContext.userId/sessionId/tenantId 上下文提取（框架会自动传入）
+- `province` = **必填**，用户授权省份（System Context 里的 authorizedProvince）
 
 ## 关键字段说明（bid_biz_win_bid 表）
 

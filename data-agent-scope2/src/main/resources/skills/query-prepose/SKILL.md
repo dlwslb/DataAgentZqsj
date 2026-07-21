@@ -24,7 +24,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 ```json
 {
   "bizType": "prepose",
-  "tenantId": "<从 RuntimeContext 拿，必填>",
+  "province": "<从 System Context 拿，必填，单值如北京/上海，多值如北京,上海>",
   "datePreset": "<快捷日期预设，可选，优先于 startDate/endDate>",
   "conditions": {
     "province": "<省份>",
@@ -62,7 +62,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 
 ## 必传参数
 - `bizType` = "prepose"（固定）
-- `tenantId` = **必填**
+- `province` = **必填**，用户授权省份（System Context 里的 authorizedProvince）
 
 ## 关键字段说明（bid_biz_prepose 表）
 

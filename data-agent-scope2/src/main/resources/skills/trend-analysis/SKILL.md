@@ -37,7 +37,7 @@ description: 当用户要做趋势分析、对比分析、统计聚合、年度/
 ```json
 {
   "bizType": "bid_winner | bidding | purchase_intention | prepose",
-  "tenantId": "<必填>",
+  "province": "<必填，参考 authorizedProvince>",
   "conditions": {
     "province": "<可选>",
     "city": "<可选>",
@@ -127,4 +127,4 @@ funnel = {
 - 时间字段必须用 `publishTime`，传 `yyyy-MM-dd` 字符串
 - **金额单位差异**：`bid_biz_win_bid` 和 `bid_biz_bidding` 用**元**，`bid_biz_purchase_intention` 和 `bid_biz_prepose` 用**万元**——对比时记得单位换算！
 - **bizType 决定金额字段**：win_bid → winBidPrice，其他 → biddingBudget
-- **每次调用都要传 tenantId**
+- **每次调用都要传 province**（用户授权范围内）
