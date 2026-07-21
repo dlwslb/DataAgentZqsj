@@ -13,6 +13,7 @@
   <modules>
     <module>data-agent-management</module>
     <module>data-agent-scope</module>
+    <module>data-agent-scope2</module>
   </modules>
   <scm>
     <connection>git://github.com/spring-ai-alibaba/DataAgent.git</connection>
