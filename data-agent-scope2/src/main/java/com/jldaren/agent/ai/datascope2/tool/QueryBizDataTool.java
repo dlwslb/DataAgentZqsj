@@ -17,6 +17,7 @@ package com.jldaren.agent.ai.datascope2.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.jldaren.agent.ai.datascope2.auth.AuthContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import lombok.extern.slf4j.Slf4j;
@@ -61,28 +62,53 @@ public class QueryBizDataTool {
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     /**
-     * bizType → 表名 映射
-     *
-     * <p>业务表在 chatbi 库，用跨库查询（businessDataSource 连 tender_data_agent，
-     * 但 MySQL 跨库查询 chatbi.{table} 需要当前用户对两个库都有权限）。
+     * 表定义：表名 + LLM 需要的字段 + 金额排序列（null/空时 fallback 到 publish_time DESC）
+     * <p>orderBy 字段名用 snake_case（MySQL 实际列名）
      */
-    private static final Map<String, String> BIZ_TYPE_TO_TABLE = Map.of(
-            "bid_winner", "chatbi.bid_biz_win_bid",
-            "bidding", "chatbi.bid_biz_bidding",
-            "purchase_intention", "chatbi.bid_biz_purchase_intention",
-            "prepose", "chatbi.bid_biz_prepose",
-            "origin_announcement", "chatbi.bid_origin_announcement"
+    private record TableDef(String tableName, String columns, String orderBy) {}
+
+    /**
+     * bizType → 表定义（表名 + 查询字段 + 金额排序列）
+     * <p>orderBy 说明：
+     * <ul>
+     *   <li>有金额字段的表：按该表"金额列"降序（NULL 自动排最后）</li>
+     *   <li>prepose（前期项目）无金额列：orderBy=null → fallback 到 publish_time DESC</li>
+     *   <li>origin_announcement 同时有 budget_amount（招标预算）和 win_bid_amount（中标金额），
+     *       选 win_bid_amount —— 中标金额是真实成交金额，更"实"；预算可能为 0 或未公布</li>
+     * </ul>
+     */
+    private static final Map<String, TableDef> BIZ_TABLES = Map.of(
+            "bid_winner", new TableDef(
+                    "chatbi.bid_biz_win_bid",
+                    "project_name, win_tenderer, win_bid_price",
+                    "win_bid_price"
+            ),
+            "bidding", new TableDef(
+                    "chatbi.bid_biz_bidding",
+                    "project_name, tenderer, bidding_budget",
+                    "bidding_budget"
+            ),
+            "purchase_intention", new TableDef(
+                    "chatbi.bid_biz_purchase_intention",
+                    "project_name, tenderer, bidding_budget,time_bid_open,time_bid_close",
+                    "bidding_budget"
+            ),
+            "prepose", new TableDef(
+                    "chatbi.bid_biz_prepose",
+                    "project_name, tenderer, time_bid_open, time_bid_close",
+                    "publish_time"
+            ),
+            "origin_announcement", new TableDef(
+                    "chatbi.bid_origin_announcement",
+                    "title, province, win_tenderer, win_bid_amount",
+                    "win_bid_amount"
+            )
     );
 
     /**
      * 哪些表有"中标单位"字段
      */
     private static final Set<String> HAS_WINNER = Set.of("chatbi.bid_biz_win_bid", "chatbi.bid_origin_announcement");
-
-    /**
-     * 哪些表没有多租户字段 tenant_id（不需加 WHERE tenant_id 条件）
-     */
-    private static final Set<String> NO_TENANT_TABLE = Set.of("chatbi.bid_origin_announcement");
 
     @Autowired(required = false)
     public QueryBizDataTool(@Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate) {
@@ -92,8 +118,14 @@ public class QueryBizDataTool {
     @Tool(name = "query_biz_data",
           description = "直接查询业务数据表（不走 NL2SQL，速度快）。" +
                   "bizType 支持: bid_winner(中标信息) / bidding(招标信息) / purchase_intention(采购意向) / prepose(前期项目) / origin_announcement(原始每日标讯，今日/昨日查这个)。" +
-                  "对应物理表: chatbi.bid_biz_win_bid / chatbi.bid_biz_bidding / chatbi.bid_biz_purchase_intention / chatbi.bid_biz_prepose / chatbi.bid_origin_announcement。" +
-                  "tenantId 由框架自动注入（从 session 取），调用时**不要传**。" +
+                  "对应业务类型: 中标信息 / 招标信息 / 采购意向 / 前期项目 / 原始每日标讯（今日/昨日查这个）。" +
+                  "⛔ 【硬性省份权限】province 必传，且必须是用户 authorizedProvince 范围内的省份（系统 prompt 会告诉你授权范围）。" +
+                  "   - authorizedProvince='全国' → province 可不传，自动查全量" +
+                  "   - authorizedProvince='北京'（单值）→ province='北京'" +
+                  "   - authorizedProvince='北京,上海'（多值）→ province='北京' 或 province='上海'（单个传）" +
+                  "   - **禁止传 '全国'**（除非 authorizedProvince 本身就是 '全国'）—— 用户输入'全国'也是误传" +
+                  "   - 用户问的省份不在授权范围 → 工具会报错，把工具返回的报错信息直接告诉用户即可" +
+                  "   - 用户没问省份 → province 传 authorizedProvince 整体（多值用逗号分隔整体传）" +
                   "datePreset 快捷日期（与 startDate/endDate 互斥，datePreset 优先）: " +
                   "today(今天) / yesterday(昨天) / thisWeek(本周一-今天) / lastWeek(上周一-上周日) / " +
                   "thisMonth(本月1号-今天) / lastMonth(上月) / last7Days(最近7天) / last30Days(最近30天)。" +
@@ -108,23 +140,47 @@ public class QueryBizDataTool {
                   "endDate(截止日期 yyyy-MM-dd, publishTime <= endDate) / " +
                   "minBudget(最小预算, biddingBudget/winBidPrice) / " +
                   "maxBudget(最大预算, biddingBudget/winBidPrice)。" +
-                  "limit 默认 20，最大 100，按 publishTime 降序。" +
-                  "注意：金额单位 bidding/bid_winner 用元，purchase_intention/prepose 用万元。" +
+                  "limit 默认 20，最大 100，按金额列降序（具体列由表决定：win_bid_price / bidding_budget / win_bid_amount），" +
+                  "金额相同时按 publishTime 降序。prepose（前期项目）无金额列，按 publishTime 降序。" +
+                  "注意：金额单位用万元。" +
                   "deleted=0 逻辑删除过滤自动加，不用传。",
           readOnly = true,
           concurrencySafe = true)
     public Mono<String> queryBizData(
             @ToolParam(name = "bizType", description = "业务类型: bid_winner / bidding / purchase_intention / prepose / origin_announcement（原始每日标讯）", required = true) String bizType,
-            @ToolParam(name = "tenantId", description = "租户 ID（多租户隔离）。bizType=origin_announcement 时不要传此字段", required = false) Long tenantId,
+            @ToolParam(name = "province", description = "省份。单值如'北京'，多值用逗号分隔如'北京,上海'。必须在用户 authorizedProvince 范围内（'全国' 时可不传）", required = false) String province,
             @ToolParam(name = "datePreset", description = "快捷日期预设: today/yesterday/thisWeek/lastWeek/thisMonth/lastMonth/last7Days/last30Days（与 startDate/endDate 互斥，datePreset 优先）") String datePreset,
             @ToolParam(name = "conditions", description = "查询条件 Map<String,Object>") Map<String, Object> conditions,
             @ToolParam(name = "limit", description = "返回条数限制，默认 20，最大 100") Integer limit) {
 
-        log.info("🔍 [query_biz_data] bizType={}, tenantId={}, datePreset={}, conditions={}, limit={}",
-                bizType, tenantId, datePreset, conditions, limit);
+        log.info("🔍 [query_biz_data] bizType={}, province={}, datePreset={}, conditions={}, limit={}",
+                bizType, province, datePreset, conditions, limit);
 
-        // 同步 JdbcTemplate 必须在 boundedElastic 线程池跑（不能在 Netty event loop 阻塞）
-        return Mono.fromCallable(() -> {
+        // ⭐ 关键：从 Reactor Context 拿 AuthInfo（跨线程传递）→ 注入 ThreadLocal（同一线程 set/clear）
+        //   Reactor Context 跨线程传递，ThreadLocal 仅在本 call 链的 boundedElastic 线程有效
+        //   authorizedProvince 从 AuthInfo.province() 拿，**不需要 LLM 传**
+        return Mono.deferContextual(view -> {
+            Object authObj = view.getOrEmpty("authInfo").orElse(null);
+            return Mono.fromCallable(() -> {
+                // set 和 clear 都在 boundedElastic 线程上，确保 ThreadLocal 匹配
+                if (authObj instanceof AuthContext.AuthInfo a) {
+                    AuthContext.set(a);
+                }
+                try {
+                    return doQueryBizData(bizType, province, datePreset, conditions, limit);
+                } finally {
+                    AuthContext.clear();
+                }
+            }).subscribeOn(Schedulers.boundedElastic());
+        });
+    }
+
+    /**
+     * 实际业务逻辑（拆出方法方便 try-finally 包裹 ThreadLocal）
+     * <p>authorizedProvince 从 AuthContext.get().province() 拿（不是参数）
+     */
+    private String doQueryBizData(String bizType, String province,
+                                  String datePreset, Map<String, Object> conditions, Integer limit) {
         if (businessJdbcTemplate == null) {
             return errorJson("业务数据源未配置（agentscope.datasource.business.url 为空），" +
                     "请在 application.yml 配置 BUSINESS_DB_URL / USERNAME / PASSWORD");
@@ -132,17 +188,37 @@ public class QueryBizDataTool {
         if (bizType == null || bizType.isBlank()) {
             return errorJson("bizType 不能为空，支持: bid_winner / bidding / purchase_intention / prepose / origin_announcement");
         }
-        if ((tenantId == null || tenantId == 0) && !NO_TENANT_TABLE.contains(BIZ_TYPE_TO_TABLE.get(bizType.toLowerCase()))) {
-            return errorJson("tenantId 必填（多租户隔离），origin_announcement 除外");
-        }
-        // origin_announcement 传 0 时也用 null（让 SQL 跳过 tenant_id 条件）
-        if (tenantId != null && tenantId == 0L
-                && NO_TENANT_TABLE.contains(BIZ_TYPE_TO_TABLE.get(bizType.toLowerCase()))) {
-            log.info("🔧 [origin_announcement] tenantId=0 → 视为 null（无租户过滤）");
+        // ⭐ 硬性省份权限校验：authorizedProvince 从 AuthContext.get().province() 拿（Reactor Context 跨线程传过来）
+        //    ⛔ 不允许默认 "全国"（用户没传或为空 → 直接拒）
+        AuthContext.AuthInfo auth = AuthContext.get();
+        String authorizedProvince = (auth != null && auth.province() != null) ? auth.province() : "";
+        // ⭐ 多值归一化：拆开逐个去后缀（"黑龙江省,吉林省" → "黑龙江,吉林"）
+        //   单值场景也安全（"全国" → "全国"，"北京市" → "北京"）
+        authorizedProvince = ProvinceUtil.normalizeList(authorizedProvince);
+        // ⭐ 授权归一化后为空 → 直接拒
+        if (authorizedProvince.isBlank()) {
+            log.warn("⛔ [query_biz_data] 用户无任何省份授权: userId={}, AuthContext={}",
+                    auth != null ? auth.userId() : "null", auth);
+            return errorJson("您还没开通此省份的数据查询权限,需要联系达仁科技开通一下哦");
         }
 
-        String tableName = BIZ_TYPE_TO_TABLE.get(bizType.toLowerCase());
-        if (tableName == null) {
+        // validateProvince 返回：
+        //   - null：校验失败（用户问的省份不在授权范围）
+        //   - ""：授权是"全国"，不传 province 即可（全量查询）
+        //   - "北京" / "北京,上海"：校验通过，原样返回
+        String validatedProvince = validateProvince(province, authorizedProvince);
+        if (validatedProvince == null) {
+            // 授权非空，但用户问的省份不在范围内 → 拒
+            return errorJson("⛔ 您查询的\"" + (province == null ? "(空)" : province) + "\"不在您开通省份范围(" + authorizedProvince + ")内,请联系客户经理进行开通");
+        }
+        if (validatedProvince.isEmpty()) {
+            log.info("🔧 [query_biz_data] authorizedProvince='全国' → 不加 province 过滤（全量）");
+        } else {
+            log.info("🔧 [query_biz_data] province 校验通过: 输入='{}' → SQL 用='{}'", province, validatedProvince);
+        }
+
+        TableDef table = BIZ_TABLES.get(bizType.toLowerCase());
+        if (table == null) {
             return errorJson("不支持的 bizType: " + bizType);
         }
 
@@ -166,14 +242,14 @@ public class QueryBizDataTool {
             String bizTypeLower = bizType == null ? "" : bizType.toLowerCase();
             if (("today".equalsIgnoreCase(datePreset) || "yesterday".equalsIgnoreCase(datePreset))
                     && !bizTypeLower.contains("origin")) {
-                return errorJson("🚫 datePreset=" + datePreset + " 必须用 bizType=origin_announcement（原始每日标讯表 chatbi.bid_origin_announcement），" +
+                return errorJson("🚫 datePreset=" + datePreset + " 必须用 bizType=origin_announcement（原始每日标讯），" +
                         "不要用 " + bizType + "。请重新调用：bizType=\"origin_announcement\"，datePreset=\"" + datePreset + "\"，" +
-                        "channel 可选（招标/中标/采购/前置商机），tenantId 不传");
+                        "province=您授权范围内的省份");
             }
         }
 
-        // 构建 SQL：SELECT * FROM {table} WHERE tenant_id = ? AND deleted = 0 [AND ...] ORDER BY publish_time DESC LIMIT ?
-        SqlWithParams sqlWithParams = buildSelectSql(tableName, tenantId, cond, realLimit);
+        // 构建 SQL：SELECT * FROM {table} WHERE [province 过滤] AND deleted = 0 [AND ...] ORDER BY publish_time DESC LIMIT ?
+        SqlWithParams sqlWithParams = buildSelectSql(table, validatedProvince, cond, realLimit);
 
         try {
             log.debug("📊 [query_biz_data] SQL: {} | params: {}", sqlWithParams.sql, sqlWithParams.params);
@@ -189,8 +265,7 @@ public class QueryBizDataTool {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("success", true);
             response.put("bizType", bizType);
-            response.put("table", tableName);
-            response.put("tenantId", tenantId);
+            response.put("province", validatedProvince);
             response.put("total", resultSet.size());
             response.put("conditions", cond);
             response.put("resultSet", resultSet);
@@ -199,14 +274,13 @@ public class QueryBizDataTool {
                     ? "查询成功，暂无匹配数据（不是错误，不要再调用其他表）"
                     : "查询成功，返回 " + resultSet.size() + " 条数据");
 
-            log.info("✅ [query_biz_data] 返回 {} 条数据, table={}", resultSet.size(), tableName);
+            log.info("✅ [query_biz_data] 返回 {} 条数据, table={}", resultSet.size(), table.tableName);
             return toJson(response);
 
         } catch (Exception e) {
             log.error("❌ [query_biz_data] 查询失败, bizType={}, error={}", bizType, e.getMessage(), e);
             return errorJson("查询失败: " + e.getMessage());
         }
-        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
@@ -225,33 +299,64 @@ public class QueryBizDataTool {
         // 日期归一（snake_case → camelCase）
         if (row.containsKey("publish_time")) {
             normalized.put("publishTime", row.get("publish_time"));
+            normalized.remove("publish_time");  // ← 删掉原始的
         }
         return normalized;
     }
 
     /**
      * 动态拼 SQL（参数化，防注入）
-     * <p>注意：多租户隔离 + 逻辑删除 是硬编码 WHERE，必须有
+     * <p>省份权限过滤（硬性）：province 必传
+     * <ul>
+     *   <li>单值（如 "北京"）→ province = ?</li>
+     *   <li>多值（如 "北京,上海"）→ province = ? OR province = ? OR ...</li>
+     *   <li>"全国" 或 空 → 不加省份过滤</li>
+     * </ul>
+     * <p>逻辑删除过滤 deleted = 0 是硬编码 WHERE，必须有
      */
-    private SqlWithParams buildSelectSql(String tableName, Long tenantId, Map<String, Object> conditions, int limit) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM ").append(tableName);
+    private SqlWithParams buildSelectSql(TableDef table, String validatedProvince, Map<String, Object> conditions, int limit) {
+        StringBuilder sql = new StringBuilder("SELECT ")
+                .append(table.columns())
+                .append(" FROM ")
+                .append(table.tableName());
         List<Object> params = new ArrayList<>();
         List<String> where = new ArrayList<>();
 
-        // 多租户隔离（硬性），origin_announcement 表无此字段
-        if (!NO_TENANT_TABLE.contains(tableName)) {
-            where.add("tenant_id = ?");
-            params.add(tenantId);
+        // ⭐ 省份权限过滤（硬性）
+        if (validatedProvince != null && !validatedProvince.isBlank() && !"全国".equals(validatedProvince.trim())) {
+            // 按逗号分隔成多个值
+            String[] provinces = validatedProvince.split(",");
+            // trim + 去空 + 归一化（"黑龙江省"→"黑龙江"，防止 buildSelectSql 拼出"黑龙江省"查不到）
+            List<String> validProvinces = new java.util.ArrayList<>();
+            for (String p : provinces) {
+                String t = ProvinceUtil.normalize(p);
+                if (!t.isEmpty()) validProvinces.add(t);
+            }
+            if (validProvinces.size() == 1) {
+                // 单值：精确匹配
+                where.add("province = ?");
+                params.add(validProvinces.get(0));
+            } else if (validProvinces.size() > 1) {
+                // 多值：OR 链（比 LIKE 更精准）
+                StringBuilder orChain = new StringBuilder("(");
+                for (int i = 0; i < validProvinces.size(); i++) {
+                    if (i > 0) orChain.append(" OR ");
+                    orChain.append("province = ?");
+                    params.add(validProvinces.get(i));
+                }
+                orChain.append(")");
+                where.add(orChain.toString());
+            }
             // 逻辑删除过滤（MyBatis Plus 通用约定）
+            where.add("deleted = 0");
+        }
+        // validatedProvince 是 "全国" 或空 → 不加省份过滤，只加 deleted = 0
+        if (!where.stream().anyMatch(w -> w.contains("deleted = 0"))) {
             where.add("deleted = 0");
         }
 
         // ========== 通用字段（4 表都有） ==========
-
-        if (conditions.containsKey("province") && conditions.get("province") != null) {
-            where.add("province = ?");
-            params.add(conditions.get("province").toString());
-        }
+        // province 已经作为参数处理过了，不再从 conditions 读
         if (conditions.containsKey("city") && conditions.get("city") != null) {
             where.add("city = ?");
             params.add(conditions.get("city").toString());
@@ -285,7 +390,7 @@ public class QueryBizDataTool {
         }
 
         // ========== win_bid 表独有 ==========
-        if (HAS_WINNER.contains(tableName) && conditions.containsKey("winTenderer")
+        if (HAS_WINNER.contains(table.tableName) && conditions.containsKey("winTenderer")
                 && conditions.get("winTenderer") != null) {
             // 中标单位模糊匹配
             where.add("win_tenderer LIKE ?");
@@ -314,19 +419,25 @@ public class QueryBizDataTool {
         // ========== 金额范围 ==========
         if (conditions.containsKey("minBudget") && conditions.get("minBudget") != null) {
             // win_bid 用 win_bid_price，其他用 bidding_budget
-            String amountCol = HAS_WINNER.contains(tableName) ? "win_bid_price" : "bidding_budget";
+            String amountCol = HAS_WINNER.contains(table.tableName) ? "win_bid_price" : "bidding_budget";
             where.add(amountCol + " >= ?");
             params.add(toBigDecimal(conditions.get("minBudget")));
         }
         if (conditions.containsKey("maxBudget") && conditions.get("maxBudget") != null) {
-            String amountCol = HAS_WINNER.contains(tableName) ? "win_bid_price" : "bidding_budget";
+            String amountCol = HAS_WINNER.contains(table.tableName) ? "win_bid_price" : "bidding_budget";
             where.add(amountCol + " <= ?");
             params.add(toBigDecimal(conditions.get("maxBudget")));
         }
 
         sql.append(" WHERE ").append(String.join(" AND ", where));
         // 排序字段：snake_case（MySQL 字段）
-        sql.append(" ORDER BY publish_time DESC LIMIT ?");
+        //   - 优先用 table.orderBy() 配置的金额列（每张表自己的金额字段）
+        //   - orderBy 为 null/空（如 prepose 无金额列）→ fallback 到 publish_time DESC
+        //   - 同一金额下用 publish_time DESC 作 tie-breaker，让结果更稳定
+        String orderCol = (table.orderBy() != null && !table.orderBy().isBlank())
+                ? table.orderBy()
+                : "publish_time";
+        sql.append(" ORDER BY ").append(orderCol).append(" DESC, publish_time DESC LIMIT ?");
         params.add(limit);
 
         return new SqlWithParams(sql.toString(), params);
@@ -386,6 +497,70 @@ public class QueryBizDataTool {
             default -> null;
         };
     }
+
+    /**
+     * 校验 province 是否在用户授权范围内
+     *
+     * <p>逻辑：授权 set + 用户输入 set，做子集校验
+     * <ul>
+     *   <li>授权"全国" → 不加 province 过滤，全量查（合法授权）</li>
+     *   <li>授权为空 → 拒绝查询（用户没被授权，非法状态）</li>
+     *   <li>用户没传 → 默认用授权范围整体（体验优化）</li>
+     *   <li>用户传"全国" → 跟传"黑龙江"一样严格拒绝（除非授权本身就是"全国"）</li>
+     *   <li>用户传的每个省份（逗号分隔）必须都在授权 set 里，否则拒绝</li>
+     * </ul>
+     *
+     * @return null = 校验失败（拒绝查询）
+     *         ""   = 不加 province 过滤（全量，仅授权是"全国"时）
+     *         "北京" / "北京,上海" = 校验通过
+     */
+    private String validateProvince(String userInputProvince, String authorizedProvince) {
+        String auth = authorizedProvince == null ? "" : authorizedProvince.trim();
+
+        // ⭐ 拆授权范围前先归一化：去 "省/市/自治区/特别行政区" 后缀
+        //    "黑龙江省" → "黑龙江"  |  "北京市" → "北京"  |  "内蒙古自治区" → "内蒙古"
+        Set<String> authSet = new HashSet<>();
+        for (String p : auth.split(",")) {
+            String normalized = ProvinceUtil.normalize(p);
+            if (!normalized.isEmpty()) authSet.add(normalized);
+        }
+
+        // ⭐ 授权为空（JWT 没传 province 字段 / 解析失败）→ 直接拒绝（无授权不允许查）
+        if (authSet.isEmpty()) {
+            return null;
+        }
+
+        // 授权是"全国" → 不加 province 过滤（全量）
+        if (authSet.contains("全国")) {
+            return "";
+        }
+
+        // 用户没传 province → 默认用授权范围整体（归一化后用逗号拼接）
+        if (userInputProvince == null || userInputProvince.isBlank()) {
+            return String.join(",", authSet);
+        }
+
+        // ⭐ 统一逻辑：用户传的每个省份（归一化后）都必须在 authSet 里
+        //    "全国" / "黑龙江" / "黑龙江省" → 走同一个分支——除非授权是"全国"，否则都拒
+        String[] inputs = userInputProvince.split(",");
+        for (String p : inputs) {
+            String t = ProvinceUtil.normalize(p);
+            if (t.isEmpty()) continue;
+            if (!authSet.contains(t)) {
+                return null;  // 失败：用户问的省份（"全国"/"黑龙江"/"黑龙江省"都一样）不在授权范围
+            }
+        }
+
+        // 校验通过：用户输入归一化后拼接返回（让 buildSelectSql 拿到 "黑龙江,上海" 而不是 "黑龙江省,上海市"）
+        List<String> normalizedInputs = new java.util.ArrayList<>();
+        for (String p : inputs) {
+            String t = ProvinceUtil.normalize(p);
+            if (!t.isEmpty()) normalizedInputs.add(t);
+        }
+        return String.join(",", normalizedInputs);
+    }
+
+
 
     private String errorJson(String msg) {
         try {

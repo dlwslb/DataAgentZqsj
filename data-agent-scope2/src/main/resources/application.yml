@@ -63,6 +63,10 @@ agentscope:
   state-store:
     type: ${STATE_STORE_TYPE:file}  # file | redis
     base-path: ${user.home}/.agentscope/state/data-agent-scope2
+    isolation:
+      by-user: true        # ← 是否有这个开关？
+      by-agent: true
+      by-tenant: true
     key-prefix: "dataagent-scope2:session:"
   # 业务数据源（Druid 直连 - 2.0 绕开 1.0 的 NL2SQL 慢链路）
   # 默认连 1.0 的 tender_data_agent 库（4 张业务表 bid_biz_* 应该在这里）

@@ -19,12 +19,15 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import org.springframework.beans.factory.annotation.Qualifier;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.skill.repository.mysql.MysqlSkillRepository;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+// import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;  // 暂未用,先注释
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +36,7 @@ import org.springframework.context.annotation.Configuration;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.Arrays;
 
 /**
@@ -85,6 +89,17 @@ public class HarnessAgentConfig {
 
     @Value("${agentscope.skill.enable-self-learning:false}")
     private boolean enableSelfLearning;
+
+    /**
+     * ⭐ LLM 思考 token 上限（enableThinking=true 时生效）
+     * <p>百炼官方文档：
+     *   - 不设：默认 32768（默认会让 LLM 想很久，20-60s）
+     *   - 设小（如 1024）：限制思考 token，强制 LLM 快速决定（推荐 2048-4096）
+     *   - 0：禁用 thinking（等于 enableThinking=false）
+     * <p>实测 20s 慢是因为没限制思考 budget，LLM 一直在"想"才发 tool_call
+     */
+    @Value("${agentscope.model.thinking-budget:2048}")
+    private int thinkingBudget;
 
     /**
      * Workspace 路径（每个 agentName 一份）
@@ -150,7 +165,7 @@ public class HarnessAgentConfig {
      *     .build();
      * </pre>
      */
-    @Bean
+    @Bean("dataAgent")
     public HarnessAgent dataAgentHarnessAgent(Toolkit toolkit,
                                               AgentSkillRepository skillRepository,
                                               AgentStateStore agentStateStore,
@@ -158,49 +173,63 @@ public class HarnessAgentConfig {
         log.info("🚀 初始化 HarnessAgent: model={}, workspace={}", defaultModel, workspacePath);
 
         HarnessAgent.Builder builder = HarnessAgent.builder()
-                .name("data-agent")
+                .name("zqsj-data-agent")
                 .sysPrompt("""
-                        你是一个企业级数据查询助手，专注于帮业务人员从数据库里查数据、出报表、做趋势分析。
-
-                        ## 当前用户上下文（每次请求自动注入）
-                        - userId / tenantId：会作为系统提示附在用户消息末尾
-                        - **tenantId 由框架自动注入到 query_biz_data 等业务 Tool**，**你调用时不要传 tenantId 字段**
-
-                        ## 工作原则
-                        1. **看清问题再动手**：用户的问题可能模糊，先看 <available_skills> 里有没有匹配的 skill；
-                           有就加载 skill 详情（load_skill_through_path），按 skill 的步骤走。
-                        2. **拆解 + 工具**：复杂任务拆成子步骤，每步用对应工具。
-                        3. **结果结构化**：用 Markdown 表格 / 列表 / 数字呈现，不要纯叙述。
-                        4. **数据诚实**：查不到就说查不到，不编数据。
-                        5. **必要时澄清**：表名/字段名不确定时反问用户，别瞎猜。
-                        6. **🔑 严格按 skill 路由**：选定的 skill 查到了什么就汇报什么。
-                           - 用了 query-daily-announcement（今日/昨日），返回 0 条就告诉用户"暂无数据"，**不要自动跳到 query-bid-winner 等老 skill 重查**
-                           - 工具返回的 message 字段是权威信息："查询成功"就是成功，不要自己脑补"参数验证失败"
-
-                        ## 工具说明
-                        - **tenantId 由框架自动注入**（从 [System Context] 取），你**不要在调用参数里传 tenantId**。
-                        - query_biz_data: 查业务表。
-                          - bizType 取值：bid_winner(中标) / bidding(招标) / purchase_intention(采购意向) / prepose(前期项目) / origin_announcement(原始每日标讯)。
-                          - 用户问"今日/昨日"标讯时，**bizType 必须用 origin_announcement**，datePreset=today 或 yesterday，channel 可选（招标/中标/采购/前置商机）。
-                        - run_python: 跑 Python 做统计、画图、算趋势
-                        - format_report: 把数据格式化成 Markdown 报告
-                        """)
+                            你是企业级数据查询助手。用户问什么，你查什么，结果用 Markdown 表格呈现。
+                                                
+                            ## 工具调用规则
+                            - query_biz_data：查业务表
+                            - bizType：bid_winner(中标) / bidding(招标) / purchase_intention(采购意向) / prepose(前期项目) / origin_announcement(今日/昨日标讯)
+                            - 用户问"今日/昨日" → bizType 必须用 origin_announcement，datePreset=today/yesterday
+                            - province：从用户消息 [Context] 里的 authorizedProvince 取值，用户原文直接传（工具自动归一化）
+                            - 用户没指定省份 → authorizedProvince 整体传
+                            - authorizedProvince = "未配置" → 不调工具，回复"请联系达仁科技开通"
+                            - 用户输入的任何写法都直接传给工具，工具负责校验，你不管格式
+                                                
+                            ## 输出格式
+                            - 查询结果用 Markdown 呈现：先给一个 # 标题（如"# XX省今日中标报告（日期）"），再给表格
+                            - 表格后可加 1-3 条要点分析（最高金额、行业分布等），不要长篇大论
+                            - 工具返回 error → 只转发 error 原文，不加"根据XX规则/系统拒绝"之类的话
+                            - 查不到 → "暂无数据"，不换表重查
+                            - 不用反引号，不说"抱歉"，不说"根据XX规则"
+                                                
+                            ## Skill 路由
+                            - 先看 <available_skills> 有没有匹配的 skill
+                            - 有就 load_skill_through_path，按 skill 步骤走
+                            - 选定 skill 后不跳转其他 skill
+                            """)
                 // 模型（直接传 Model 实例，强制 enableThinking=true）
                 // ⭐ 必须用 Model 实例，不能用字符串 + modelResolver —— 字符串路径走 ModelRegistry，
                 //    不会把 model 字段赋值（导致 ReActAgent 内部 model=null 的 NPE）
                 // ⭐ enableThinking=true 让 DashScope 把 LLM chain-of-thought 推到 reasoning_content 字段，
                 //    框架 emit 成 ThinkingBlockDeltaEvent，前端 filter 直接吞掉，不再混进 TEXT_BLOCK_DELTA
                 .model(buildDashScopeModel(defaultModel))
-                // Workspace（自动管理 AGENTS.md / skills/ / plans/ / sessions/）
+                // Workspace（自动管理 AGENTS.md / skills/ / plans/ / sessions/） 这合并时间4分+关闭先不用记忆，需要在新建个开启的
                 .workspace(workspacePath)
+                .disableMemoryHooks()
                 // Skill 仓库（自动合并 classpath + mysql 等多源）
                 .skillRepository(skillRepository)
                 // 状态存储（file / redis，由 AgentStateStoreConfig 提供）
                 .stateStore(agentStateStore)
-                // 上下文压缩（30 轮触发，保留 10 轮）
+                // 上下文压缩（用更激进的配置，专治慢）
                 .compaction(CompactionConfig.builder()
-                        .triggerMessages(30)
-                        .keepMessages(10)
+                        // —— 触发策略：放宽阈值，少触发 = 少调用摘要 LLM ——
+                        .triggerMessages(12)     //，压缩频率
+                        .triggerTokens(30_000)   // 叠加 token 阈值，长消息也能及时 或 30k tokens 之前
+                        // —— 压缩后只保留最近1轮完整对话 —— 1轮 = 4条
+                        .keepMessages(4)         // 摘要窗口更小、更快
+                        // —— 摘要专用轻量模型（最关键，单这一项就能把压缩耗时降一个量级）——
+                        .model(buildDashScopeSummaryModel())  // 用 qwen-turbo 做 summary
+                        // —— 精简摘要 Prompt，结构化 + 控长 ——
+                        .summaryPrompt("请用结构化要点总结以下对话，严格按四段输出，每段不超过3条：" +
+                                "SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS。\n对话内容：{messages}")
+                        // —— 预压缩参数截断：write_file/edit_file 的大入参先裁掉 ——
+                        .truncateArgs(CompactionConfig.TruncateArgsConfig.builder()
+                                .maxArgLength(1500)
+                                .build())
+                        // —— 关掉压缩前的两项副作用，省掉两次额外 LLM/IO ——
+                        .flushBeforeCompact(false)  // ← 跳过记忆提取，省一次 LLM 调用 (如不需要记忆提取则关闭)
+                        .offloadBeforeCompact(false) // 保留原始消息落盘（纯 IO，很快）
                         .build())
                 // 原子工具
                 .toolkit(toolkit);
@@ -243,12 +272,32 @@ public class HarnessAgentConfig {
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("⚠️ DASHSCOPE_API_KEY 未配置，LLM 调用会失败");
         }
-        log.info("🔧 构建 DashScopeChatModel: model={}, enableThinking=true（LLM 内部思考，思考内容后端 filter 屏蔽）", shortName);
+        log.info("🔧 构建 DashScopeChatModel: model={}, enableThinking=true（LLM 内部思考 + thinking_budget={} 限 token）",
+                shortName, thinkingBudget);
         return DashScopeChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(shortName)
                 .stream(true)
                 .enableThinking(true)  // ⭐ 关键：让 LLM 思考，思考内容进 reasoning_content 字段
+                .defaultOptions(io.agentscope.core.model.GenerateOptions.builder()
+                        .thinkingBudget(thinkingBudget)  // ⭐ 限制思考 token 上限，避免慢
+                        .build())
+                .build();
+    }
+
+    /**
+     * ⭐ 摘要专用轻量模型
+     * <p>用 qwen-turbo 做会话压缩 summary（比主对话的 qwen-plus 快 5-10 倍）
+     * <p>关闭 thinking,摘要不需要思考
+     */
+    private Model buildDashScopeSummaryModel() {
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        log.info("🔧 构建摘要专用 DashScopeChatModel: model=qwen-turbo, enableThinking=false（摘要不需要思考）");
+        return DashScopeChatModel.builder()
+                .apiKey(apiKey)
+                .modelName("qwen-turbo")
+                .stream(false)             // 摘要不需要流式
+                .enableThinking(false)     // 摘要不需要思考
                 .build();
     }
 }
