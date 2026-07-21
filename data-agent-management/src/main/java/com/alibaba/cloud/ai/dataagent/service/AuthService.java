@@ -64,7 +64,7 @@ public class AuthService {
 			userMapper.updateLoginInfo(user.getId(), request.getLoginIp(), LocalDateTime.now());
 		}
 
-		String token = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getTenantId(), user.getRole());
+		String token = jwtUtil.generateAccessToken(user);
 
 		LoginResponse.UserInfo userInfo = LoginResponse.UserInfo.builder()
 				.id(user.getId())

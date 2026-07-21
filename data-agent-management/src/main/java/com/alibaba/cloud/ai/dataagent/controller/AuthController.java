@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.alibaba.cloud.ai.dataagent.controller;
 
 import com.alibaba.cloud.ai.dataagent.dto.LoginRequest;
@@ -92,8 +107,8 @@ public class AuthController {
 			LoginResponse response = authService.login(request);
 			User user = authService.getCurrentUser(response.getUserInfo().getId());
 
-			String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getTenantId(), user.getRole());
-			String refreshToken = jwtUtil.generateRefreshToken(user.getId());
+			String accessToken = jwtUtil.generateAccessToken(user);
+			String refreshToken = jwtUtil.generateRefreshToken(user);
 
 			Map<String, Object> data = new HashMap<>();
 			data.put("accessToken", accessToken);
@@ -143,8 +158,8 @@ public class AuthController {
 				));
 			}
 
-			String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername(), user.getTenantId(), user.getRole());
-			String newRefreshToken = jwtUtil.generateRefreshToken(user.getId());
+			String newAccessToken = jwtUtil.generateAccessToken(user);
+			String newRefreshToken = jwtUtil.generateRefreshToken(user);
 
 			return ResponseEntity.ok(Map.of(
 					"code", 0,
@@ -306,12 +321,7 @@ public class AuthController {
 			}
 
 			// 生成临时Token（有效期5分钟）
-			String tempToken = jwtUtil.generateTempToken(
-					targetUser.getId(),
-					targetUser.getUsername(),
-					targetUser.getTenantId(),
-					targetUser.getRole()
-			);
+			String tempToken = jwtUtil.generateTempToken(targetUser);
 
 			String adminUsername = jwtUtil.getUsernameFromToken(currentToken);
 			log.info("超级管理员 [{}] 模拟用户 [{}] (ID: {})",

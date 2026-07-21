@@ -1,5 +1,21 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.alibaba.cloud.ai.dataagent.util;
 
+import com.alibaba.cloud.ai.dataagent.entity.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -30,43 +46,47 @@ public class JwtUtil {
 		return Keys.hmacShaKeyFor(keyBytes);
 	}
 
-	public String generateAccessToken(Long userId, String username, Long tenantId, String role) {
-		return generateToken(userId, username, "access", ACCESS_TOKEN_EXPIRATION, tenantId, role);
+	public String generateAccessToken(User user) {
+		return generateToken(user, "access", ACCESS_TOKEN_EXPIRATION);
 	}
 
-	public String generateRefreshToken(Long userId) {
-		return generateToken(userId, null, "refresh", REFRESH_TOKEN_EXPIRATION, null, null);
+	public String generateRefreshToken(User user) {
+		return generateToken(user, "refresh", REFRESH_TOKEN_EXPIRATION);
 	}
 
 	/**
 	 * 生成临时Token（用于模拟用户）
 	 * 有效期5分钟
 	 */
-	public String generateTempToken(Long userId, String username, Long tenantId, String role) {
-		return generateToken(userId, username, "temp", TEMP_TOKEN_EXPIRATION, tenantId, role);
+	public String generateTempToken(User user) {
+		return generateToken(user, "temp", TEMP_TOKEN_EXPIRATION);
 	}
 
-	private String generateToken(Long userId, String username, String type, long expiration, Long tenantId, String role) {
+	private String generateToken(User user, String type, long expiration) {
 		String jti = UUID.randomUUID().toString();
 		Date now = new Date();
 		Date expiryDate = new Date(now.getTime() + expiration);
 
 		var builder = Jwts.builder()
 				.id(jti)
-				.subject(username)
-				.claim("userId", userId)
+				.subject(user.getUsername())
+				.claim("userId", user.getId())
 				.claim("type", type)
 				.issuedAt(now)
 				.expiration(expiryDate);
 
 		// 添加租户ID
-		if (tenantId != null) {
-			builder.claim("tenantId", tenantId);
+		if (user.getTenantId() != null) {
+			builder.claim("tenantId", user.getTenantId());
 		}
 
 		// 添加角色
-		if (role != null && !role.isEmpty()) {
-			builder.claim("role", role);
+		if (user.getRole() != null && !user.getRole().isEmpty()) {
+			builder.claim("role", user.getRole());
+		}
+		// 添加province
+		if (user.getProvince() != null && !user.getProvince().isEmpty()) {
+			builder.claim("province", user.getProvince());
 		}
 
 		return builder
