@@ -492,19 +492,7 @@ public class QueryBizDataTool {
             @ToolParam(name = "id", description = "招标记录主键 id（最准，二选一必填）", required = false) Long id,
             @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填，LLM 从用户问题里抽）", required = false) String keyword,
             @ToolParam(name = "province", description = "省份，单值如'北京'，多值如'北京,上海'。必须在用户 authorizedProvince 范围内", required = true) String province) {
-        return Mono.deferContextual(view -> {
-            Object authObj = view.getOrEmpty("authInfo").orElse(null);
-            return Mono.fromCallable(() -> {
-                if (authObj instanceof AuthContext.AuthInfo a) {
-                    AuthContext.set(a);
-                }
-                try {
-                    return doDetail("bidding", id, keyword, province);
-                } finally {
-                    AuthContext.clear();
-                }
-            }).subscribeOn(Schedulers.boundedElastic());
-        });
+        return queryDetail("bidding", id, keyword, province);
     }
 
     @Tool(name = "get_bid_winner_detail",
@@ -521,19 +509,7 @@ public class QueryBizDataTool {
             @ToolParam(name = "id", description = "中标记录主键 id（最准，二选一必填）", required = false) Long id,
             @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
             @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
-        return Mono.deferContextual(view -> {
-            Object authObj = view.getOrEmpty("authInfo").orElse(null);
-            return Mono.fromCallable(() -> {
-                if (authObj instanceof AuthContext.AuthInfo a) {
-                    AuthContext.set(a);
-                }
-                try {
-                    return doDetail("bid_winner", id, keyword, province);
-                } finally {
-                    AuthContext.clear();
-                }
-            }).subscribeOn(Schedulers.boundedElastic());
-        });
+        return queryDetail("bid_winner", id, keyword, province);
     }
 
     @Tool(name = "get_purchase_intention_detail",
@@ -550,19 +526,7 @@ public class QueryBizDataTool {
             @ToolParam(name = "id", description = "采购意向记录主键 id（最准，二选一必填）", required = false) Long id,
             @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
             @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
-        return Mono.deferContextual(view -> {
-            Object authObj = view.getOrEmpty("authInfo").orElse(null);
-            return Mono.fromCallable(() -> {
-                if (authObj instanceof AuthContext.AuthInfo a) {
-                    AuthContext.set(a);
-                }
-                try {
-                    return doDetail("purchase_intention", id, keyword, province);
-                } finally {
-                    AuthContext.clear();
-                }
-            }).subscribeOn(Schedulers.boundedElastic());
-        });
+        return queryDetail("purchase_intention", id, keyword, province);
     }
 
     @Tool(name = "get_prepose_detail",
@@ -579,6 +543,25 @@ public class QueryBizDataTool {
             @ToolParam(name = "id", description = "前期项目记录主键 id（最准，二选一必填）", required = false) Long id,
             @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
             @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
+        return queryDetail("prepose", id, keyword, province);
+    }
+
+    /**
+     * 详情查询公共入口（Controller / 4 个 @Tool 详情方法都委托到这里）
+     * <p>职责：
+     * <ul>
+     *   <li>从 Reactor Context 拿 AuthInfo 注入 ThreadLocal（跨线程传递）</li>
+     *   <li>try-finally 清理 ThreadLocal（防止内存泄漏）</li>
+     *   <li>跑在 boundedElastic 线程池（Mapper 是阻塞调用）</li>
+     * </ul>
+     * 业务逻辑（bizType 校验 / id+keyword 校验 / 省份权限 / Mapper 路由 / 字段归一化）由 {@link #doDetail} 完成。
+     *
+     * @param bizType  bidding / bid_winner / purchase_intention / prepose
+     * @param id       主键（id 和 keyword 至少传一个；doDetail 内部校验）
+     * @param keyword  项目名/标题关键词（id 和 keyword 至少传一个；doDetail 内部校验）
+     * @param province 省份（必传，做省份权限校验 + 过滤）
+     */
+    public Mono<String> queryDetail(String bizType, Long id, String keyword, String province) {
         return Mono.deferContextual(view -> {
             Object authObj = view.getOrEmpty("authInfo").orElse(null);
             return Mono.fromCallable(() -> {
@@ -586,7 +569,7 @@ public class QueryBizDataTool {
                     AuthContext.set(a);
                 }
                 try {
-                    return doDetail("prepose", id, keyword, province);
+                    return doDetail(bizType, id, keyword, province);
                 } finally {
                     AuthContext.clear();
                 }

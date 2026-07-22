@@ -17,6 +17,7 @@ package com.jldaren.agent.ai.datascope2.controller;
 
 import com.jldaren.agent.ai.datascope2.auth.AuthContext;
 import com.jldaren.agent.ai.datascope2.auth.JwtAuthWebFilter;
+import com.jldaren.agent.ai.datascope2.dto.BizDetailRequest;
 import com.jldaren.agent.ai.datascope2.dto.BizQueryRequest;
 import com.jldaren.agent.ai.datascope2.tool.QueryBizDataTool;
 import lombok.RequiredArgsConstructor;
@@ -50,15 +51,21 @@ import java.util.concurrent.Semaphore;
  *
  * <h3>接口规范</h3>
  * <ul>
- *   <li>POST /api/biz/query</li>
- *   <li>Header：Authorization: Bearer &lt;token&gt;（JwtAuthWebFilter 自动解出 AuthInfo）</li>
- *   <li>Body：{@link BizQueryRequest}</li>
- *   <li>响应：直接透传 Tool 的 JSON String
+ *   <li>POST /api/biz/query —— 列表查询（按条件返回最多 100 条）
  *     <ul>
- *       <li>成功：{ "success": true, "bizType": "...", "province": "...", "total": N, "resultSet": [...], "message": "..." }</li>
- *       <li>失败：{ "error": "..." }</li>
+ *       <li>Header：Authorization: Bearer &lt;token&gt;（JwtAuthWebFilter 自动解出 AuthInfo）</li>
+ *       <li>Body：{@link BizQueryRequest}</li>
+ *       <li>响应：{ "success": true, "bizType": "...", "province": "...", "total": N, "resultSet": [...], "message": "..." }</li>
  *     </ul>
  *   </li>
+ *   <li>POST /api/biz/detail —— 详情查询（按 id 或 keyword 返回 1 条全字段）
+ *     <ul>
+ *       <li>Header：同上</li>
+ *       <li>Body：{@link BizDetailRequest}（bizType 必填，id/keyword 二选一必填，province 必填）</li>
+ *       <li>响应：{ "success": true, "bizType": "...", "found": true/false, "detail": {...} | null, "message": "..." }</li>
+ *     </ul>
+ *   </li>
+ *   <li>失败响应（两个接口通用）：{ "error": "..." }</li>
  * </ul>
  *
  * <h3>为什么不重写 Tool 的 SQL 构建？</h3>
@@ -73,24 +80,36 @@ import java.util.concurrent.Semaphore;
  * # 2. 拿个有效 JWT
  *
  * # 3. 调 5 个 bizType 验证(每张表至少 1 个,先简单测)
- * curl -X POST http://localhost:8082/api/biz/query \
+ * curl -X POST http://localhost:8082/api2/biz/query \
  *   -H "Authorization: Bearer $TOKEN" \
  *   -H "Content-Type: application/json" \
  *   -d '{"bizType":"bid_winner","province":"北京","limit":5}'
  *
- * curl -X POST http://localhost:8082/api/biz/query \
+ * curl -X POST http://localhost:8082/api2/biz/query \
  *   -H "Authorization: Bearer $TOKEN" \
  *   -H "Content-Type: application/json" \
  *   -d '{"bizType":"bidding","conditions":{"industry":"信息技术","minBudget":100}}'
  *
- * curl -X POST http://localhost:8082/api/biz/query \
+ * curl -X POST http://localhost:8082/api2/biz/query \
  *   -H "Authorization: Bearer $TOKEN" \
  *   -H "Content-Type: application/json" \
  *   -d '{"bizType":"origin_announcement","datePreset":"today"}'
+ *
+ * # 4. 调详情接口（按 id）
+ * curl -X POST http://localhost:8082/api2/biz/detail \
+ *   -H "Authorization: Bearer $TOKEN" \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"bizType":"bidding","id":12345,"province":"北京"}'
+ *
+ * # 5. 调详情接口（按 keyword 模糊）
+ * curl -X POST http://localhost:8082/api2/biz/detail \
+ *   -H "Authorization: Bearer $TOKEN" \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"bizType":"bid_winner","keyword":"智慧政务","province":"北京"}'
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/biz")
+@RequestMapping("/api2/biz")
 @RequiredArgsConstructor
 public class BizDataController {
 
@@ -99,6 +118,26 @@ public class BizDataController {
 
     private final QueryBizDataTool queryBizDataTool;
     private final Semaphore concurrencySemaphore = new Semaphore(MAX_CONCURRENT, true);
+
+    /**
+     * 从 Reactor Context 拿 AuthInfo（JwtAuthWebFilter 已经从 JWT 解出并注入）
+     * <p>拿不到 → 返回 null（调用方决定怎么处理：一般是直接 401 未授权）
+     * <p>为什么必须再校验一次？JwtAuthWebFilter 拿到合法 token 会放行到 Controller，
+     * 但 Controller 必须自己再确认 AuthInfo 真的在 ctx 里——这是"防 Filter 误放行"的最后一道闸。
+     *
+     * @param ctx      Reactor Context
+     * @param endpoint 接口标识（仅用于日志）
+     * @return AuthInfo 对象，拿不到返回 null
+     */
+    private AuthContext.AuthInfo extractAuthOrNull(reactor.util.context.ContextView ctx, String endpoint) {
+        return ctx.getOrEmpty(JwtAuthWebFilter.CTX_AUTH_INFO)
+                .filter(o -> o instanceof AuthContext.AuthInfo)
+                .map(o -> (AuthContext.AuthInfo) o)
+                .orElseGet(() -> {
+                    log.warn("⛔ [{}] 请求未携带登录信息（AuthInfo 为空，未带 token 或 token 解析失败）", endpoint);
+                    return null;
+                });
+    }
 
     /**
      * 业务数据查询主入口
@@ -116,21 +155,16 @@ public class BizDataController {
     @PostMapping(value = "/query", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<String> query(@RequestBody BizQueryRequest request) {
         return Mono.deferContextual(ctx -> {
-            // 1) 限流：超过并发上限直接拒绝
+            // 1) ⭐ 先校验登录信息（放在限流前面：未授权请求不应该消耗并发配额）
+            AuthContext.AuthInfo auth = extractAuthOrNull(ctx, "biz/query");
+            if (auth == null) {
+                return Mono.just("{\"error\":\"未授权，请先登录\"}");
+            }
+
+            // 2) 限流：超过并发上限直接拒绝
             if (!concurrencySemaphore.tryAcquire()) {
                 log.warn("⚠️ [biz/query] 并发超限 ({}), 拒绝新请求", MAX_CONCURRENT);
                 return Mono.just("{\"error\":\"服务繁忙，请稍后重试\"}");
-            }
-
-            // 2) 从 Reactor Context 拿 AuthInfo（JwtAuthWebFilter 已经从 JWT 解出并注入）
-            //    拿不到 → 等价于没带 token（虽然 Filter 放行了，但 Controller 必须再校验一次）
-            AuthContext.AuthInfo auth = ctx.getOrEmpty(JwtAuthWebFilter.CTX_AUTH_INFO)
-                    .filter(o -> o instanceof AuthContext.AuthInfo)
-                    .map(o -> (AuthContext.AuthInfo) o)
-                    .orElse(null);
-            if (auth == null) {
-                log.warn("⛔ [biz/query] 无 AuthInfo（未登录或 token 解析失败）");
-                return Mono.just("{\"error\":\"未登录或 token 无效\"}");
             }
 
             log.info("🔍 [biz/query] userId={}, tenantId={}, authorizedProvince={}, bizType={}, province={}, datePreset={}, limit={}",
@@ -153,6 +187,65 @@ public class BizDataController {
                         log.error("❌ [biz/query] Tool 调用异常: bizType={}, error={}",
                                 request.getBizType(), e.getMessage(), e);
                         return Mono.just("{\"error\":\"查询失败: " + e.getMessage().replace("\"", "\\\"") + "\"}");
+                    })
+                    .doFinally(sig -> concurrencySemaphore.release());
+        });
+    }
+
+    /**
+     * 业务数据详情查询入口
+     * <p>内部直接调 {@link QueryBizDataTool#queryDetail(String, Long, String, String)}，
+     * 走 4 个 @Tool 详情方法（{@code get_bidding_detail} / {@code get_bid_winner_detail} /
+     * {@code get_purchase_intention_detail} / {@code get_prepose_detail}）同款的业务逻辑：
+     * 省份权限校验 + id/keyword 二选一校验 + Mapper 查 1 条 + 字段归一化。
+     *
+     * <p>适用场景：前端列表页点开"查看详情"，省掉 LLM 链路（1-3s 延迟 + token 成本）。
+     *
+     * <p>与 /api/biz/query 的差异：
+     * <ul>
+     *   <li>支持 bizType：bidding / bid_winner / purchase_intention / prepose（4 张详情表）</li>
+     *   <li>支持 origin_announcement：❌ 不支持（原始每日标讯详情就是元数据本身，列表行展开即可）</li>
+     *   <li>入参：id 和 keyword 二选一必填（query 只需 conditions 即可）</li>
+     *   <li>返回：固定 1 条详情（query 返回列表）</li>
+     * </ul>
+     *
+     * <p>省份权限校验（来自 Tool 内部）：
+     * <ul>
+     *   <li>没拿到 AuthInfo → 401 等价（"未授权，请先登录"）</li>
+     *   <li>AuthInfo.province 为空 → 403 "您还没开通此省份的数据查询权限"</li>
+     *   <li>用户传的 province 不在 authorizedProvince 范围 → 403 "您查询的xx不在您开通省份范围xx内"</li>
+     * </ul>
+     */
+    @PostMapping(value = "/detail", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<String> detail(@RequestBody BizDetailRequest request) {
+        return Mono.deferContextual(ctx -> {
+            // 1) ⭐ 先校验登录信息（放在限流前面：未授权请求不应该消耗并发配额）
+            AuthContext.AuthInfo auth = extractAuthOrNull(ctx, "biz/detail");
+            if (auth == null) {
+                return Mono.just("{\"error\":\"未授权，请先登录\"}");
+            }
+
+            // 2) 限流：与 /query 共用同一个信号量
+            if (!concurrencySemaphore.tryAcquire()) {
+                log.warn("⚠️ [biz/detail] 并发超限 ({}), 拒绝新请求", MAX_CONCURRENT);
+                return Mono.just("{\"error\":\"服务繁忙，请稍后重试\"}");
+            }
+
+            log.info("🔍 [biz/detail] userId={}, tenantId={}, authorizedProvince={}, bizType={}, id={}, keyword={}, province={}",
+                    auth.userId(), auth.tenantId(), auth.province(),
+                    request.getBizType(), request.getId(), request.getKeyword(), request.getProvince());
+
+            // 3) 调 Tool：AuthInfo 已经在 Reactor Context 里，queryDetail 内部会从 ctx 拿并注入 ThreadLocal
+            return queryBizDataTool.queryDetail(
+                            request.getBizType(),
+                            request.getId(),
+                            request.getKeyword(),
+                            request.getProvince())
+                    // 4) 异常兜底：Tool 内部已经 return errorJson(...)；这里只处理"Tool 本身抛异常"的极端情况
+                    .onErrorResume(e -> {
+                        log.error("❌ [biz/detail] Tool 调用异常: bizType={}, error={}",
+                                request.getBizType(), e.getMessage(), e);
+                        return Mono.just("{\"error\":\"查询详情失败: " + e.getMessage().replace("\"", "\\\"") + "\"}");
                     })
                     .doFinally(sig -> concurrencySemaphore.release());
         });
