@@ -10,4 +10,7 @@ export default {
   agentScope: {
     apiTarget: API_TARGET,  // 带项目名的相对路径
   },
+  dataAgentScope2: {
+    apiTarget: API_TARGET,  // Nginx 根据 /api vs /api2 路径前缀路由到不同后端
+  },
 };

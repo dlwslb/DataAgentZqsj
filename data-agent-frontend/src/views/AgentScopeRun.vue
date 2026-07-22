@@ -922,11 +922,11 @@ export default {
           showSqlResults: resultSetDisplayConfig.value.showSqlResults,
         });
 
-        const baseUrl = import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064';
-        const baseUrl2 = import.meta.env.VITE_DATA_AGENT_SCOPE2_API_TARGET || 'http://localhost:8082';
+        const baseUrl = import.meta.env.VITE_AGENT_SCOPE_API_TARGET;
+        const baseUrl2 = import.meta.env.VITE_DATA_AGENT_SCOPE2_API_TARGET;
         // SSE 2.0 开关：开启走新接口，关闭走原接口
         const endpoint = sse2Enabled.value
-            ? `${baseUrl2}/api/chat/stream`
+            ? `${baseUrl2}/api2/chat/stream`
             : `${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`;
         fetch(endpoint, {
           method: 'POST',

@@ -118,7 +118,7 @@
       });
 
       const baseUrl = computed(() => {
-        return import.meta.env.VITE_AGENT_SCOPE_API_TARGET || 'http://localhost:58064';
+        return import.meta.env.VITE_AGENT_SCOPE_API_TARGET;
       });
 
       const curlExample = computed(() => {

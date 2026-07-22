@@ -46,6 +46,10 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_AGENT_SCOPE_API_TARGET': JSON.stringify(
         config.agentScope?.apiTarget !== undefined ? config.agentScope.apiTarget : 'http://localhost:58064'
       ),
+      // SSE 2.0（data-agent-scope2）后端地址：合并自 .env，统一由 config/ 注入
+      'import.meta.env.VITE_DATA_AGENT_SCOPE2_API_TARGET': JSON.stringify(
+        config.dataAgentScope2?.apiTarget !== undefined ? config.dataAgentScope2.apiTarget : 'http://localhost:58063'
+      ),
     },
   };
 });

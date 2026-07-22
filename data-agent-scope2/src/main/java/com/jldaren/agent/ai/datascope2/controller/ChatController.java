@@ -52,7 +52,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/chat")
+@RequestMapping("/api2/chat")
 public class ChatController {
 
     /** SSE Heartbeat 间隔 */
