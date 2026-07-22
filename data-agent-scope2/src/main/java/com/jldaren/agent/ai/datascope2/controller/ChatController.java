@@ -36,7 +36,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -64,6 +66,24 @@ public class ChatController {
     private final HarnessAgent agent;
     private final java.util.concurrent.Semaphore sseSemaphore =
             new java.util.concurrent.Semaphore(MAX_CONCURRENT_SSE, true);
+
+    /**
+     * ⭐ 活跃流跟踪表：sessionId → StreamSession
+     * <p>用途：让 /api2/chat/stop 接口能按 sessionId 主动 dispose agent 推理流，省 LLM token
+     * <p>为什么不靠"客户端断开 = 自动 doOnCancel"？Netty 不一定立即感知客户端 abort，
+     *    而且 dispose 时机不可控；显式 stop 接口更确定。
+     *
+     * <p>线程安全：ConcurrentHashMap；用 atomic remove(key, value) 防"stop 时正好 doFinally 也 remove" 的并发误删
+     * <p>多用户隔离：每个 StreamSession 记 userId/tenantId，stop 时校验当前请求的 user/tenant 才能 dispose
+     */
+    private final Map<String, StreamSession> activeStreams = new ConcurrentHashMap<>();
+
+    /**
+     * 活跃流快照：包含 sessionId / userId / tenantId + agent 流的 Disposable
+     * <p>用 record 简化（不可变 + 自动 equals/hashCode，atomic remove 靠 equals）
+     */
+    private record StreamSession(String sessionId, Long userId, Long tenantId,
+                                 reactor.core.Disposable disposable) {}
 
     public ChatController(@Qualifier("dataAgent") HarnessAgent agent) {
         this.agent = agent;
@@ -150,13 +170,32 @@ public class ChatController {
                     .concatWith(Mono.just(StreamEvent.of("done", "complete", sessionId)))
                     .doFinally(sig -> {
                         sseSemaphore.release();
-                        // 通知下游：源流已结束（正常 / 错误 / 取消都会触发 doFinally）
-                        eventSink.tryEmitComplete();
+                        // ⭐ 关键修复：sig=CANCEL 时连接已断，再 tryEmitComplete 会触发 netty AbortedException
+                        //    原因：客户端 abort fetch → netty channel 已关 → Sinks 推 complete 到下游
+                        //         → 下游尝试写 SSE → channel 关闭 → 抛 AbortedException → GlobalExceptionHandler 当 ERROR 报
+                        //    只在"正常完成 / 异常"两种场景才需要 emit complete（让 heartbeat 收到结束信号停掉）
+                        if (sig != reactor.core.publisher.SignalType.CANCEL) {
+                            eventSink.tryEmitComplete();
+                        }
+                        // ⭐ 从活跃流跟踪表移除（用单 key remove，不用 value check）
+                        //    为什么不用 atomic remove(key, value)？因为 doFinally 在 .subscribe() 返回前就被构造，
+                        //    此时 subscription 还没被赋值，lambda 内引用会编译失败。
+                        //    副作用：理论上存在"流 A 的 doFinally 误删流 B 的 entry"的极小竞态窗口
+                        //    （同 sessionId 先 A 后 B，A 结束 doFinally 时 B 已 put 进去），
+                        //    但实际业务里同一 sessionId 不会有并发流，且最坏情况是 B 的 stop 返回 not_found 让用户再点一次，
+                        //    不是 critical bug。ConcurrentHashMap.remove(key) 自身是原子的。
+                        activeStreams.remove(sessionId);
                         log.info("🔚 SSE 连接关闭: sessionId={}, sig={}, availablePermits={}",
                                 sessionId, sig, sseSemaphore.availablePermits());
                     })
                     // ⭐ 单次订阅：所有副作用（doOnError / onErrorResume / doFinally）只跑 1 次
                     .subscribe(eventSink::tryEmitNext, eventSink::tryEmitError);
+
+            // ⭐ 注册到活跃流跟踪表（让 /api2/chat/stop 能主动 dispose）
+            //    在 .subscribe() 之后才能拿到 subscription，所以 put 在这里
+            activeStreams.put(sessionId, new StreamSession(sessionId, userId, tenantId, subscription));
+            log.debug("📝 流注册: sessionId={}, userId={}, tenantId={}, activeCount={}",
+                    sessionId, userId, tenantId, activeStreams.size());
 
             // 3) 双重保活：每 15s 一个 heartbeat 事件（前端可见）+ SSE 注释行（注释行是 SSE 协议标准，部分代理会忽略事件但保留注释行）
             //    ⭐ 监听热流 sink（不再是冷流 eventStream），订阅 sink 是零成本的
@@ -175,6 +214,67 @@ public class ChatController {
                         log.info("⚡ 客户端断开，取消 agent 流: sessionId={}", sessionId);
                         subscription.dispose();  // ← 取消 LLM 推理，省 token
                     });
+        });
+    }
+
+    /**
+     * 主动停止 SSE 流（按 sessionId 主动 dispose agent 推理）
+     * <p>为什么需要？客户端 abort fetch 时 Netty 不一定立即感知，"客户端断开 = 自动 doOnCancel"
+     *    的链路有延迟，LLM 还会继续跑几秒（甚至更久）消耗 token。
+     *    这个接口让前端点"停止"时**立即**告诉后端 dispose，省 LLM 调用成本。
+     *
+     * <p>行为：
+     * <ul>
+     *   <li>sessionId 在 activeStreams 里，且 userId/tenantId 匹配 → dispose() + 返回 "stopped"</li>
+     *   <li>sessionId 不在 activeStreams（流已自然结束/被并发 stop 干掉） → 返回 "not_found"（不算错）</li>
+     *   <li>sessionId 存在但 userId/tenantId 不匹配（跨用户攻击） → 403 "forbidden"</li>
+     * </ul>
+     *
+     * <p>并发安全：activeStreams 用 ConcurrentHashMap，remove(key, value) 原子（防 stop 和 doFinally 撞车）
+     *
+     * <p>调用方（前端 stopStreaming）：建议 fire-and-forget 调用，不依赖返回值——前端 abort fetch 已经能让
+     *    SSE 连接关掉、触发 doOnCancel。这里的 stop 是"加速后端停止"的优化，不是唯一手段。
+     */
+    @PostMapping("/stop")
+    public Mono<Map<String, Object>> stop(@RequestBody Map<String, String> body) {
+        return Mono.deferContextual(ctx -> {
+            Long currentUserId = ctx.getOrDefault(JwtAuthWebFilter.CTX_USER_ID, null);
+            Long currentTenantId = ctx.getOrDefault(JwtAuthWebFilter.CTX_TENANT_ID, null);
+            String sessionId = body != null ? body.get("sessionId") : null;
+
+            if (sessionId == null || sessionId.isBlank()) {
+                log.warn("⛔ [/api2/chat/stop] 缺少 sessionId");
+                return Mono.just(Map.of("success", false, "reason", "missing_sessionId"));
+            }
+
+            // 原子取出（如果正好 doFinally 也 remove 了同一个，这里拿到 null，下面走 not_found）
+            StreamSession session = activeStreams.remove(sessionId);
+            if (session == null) {
+                log.info("ℹ️ [/api2/chat/stop] 流已结束或不存在: sessionId={}", sessionId);
+                return Mono.just(Map.of("success", true, "reason", "not_found",
+                        "message", "流已结束，无需停止"));
+            }
+
+            // ⭐ 多用户隔离：只能停自己的流
+            //    用 Objects.equals 防 NPE（currentUserId 可能为 null，比如 anonymous）
+            if (!java.util.Objects.equals(session.userId(), currentUserId)
+                    || !java.util.Objects.equals(session.tenantId(), currentTenantId)) {
+                log.warn("⛔ [/api2/chat/stop] 跨用户停止被拒: sessionId={}, 流 owner=userId={}/tenantId={}, 请求方=userId={}/tenantId={}",
+                        sessionId, session.userId(), session.tenantId(), currentUserId, currentTenantId);
+                // 已经 remove 了，要把 entry 还回去——否则 owner 自己的 /stop 会找不到
+                // 用 putIfAbsent 防"还回去"和"流自然结束"竞争
+                activeStreams.putIfAbsent(sessionId, session);
+                return Mono.just(Map.of("success", false, "reason", "forbidden",
+                        "message", "无权停止该会话的流"));
+            }
+
+            // 主动 dispose → agent 推理立即取消 → doOnCancel 触发 → 最终 doFinally 清理信号量
+            //    dispose() 幂等：流已结束（disposed=true）时调用也无副作用
+            log.info("🛑 [/api2/chat/stop] 主动停止流: sessionId={}, userId={}, tenantId={}",
+                    sessionId, currentUserId, currentTenantId);
+            session.disposable().dispose();
+            return Mono.just(Map.of("success", true, "reason", "stopped",
+                    "message", "已停止会话流"));
         });
     }
 

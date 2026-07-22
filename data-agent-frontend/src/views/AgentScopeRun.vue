@@ -455,6 +455,11 @@ export default {
     const streamingMsgId = ref<number | null>(null);
     const streamingMsgContent = ref('');
 
+    // 🔑 当前 SSE 流的 AbortController（用于"停止对话"按钮真的中断请求）
+    //    修复：之前 stopStreaming 只改 UI，fetch() 还在跑、reader.read() 还在递归
+    //    现在通过 abort() 真中断 fetch + reader + 401 retry 子请求
+    const streamAbortController = ref<AbortController | null>(null);
+
     // 🔑 跟踪思考预览的当前渲染类型（与后端 messageType 同步）
     const currentPreviewType = ref<'text' | 'markdown' | 'markdown-report' | 'html-report'>('text');
 
@@ -974,10 +979,26 @@ export default {
         const endpoint = sse2Enabled.value
             ? `${baseUrl2}/api2/chat/stream`
             : `${baseUrl}/api/scope/agent/${agent.value.id}/chat/stream`;
+
+        // 🔑 关键：建 AbortController 让 stopStreaming 能真中断 fetch
+        //    每次新请求前先清掉旧的（防御性：避免脏 controller 残留）
+        if (streamAbortController.value) {
+          streamAbortController.value.abort();
+          streamAbortController.value = null;
+        }
+        const controller = new AbortController();
+        streamAbortController.value = controller;
+
+        // 工具函数：判断当前错误是否由 abort 引起
+        //    AbortError 在 fetch 抛 DOMException（name='AbortError'），
+        //    在 reader.read() 抛的也是 name='AbortError'，统一识别
+        const isAbortError = (e: any) => e && (e.name === 'AbortError' || /aborted/i.test(String(e?.message || '')));
+
         fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...extraHeaders },
           body,
+          signal: controller.signal,
         }).then(async response => {
           // 🔑 处理 401 错误：Token 过期时刷新后重试
           if (response.status === 401) {
@@ -988,11 +1009,12 @@ export default {
               if (newToken) {
                 extraHeaders['Authorization'] = `Bearer ${newToken}`;
               }
-              // 重新发起请求（复用同一个 endpoint）
+              // 重新发起请求（复用同一个 endpoint 和 signal——这样 stop 也能中断重试）
               return fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...extraHeaders },
                 body,
+                signal: controller.signal,
               });
             } catch (refreshError) {
               throw new Error('Token 刷新失败，请重新登录');
@@ -1291,21 +1313,62 @@ export default {
               currentPreviewType.value = 'text';
               streamingMsgId.value = null;
               streamingMsgContent.value = '';
+              // ⭐ 用户主动 stop 触发的 AbortError 不算业务错误：resolve 让外层 await 正常完成
+              if (isAbortError(error)) {
+                console.log('[sendStreamingMessage.read] 用户主动停止，已中断读取');
+                streamAbortController.value = null;
+                resolve();
+                return;
+              }
+              streamAbortController.value = null;
               reject(error);
             });
           };
           read();
         }).catch(error => {
+          // ⭐ 外层 fetch 的 catch：AbortError 同样不算错
+          if (isAbortError(error)) {
+            console.log('[sendStreamingMessage] 用户主动停止，已中断请求');
+            streamAbortController.value = null;
+            resolve();
+            return;
+          }
           sending.value = false;
           hasFinalMessage.value = true;
           thinkingPreview.value = '';
           currentPreviewType.value = 'text';
+          streamAbortController.value = null;
           reject(error);
         });
       });
     };
 
     const stopStreaming = () => {
+      // ⭐ 关键修复：先 abort，再清 UI 状态
+      //    顺序很重要——如果先清 sending，用户在 abort 完成前又点了一次发送会出问题
+      if (streamAbortController.value) {
+        streamAbortController.value.abort();
+        streamAbortController.value = null;
+      }
+      // ⭐ 同步通知后端：主动 dispose agent 推理流（不等 Netty 感知连接断开）
+      //    - fire-and-forget：不 await，不阻塞 UI
+      //    - 只在 SSE2 链路 + 有 session 时调（普通链路不挂 SSE，停它没意义）
+      if (sse2Enabled.value && currentSession.value?.id) {
+        const token = localStorage.getItem('accessToken');
+        const baseUrl2 = import.meta.env.VITE_DATA_AGENT_SCOPE2_API_TARGET;
+        fetch(`${baseUrl2}/api2/chat/stop`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ sessionId: currentSession.value.id }),
+        }).catch(err => {
+          // 后端 stop 失败不影响前端——abort fetch 已经能断连接，
+          // 这里的 stop 只是"加速后端停止"的优化，失败无所谓
+          console.warn('[stopStreaming] /api2/chat/stop 调用失败（不影响 UI）:', err);
+        });
+      }
       sending.value = false;
       hasFinalMessage.value = true;
       thinkingPreview.value = '';
@@ -1572,6 +1635,8 @@ export default {
       currentPreviewType,
       streamingMsgId,
       streamingMsgContent,
+      // 🔑 暴露 AbortController 给调试用（生产环境一般不暴露，这里方便 console 验证）
+      streamAbortController,
       ensureValidToken,
       refreshToken,
       // 🔑 链接弹窗相关
