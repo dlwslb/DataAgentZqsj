@@ -1,5 +1,6 @@
 server:
-  port: 8082
+  port: 58063
+  address: 0.0.0.0
   servlet:
     encoding:
       charset: UTF-8
