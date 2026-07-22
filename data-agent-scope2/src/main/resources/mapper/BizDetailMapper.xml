@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright 2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     https://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  业务详情 Mapper XML
+  跟 BizQueryMapper.xml（列表）完全拆开：列表是"动态条件 + 排序 + LIMIT"，详情是"按 id 精确 或 keyword 模糊 + LIMIT 1"。
+  4 个 <select> 都是 SELECT * 返回全字段（详情页需要全字段，LLM 自己挑展示）。
+
+  参数约定（@Param("p") Map<String,Object>）：
+    id: Long，主键（最准，XML 走精确查）
+    keyword: 项目名/标题/关键词（XML 走 OR 模糊查，取 1 条）
+    id 和 keyword 二选一必传；都空 → AND 1=0 短路（不查全表），Tool 报错"必须传 id 或 keyword"
+    provinceList: List<String>，省份列表（已归一化，Tool 层强制注入用户授权范围）
+    soft delete: deleted=0 自动加
+    租户隔离: tenantId 由 MyBatis 拦截器从 AuthContext 注入
+
+  排序策略：
+    有 id → id = #{p.id} DESC（布尔表达式排序，匹配行排第 1 位）
+    无 id（keyword 模糊）→ publish_time DESC（取最新匹配）
+-->
+<mapper namespace="com.jldaren.agent.ai.datascope2.mapper.BizDetailMapper">
+
+    <!-- ============================================================ -->
+    <!-- 1. bidding 详情（chatbi.bid_biz_bidding）                        -->
+    <!-- ============================================================ -->
+    <select id="getBiddingDetail" resultType="java.util.Map">
+        SELECT  `publish_time`, `publish_time_purchase`, `province`, `project_code`, `project_no`, `project_name`,detail_link,
+               `bidding_budget`, `bid_way`, `industry`, `info_type`, `product`, `tenderer`, `tenderer_code`, `tenderer_address`, `tenderer_contact`, `tenderer_phone`,
+               `agency`, `agency_contact`, `agency_phone`, `bidding_scale`, `project_site`, `marketing_unit`, `bid_create_time`, `notes`,
+               `key_business`, `written`, `written_time`, `bidding_joined`, `column1`, `column2`, `column3`, `column4`, `column5`, `column6`, `column7`, `column8`, `column9`, `column10`,
+               `keywords`, `isxxh`, `join_status`, `lost_reason`, `field`, `list_level`, `abandoned_no`, `yewuleixing`, `list_grid`, `list_grid_cus`
+        FROM chatbi.bid_biz_bidding
+        <where>
+            deleted = 0
+            <if test="p.id != null">
+                AND id = #{p.id}
+            </if>
+            <if test="p.id == null and p.keyword != null and p.keyword != ''">
+                AND (
+                    project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR title LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR keywords LIKE CONCAT('%', #{p.keyword}, '%')
+                )
+            </if>
+            <!-- id 和 keyword 都为空 → 短路，不查全表 -->
+            <if test="p.id == null and (p.keyword == null or p.keyword == '')">
+                AND 1 = 0
+            </if>
+            <!-- 省份权限过滤 -->
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+        </where>
+        ORDER BY
+            <if test="p.id != null">id = #{p.id} DESC</if>
+            <if test="p.id == null">publish_time DESC</if>
+        LIMIT 1
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 2. bid_winner 详情（chatbi.bid_biz_win_bid）                     -->
+    <!-- ============================================================ -->
+    <select id="getBidWinnerDetail" resultType="java.util.Map">
+        SELECT `province`, `publish_time`, `project_code`, `project_no`, `project_name`, `win_tenderer`, `win_tenderer_email`,
+               `win_tenderer_code`, `win_tenderer_manager`, `win_tenderer_phone`, `win_bid_price`, `product`, `industry`, `info_type`,
+               `bidding_scale`, `operator`, `marketing_unit`, `second_tenderer`,detail_link,
+               `third_tenderer`, `collect_status`, `notes`, `column1`, `column2`, `column3`, `column4`, `column5`, `column6`, `column7`, `column8`, `column9`, `column10`,
+                `tenderer`, `tenderer_address`, `tenderer_contact`, `tenderer_phone`, `agency`, `agency_contact`, `agency_phone`, `bidding_budget`,
+                `keywords`, `isxxh`,`join_status`, `lost_reason`, `field`, `list_level`,
+                `service_start`, `service_day`, `service_period`, `yewuleixing`, `list_grid`, `list_grid_cus`
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            deleted = 0
+            <if test="p.id != null">
+                AND id = #{p.id}
+            </if>
+            <if test="p.id == null and p.keyword != null and p.keyword != ''">
+                AND (
+                    project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR title LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR keywords LIKE CONCAT('%', #{p.keyword}, '%')
+                )
+            </if>
+            <if test="p.id == null and (p.keyword == null or p.keyword == '')">
+                AND 1 = 0
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+        </where>
+        ORDER BY
+            <if test="p.id != null">id = #{p.id} DESC</if>
+            <if test="p.id == null">publish_time DESC</if>
+        LIMIT 1
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 3. purchase_intention 详情（chatbi.bid_biz_purchase_intention） -->
+    <!-- ============================================================ -->
+    <select id="getPurchaseIntentionDetail" resultType="java.util.Map">
+        SELECT `title`, `channel`, `publish_time`, `province`,`project_code`, `project_no`, `project_name`,detail_link, `bidding_budget`, `tenderer`, `industry`,
+               `info_type`, `product`, `collect_status`, `time_bid_open`, `time_bid_close`, `notes`, `column1`, `column2`, `column3`, `column4`, `column5`,
+               `column6`, `column7`, `column8`, `column9`, `column10`, `customer_type`, `keywords`, `isxxh`, `field`, `list_level`, `abandoned_no`,
+               `yewuleixing`, `list_grid`, `list_grid_cus`, `nature_name`,`manager_a_oa`
+        FROM chatbi.bid_biz_purchase_intention
+        <where>
+            deleted = 0
+            <if test="p.id != null">
+                AND id = #{p.id}
+            </if>
+            <if test="p.id == null and p.keyword != null and p.keyword != ''">
+                AND (
+                    project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR title LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR keywords LIKE CONCAT('%', #{p.keyword}, '%')
+                )
+            </if>
+            <if test="p.id == null and (p.keyword == null or p.keyword == '')">
+                AND 1 = 0
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+        </where>
+        ORDER BY
+            <if test="p.id != null">id = #{p.id} DESC</if>
+            <if test="p.id == null">publish_time DESC</if>
+        LIMIT 1
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4. prepose 详情（chatbi.bid_biz_prepose）                        -->
+    <!-- ============================================================ -->
+    <select id="getPreposeDetail" resultType="java.util.Map">
+        SELECT `province`, `publish_time`, `project_code`, `project_no`, `project_name`, detail_link,`bidding_budget`, `tenderer`, `tenderer_address`,
+               `tenderer_contact`, `tenderer_phone`, `agency`, `agency_contact`, `agency_phone`, `product`, `industry`, `info_type`, `bid_way`,
+                `bid_create_time`, `keywords`
+        FROM chatbi.bid_biz_prepose
+        <where>
+            deleted = 0
+            <if test="p.id != null">
+                AND id = #{p.id}
+            </if>
+            <if test="p.id == null and p.keyword != null and p.keyword != ''">
+                AND (
+                    project_name LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR title LIKE CONCAT('%', #{p.keyword}, '%')
+                    OR keywords LIKE CONCAT('%', #{p.keyword}, '%')
+                )
+            </if>
+            <if test="p.id == null and (p.keyword == null or p.keyword == '')">
+                AND 1 = 0
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() == 1">
+                AND province = #{p.provinceList[0]}
+            </if>
+            <if test="p.provinceList != null and p.provinceList.size() > 1">
+                AND (
+                <foreach collection="p.provinceList" item="pItem" separator=" OR ">
+                    province = #{pItem}
+                </foreach>
+                )
+            </if>
+        </where>
+        ORDER BY
+            <if test="p.id != null">id = #{p.id} DESC</if>
+            <if test="p.id == null">publish_time DESC</if>
+        LIMIT 1
+    </select>
+
+</mapper>

@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * 业务数据查询 Mapper（MyBatis XML 动态 SQL）
  *
- * <p>对应 5 张业务表，每张表一个查询方法：
+ * <p>对应 5 张业务表的<strong>列表</strong>查询，每张表一个查询方法：
  * <ul>
  *   <li>{@link #queryBidWinner}          —— 中标信息（chatbi.bid_biz_win_bid）</li>
  *   <li>{@link #queryBidding}            —— 招标信息（chatbi.bid_biz_bidding）</li>
@@ -30,6 +30,9 @@ import java.util.Map;
  *   <li>{@link #queryPrepose}            —— 前期项目（chatbi.bid_biz_prepose）</li>
  *   <li>{@link #queryOriginAnnouncement} —— 原始每日标讯（chatbi.bid_origin_announcement）</li>
  * </ul>
+ *
+ * <p>本接口只管<strong>列表/汇总</strong>业务（动态条件 + 排序 + LIMIT）；
+ * 详情查询（按 id 精确 或 keyword 模糊）见 {@link BizDetailMapper}，已拆出去独立维护。
  *
  * <p>参数统一用 {@code Map<String,Object>} 透传，XML 里用 {@code <if test="...">} 动态判断，
  * 跟 {@link com.jldaren.agent.ai.datascope2.tool.QueryBizDataTool} 里的 conditions 字段 100% 对齐。

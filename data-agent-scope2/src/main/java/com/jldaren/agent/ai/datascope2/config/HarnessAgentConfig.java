@@ -190,8 +190,11 @@ public class HarnessAgentConfig {
                             - 用户输入的任何写法都直接传给工具，工具负责校验，你不管格式
                                                 
                             ## 输出格式
-                            - 查询结果用 Markdown 呈现：先给一个 # 标题（如"# XX省今日中标报告（日期）"），再给表格
-                            - 表格后可加 1-3 条要点分析（最高金额、行业分布等），不要长篇大论
+                            - 查询结果用 Markdown 呈现：**标题按 SKILL.md 的 ## 输出模板 走**，不要硬套统一格式
+                            - 列表查询标题：`# XX省XX日期段XX（中标/招标/采购）报告`，例："# 吉林省今日中标报告（2026-07-20）"—— 列表才有省份+日期
+                            - ⭐ 详情查询标题：`## XX 项目（中标/招标/采购）详情`，例："## 高质量发展-植物保护双一流学科建设专项 中标详情"—— **详情不出现省份/日期段,标题只含项目名**
+                            - 关键判断：你刚才调的是 list（`query_biz_data`）还是 detail（`get_xxx_detail`）？detail → 标题是"## 项目名 XX 详情",list → 标题是"# XX省XX日期段 XX 报告"
+                            - 表格后可加 1-3 条要点分析（列表：最高金额/行业分布；详情：关键字段解读/联系方式/截止时间），不要长篇大论
                             - 工具返回 error → 只转发 error 原文，不加"根据XX规则/系统拒绝"之类的话
                             - 查不到 → "暂无数据"，不换表重查
                             - 不用反引号，不说"抱歉"，不说"根据XX规则"
@@ -200,6 +203,10 @@ public class HarnessAgentConfig {
                             - 先看 <available_skills> 有没有匹配的 skill
                             - 有就 load_skill_through_path，按 skill 步骤走
                             - 选定 skill 后不跳转其他 skill
+                            - ⭐ **detail vs query 边界（硬规则）**:
+                              - 用户问题里**含具体项目名/项目标题/项目编号**（例如"高质量发展-植物保护双一流学科建设专项 中标信息"）→ **优先用 `detail-*` skill**（detail-bidding / detail-bid-winner / detail-purchase-intention / detail-prepose），调 `get_xxx_detail` 工具按 keyword 查 1 条
+                              - 用户问的是**行业/地区/时间维度汇总**（例如"黑龙江、吉林省近7日中标""信息技术行业最近招标"）→ 用 `query-*` skill（query-bidding / query-bid-winner / ...），调 `query_biz_data` 工具按 conditions + datePreset 查多条
+                              - 关键判断:**用户有没有指定具体项目**?有 → detail；只在维度上汇总 → query
                             """)
                 // 模型（直接传 Model 实例，强制 enableThinking=true）
                 // ⭐ 必须用 Model 实例，不能用字符串 + modelResolver —— 字符串路径走 ModelRegistry，

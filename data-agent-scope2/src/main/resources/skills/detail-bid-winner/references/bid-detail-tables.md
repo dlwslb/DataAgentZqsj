@@ -1,3 +1,8 @@
+# bid-tables（详情专用版）
+
+> ⚠️ **这是 detail 专属字段表,只含"核心字段"段,不含"Tool 字段映射"段**（Tool 字段映射是给 `query_biz_data` 列表工具的,detail 工具用 `id`/`keyword` 不需要）。
+> 字段信息同步自 `../query-bid-winner/references/bid-tables.md`,如 query 那边的字段更新,**手动同步**本表（或重新跑本脚本生成）。
+
 # bid_biz_win_bid（中标信息表）真实表结构
 
 > 字段全部来自 `BizWinBidDO`，继承 `TenantBaseDO`（含 tenant_id / create_time / update_time / deleted 等基础字段）
@@ -81,24 +86,3 @@
 | `creator` / `updater` | String | 创建/更新人 |
 | `createTime` / `updateTime` | LocalDateTime | 创建/更新时间 |
 | `deleted` | Boolean | **逻辑删除（WHERE deleted=0）** |
-
-## Tool 字段映射
-
-Tool 里的 `conditions` 字段 → 数据库列名：
-
-| conditions key | 数据库列 | 类型 |
-|----------------|----------|------|
-| `province` | `province` | String |
-| `city` | `city` | String |
-| `district` | `district` | String |
-| `industry` | `industry` | String |
-| `infoType` | `info_type` | String（DB 是 snake_case）|
-| `tenderer` | `tenderer` | String (LIKE 模糊) |
-| `winTenderer` | `win_tenderer` | String (LIKE 模糊，win_bid 独有) |
-| `keyword` | `title` / `project_name` / `keywords` | String (OR 模糊) |
-| `channel` | `channel` | String |
-| `webSourceName` | `web_source_name` | String |
-| `startDate` / `endDate` | `publish_time` | LocalDate (yyyy-MM-dd) |
-| `minBudget` / `maxBudget` | `win_bid_price` | BigDecimal（win_bid 用这个，不是 bidding_budget）|
-
-**返回结果归一化**：`winBidPrice` → 统一为 `amount` 字段返回给 LLM。

@@ -18,6 +18,7 @@ package com.jldaren.agent.ai.datascope2.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.jldaren.agent.ai.datascope2.auth.AuthContext;
+import com.jldaren.agent.ai.datascope2.mapper.BizDetailMapper;
 import com.jldaren.agent.ai.datascope2.mapper.BizQueryMapper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -50,6 +51,12 @@ import java.util.stream.Collectors;
  *   <li>bid_biz_prepose        —— 前期项目</li>
  *   <li>bid_origin_announcement —— 原始每日标讯</li>
  * </ul>
+ *
+ * <p>工具集合：1 个列表 Tool（{@code query_biz_data}，按 bizType 路由 5 张表）+ 4 个详情 Tool
+ * （{@code get_bidding_detail} / {@code get_bid_winner_detail} / {@code get_purchase_intention_detail} / {@code get_prepose_detail}）。
+ *
+ * <p>详情 Tool 设计：用户问"XX 项目的招标/中标/采购意向/前期项目详情"时直接调用，按 {@code id}（主键，最准）
+ * 或 {@code keyword}（项目名/标题模糊，兜底）查 1 条全字段。省份权限校验复用列表 Tool 的逻辑。
  */
 @Slf4j
 @Component
@@ -58,10 +65,15 @@ public class QueryBizDataTool {
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     /**
-     * MyBatis Mapper（5 个表的动态 SQL 都在 XML 里）
+     * MyBatis 列表 Mapper（5 个表的动态 SQL 都在 BizQueryMapper.xml）
      * <p>Mapper 是同步阻塞的，调用方在 {@code Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())} 里用
      */
     private final BizQueryMapper bizQueryMapper;
+
+    /**
+     * MyBatis 详情 Mapper（4 个详情 SQL 在 BizDetailMapper.xml，跟列表完全拆开）
+     */
+    private final BizDetailMapper bizDetailMapper;
 
     /**
      * 业务库 JdbcTemplate（保留兼容：业务表查询走 MyBatis Mapper，但 JdbcTemplate 仍用于 schema 健康检查 / 应急 SQL）
@@ -71,8 +83,10 @@ public class QueryBizDataTool {
 
     @Autowired
     public QueryBizDataTool(BizQueryMapper bizQueryMapper,
+                            BizDetailMapper bizDetailMapper,
                             @org.springframework.beans.factory.annotation.Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate) {
         this.bizQueryMapper = bizQueryMapper;
+        this.bizDetailMapper = bizDetailMapper;
         this.businessJdbcTemplate = businessJdbcTemplate;
     }
 
@@ -290,6 +304,18 @@ public class QueryBizDataTool {
      */
     private record TableDef(String tableName, String columns, String orderBy) {}
 
+    /**
+     * 详情表定义：表名（只用于日志/错误信息，不参与 SQL 拼装）
+     */
+    private record DetailTableDef(String tableName) {}
+
+    private static final Map<String, DetailTableDef> DETAIL_TABLES = Map.of(
+            "bidding", new DetailTableDef("chatbi.bid_biz_bidding"),
+            "bid_winner", new DetailTableDef("chatbi.bid_biz_win_bid"),
+            "purchase_intention", new DetailTableDef("chatbi.bid_biz_purchase_intention"),
+            "prepose", new DetailTableDef("chatbi.bid_biz_prepose")
+    );
+
     private static final Map<String, TableDef> BIZ_TABLES = Map.of(
             "bid_winner", new TableDef(
                     "chatbi.bid_biz_win_bid",
@@ -436,5 +462,235 @@ public class QueryBizDataTool {
             log.error("JSON 序列化失败", e);
             return "{\"error\":\"JSON 序列化失败\"}";
         }
+    }
+
+    // ============================================================
+    //  详情 Tool（4 个） —— 按 id 主键或 keyword 模糊查 1 条
+    //
+    //  设计要点：
+    //    1) 4 个独立 Tool 而不是 1 个通用 get_biz_detail：
+    //       - 跟现有 4 个 query-*-skill 命名对称，LLM 路由清晰
+    //       - 每个 Tool 的 description 单独描述业务语义，LLM 看 description 就能路由
+    //    2) 入参：province 必填（做省份权限校验），id 和 keyword 二选一必填
+    //    3) 省份过滤：Tool 层强制注入用户授权 provinceList（不依赖 LLM 传）
+    //    4) 详情返回全字段（Mapper XML SELECT *），含 tenant_id / create_time 等基础字段
+    //    5) 字段归一化复用 normalizeFields（金额列→amount，publish_time→publishTime）
+    // ============================================================
+
+    @Tool(name = "get_bidding_detail",
+          description = "【招标信息详情】按 id 主键或项目名关键词查招标项目详情（chatbi.bid_biz_bidding 表），返回 1 条全字段。" +
+                  "用户问'XX 项目的招标详情/招标公告内容'时使用。id 和 keyword 二选一必传：" +
+                  "id=主键（最准，先调 query_biz_data 拿到 id 再调本工具）；" +
+                  "keyword=项目名/标题/关键词（OR 模糊，LLM 从用户问题里抽）。" +
+                  "province 必传（用户授权范围），Tool 会自动注入省份权限过滤。" +
+                  "返回字段：title/projectName/projectId/tenderer/agency/biddingBudget/bidWay/" +
+                  "timeGetFileEnd(投标截止)/timeBidOpen/detailLink/contact/phone 等所有列。" +
+                  "不返回列表，如需列表用 query_biz_data。",
+          readOnly = true,
+          concurrencySafe = true)
+    public Mono<String> getBiddingDetail(
+            @ToolParam(name = "id", description = "招标记录主键 id（最准，二选一必填）", required = false) Long id,
+            @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填，LLM 从用户问题里抽）", required = false) String keyword,
+            @ToolParam(name = "province", description = "省份，单值如'北京'，多值如'北京,上海'。必须在用户 authorizedProvince 范围内", required = true) String province) {
+        return Mono.deferContextual(view -> {
+            Object authObj = view.getOrEmpty("authInfo").orElse(null);
+            return Mono.fromCallable(() -> {
+                if (authObj instanceof AuthContext.AuthInfo a) {
+                    AuthContext.set(a);
+                }
+                try {
+                    return doDetail("bidding", id, keyword, province);
+                } finally {
+                    AuthContext.clear();
+                }
+            }).subscribeOn(Schedulers.boundedElastic());
+        });
+    }
+
+    @Tool(name = "get_bid_winner_detail",
+          description = "【中标信息详情】按 id 主键或项目名关键词查中标项目详情（chatbi.bid_biz_win_bid 表），返回 1 条全字段。" +
+                  "用户问'XX 项目的中标详情/中标单位/中标金额/中标公示内容'时使用。id 和 keyword 二选一必传：" +
+                  "id=主键（最准）；keyword=项目名/标题/关键词（OR 模糊）。" +
+                  "province 必传，Tool 自动注入省份权限过滤。" +
+                  "返回字段：title/projectName/winTenderer(中标单位)/winTendererContact/winBidPrice(中标金额)/" +
+                  "tenderer/biddingBudget/agency/publishTime/detailLink 等所有列。" +
+                  "不返回列表，如需列表用 query_biz_data。",
+          readOnly = true,
+          concurrencySafe = true)
+    public Mono<String> getBidWinnerDetail(
+            @ToolParam(name = "id", description = "中标记录主键 id（最准，二选一必填）", required = false) Long id,
+            @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
+            @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
+        return Mono.deferContextual(view -> {
+            Object authObj = view.getOrEmpty("authInfo").orElse(null);
+            return Mono.fromCallable(() -> {
+                if (authObj instanceof AuthContext.AuthInfo a) {
+                    AuthContext.set(a);
+                }
+                try {
+                    return doDetail("bid_winner", id, keyword, province);
+                } finally {
+                    AuthContext.clear();
+                }
+            }).subscribeOn(Schedulers.boundedElastic());
+        });
+    }
+
+    @Tool(name = "get_purchase_intention_detail",
+          description = "【采购意向详情】按 id 主键或项目名关键词查采购意向详情（chatbi.bid_biz_purchase_intention 表），返回 1 条全字段。" +
+                  "用户问'XX 采购意向详情/采购计划内容'时使用。id 和 keyword 二选一必传：" +
+                  "id=主键；keyword=项目名/标题/关键词（OR 模糊）。" +
+                  "province 必传，Tool 自动注入省份权限过滤。" +
+                  "返回字段：title/projectName/tenderer/biddingBudget(万元)/timeBidOpen/timeBidClose/" +
+                  "product(采购需求)/channel/publishTime/detailLink 等所有列。" +
+                  "不返回列表，如需列表用 query_biz_data。",
+          readOnly = true,
+          concurrencySafe = true)
+    public Mono<String> getPurchaseIntentionDetail(
+            @ToolParam(name = "id", description = "采购意向记录主键 id（最准，二选一必填）", required = false) Long id,
+            @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
+            @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
+        return Mono.deferContextual(view -> {
+            Object authObj = view.getOrEmpty("authInfo").orElse(null);
+            return Mono.fromCallable(() -> {
+                if (authObj instanceof AuthContext.AuthInfo a) {
+                    AuthContext.set(a);
+                }
+                try {
+                    return doDetail("purchase_intention", id, keyword, province);
+                } finally {
+                    AuthContext.clear();
+                }
+            }).subscribeOn(Schedulers.boundedElastic());
+        });
+    }
+
+    @Tool(name = "get_prepose_detail",
+          description = "【前期项目详情】按 id 主键或项目名关键词查前期项目详情（chatbi.bid_biz_prepose 表，拟在建/项目储备），返回 1 条全字段。" +
+                  "用户问'XX 前期项目详情/拟在建项目内容/项目储备详情'时使用。id 和 keyword 二选一必传：" +
+                  "id=主键；keyword=项目名/标题/关键词（OR 模糊）。" +
+                  "province 必传，Tool 自动注入省份权限过滤。" +
+                  "返回字段：title/projectName/tenderer/biddingBudget(万元)/bidWay/timeBidOpen/timeBidClose/" +
+                  "serviceTime/publishTime/detailLink 等所有列。" +
+                  "不返回列表，如需列表用 query_biz_data。",
+          readOnly = true,
+          concurrencySafe = true)
+    public Mono<String> getPreposeDetail(
+            @ToolParam(name = "id", description = "前期项目记录主键 id（最准，二选一必填）", required = false) Long id,
+            @ToolParam(name = "keyword", description = "项目名/标题/关键词（OR 模糊，二选一必填）", required = false) String keyword,
+            @ToolParam(name = "province", description = "省份，必须在用户 authorizedProvince 范围内", required = true) String province) {
+        return Mono.deferContextual(view -> {
+            Object authObj = view.getOrEmpty("authInfo").orElse(null);
+            return Mono.fromCallable(() -> {
+                if (authObj instanceof AuthContext.AuthInfo a) {
+                    AuthContext.set(a);
+                }
+                try {
+                    return doDetail("prepose", id, keyword, province);
+                } finally {
+                    AuthContext.clear();
+                }
+            }).subscribeOn(Schedulers.boundedElastic());
+        });
+    }
+
+    /**
+     * 详情查询的共享执行逻辑（4 个 Tool 复用）
+     * <p>流程：省份权限校验 → 校验 id/keyword 二选一 → 调 Mapper → 字段归一化 → 包装响应
+     *
+     * @param bizType   bidding / bid_winner / purchase_intention / prepose
+     * @param id        主键（可空，keyword 兜底）
+     * @param keyword   项目名/标题/关键词模糊（可空，id 兜底）
+     * @param province  用户授权省份（必传，做权限校验+过滤）
+     */
+    private String doDetail(String bizType, Long id, String keyword, String province) {
+        log.info("🔍 [get_{}_detail] id={}, keyword={}, province={}", bizType, id, keyword, province);
+
+        // 1) bizType 校验
+        DetailTableDef table = DETAIL_TABLES.get(bizType);
+        if (table == null) {
+            return errorJson("不支持的 bizType: " + bizType);
+        }
+
+        // 2) id 和 keyword 二选一必传
+        if ((id == null) && (keyword == null || keyword.isBlank())) {
+            return errorJson("必须传 id 或 keyword 其中一个：" +
+                    "id 是主键（最准），keyword 是项目名/标题/关键词（OR 模糊）。" +
+                    "如果你只有项目名，传 keyword；如果你从 query_biz_data 列表里拿到了 id，传 id");
+        }
+
+        // 3) 省份权限校验（复用列表 Tool 的逻辑）
+        AuthContext.AuthInfo auth = AuthContext.get();
+        String authorizedProvince = (auth != null && auth.province() != null) ? auth.province() : "";
+        authorizedProvince = ProvinceUtil.normalizeList(authorizedProvince);
+        if (authorizedProvince.isBlank()) {
+            log.warn("⛔ [get_{}_detail] 用户无任何省份授权: userId={}",
+                    bizType, auth != null ? auth.userId() : "null");
+            return errorJson("您还没开通此省份的数据查询权限,需要联系达仁科技开通一下哦");
+        }
+
+        String validatedProvince = validateProvince(province, authorizedProvince);
+        if (validatedProvince == null) {
+            return errorJson("⛔ 您查询的\"" + (province == null ? "(空)" : province) + "\"不在您开通省份范围(" + authorizedProvince + ")内,请联系客户经理进行开通");
+        }
+
+        // 4) 组装参数：id / keyword / provinceList
+        Map<String, Object> mapperParams = new HashMap<>();
+        if (id != null) {
+            mapperParams.put("id", id);
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            mapperParams.put("keyword", keyword.trim());
+        }
+        // 复用 buildMapperParams 注入 provinceList
+        mapperParams = buildMapperParams(validatedProvince, mapperParams);
+
+        log.info("📊 [get_{}_detail] bizType={}, mapperParams={}", bizType, bizType, mapperParams);
+
+        try {
+            // 5) 调 Mapper（4 个详情方法的 switch 路由）
+            List<Map<String, Object>> rawResult = dispatchToDetailMapper(bizType, mapperParams);
+
+            if (rawResult.isEmpty()) {
+                Map<String, Object> empty = new LinkedHashMap<>();
+                empty.put("success", true);
+                empty.put("bizType", bizType);
+                empty.put("found", false);
+                empty.put("detail", null);
+                empty.put("message", "未找到匹配的详情记录（id 或 keyword 无效，或不在您授权省份范围）");
+                return toJson(empty);
+            }
+
+            // 6) 字段归一化（金额列→amount，publish_time→publishTime）
+            Map<String, Object> detail = rawResult.get(0);
+            Map<String, Object> normalized = normalizeFields(detail);
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("success", true);
+            response.put("bizType", bizType);
+            response.put("found", true);
+            response.put("detail", normalized);
+            response.put("message", "查询成功，返回 1 条详情");
+
+            log.info("✅ [get_{}_detail] 找到 1 条详情, id={}", bizType, normalized.get("id"));
+            return toJson(response);
+
+        } catch (Exception e) {
+            log.error("❌ [get_{}_detail] 查询失败, error={}", bizType, e.getMessage(), e);
+            return errorJson("查询详情失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 详情 Mapper 路由（4 个 getXxxDetail 方法，委托给 BizDetailMapper）
+     */
+    private List<Map<String, Object>> dispatchToDetailMapper(String bizType, Map<String, Object> params) {
+        return switch (bizType) {
+            case "bidding" -> bizDetailMapper.getBiddingDetail(params);
+            case "bid_winner" -> bizDetailMapper.getBidWinnerDetail(params);
+            case "purchase_intention" -> bizDetailMapper.getPurchaseIntentionDetail(params);
+            case "prepose" -> bizDetailMapper.getPreposeDetail(params);
+            default -> throw new IllegalArgumentException("不支持的详情 bizType: " + bizType);
+        };
     }
 }

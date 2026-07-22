@@ -94,12 +94,8 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 | `written` / `writtenTime` | Boolean / LocalDateTime | 是否录入商机/时间 |
 | `biddingJoined` | Boolean | 是否参与投标 |
 | `column1-10` | String | 备用字段 |
-| `customerId` | Long | 客户 ID |
-| `pushStatus` / `pushTime` | Integer / LocalDateTime | 推送状态/时间 |
 | `kept` | Boolean | 是否保留 |
 | `keywords` | String | 关键词 |
-| `deptId` | Long | 部门 ID |
-| `editstatus` | String | 数据清洗编辑状态 |
 | `customerIn` | String | 是否名单制 |
 | `tendererAddress` / `tendererContact` / `tendererPhone` | String | 招标单位地址/联系人/电话 |
 | `agency` / `agencyContact` / `agencyPhone` | String | 代理机构/联系人/电话 |

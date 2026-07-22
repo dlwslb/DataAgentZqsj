@@ -30,18 +30,14 @@
 | `timeGetFileStart` / `timeGetFileEnd` | String | 文件获取开始/**投标截止** |
 | `biddingScale` | String | 招标范围及规模 |
 | `bidCreateTime` | LocalDateTime | bid 创建时间 |
-| `customerId` | Long | 客户 ID |
 | `collectStatus` | Boolean | 是否收藏 |
 | `notes` | String | 备注 |
 | `completed` | Boolean | 是否完整 |
-| `bidBusId` | Long | bidBusniss id |
 | `keyBusiness` | String | 重点业务 |
 | `batchNo` | String | 批次号 |
 | `pushStatus` / `pushTime` | Integer / LocalDateTime | 推送状态/时间 |
 | `kept` | Boolean | 是否保留 |
 | `keywords` | String | 关键词 |
-| `deptId` | Long | 部门 ID |
-| `flowsStasus*` / `flowsId*` / `flowsReason*` | String | 多个流程字段（信息化/地区变更/商机变更/弃标/丢标/派发）|
 | `marketingUnit` | String | 营销单位 |
 | `projectSite` | String | 项目实施地点 |
 | `written` / `writtenTime` | Boolean / String | 是否录入商机/时间 |
@@ -59,7 +55,6 @@
 | `customerIn` | String | 是否名单制 |
 | `natureName` / `natureId` / `listId` | String | 自然客户/名单客户 ID |
 | `managerAOa` | String | 首席客户经理 A 角 OA 工号 |
-| `sendDownCityManager` / `sendDownKeyAccountManager` | Integer | 下放地市/客户经理 |
 
 ## Tool 字段映射
 

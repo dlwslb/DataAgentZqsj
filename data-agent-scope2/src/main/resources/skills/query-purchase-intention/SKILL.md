@@ -89,16 +89,10 @@ description: 当用户要查询采购意向、采购计划、采购预告、政�
 | `listLevel` / `listGridCus` | String | 层级/名单客户网格 |
 | `yewuleixing` | String | 业务类型 |
 | `customerIn` | String | 是否名单制 |
-| `natureName` / `natureId` / `listId` | String | 自然/名单客户 ID |
 | `managerAOa` | String | 首席客户经理 A 角 OA 工号 |
 | `field` | String | 领域 |
-| `abandoned` / `abandonedNo` | String | 弃标/申请单号 |
-| `pushStatus` / `pushTime` | Integer / LocalDateTime | 推送状态/时间 |
 | `kept` | Boolean | 是否保留 |
 | `completed` | Boolean | 是否完整 |
-| `collectStatus` | Boolean | 是否收藏 |
-| `customerId` | Long | 客户 ID |
-| `deptId` | Long | 部门 ID |
 
 ## 结果处理
 
