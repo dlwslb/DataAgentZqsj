@@ -71,3 +71,5 @@ spring-ai-alibaba-1.1.0.0/
 /.lingma/
 /docker-file/
 /test_long_term_memory.sh
+/.agentscope/
+/.mavis/
