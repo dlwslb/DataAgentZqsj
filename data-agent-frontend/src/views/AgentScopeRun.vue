@@ -349,7 +349,7 @@
 </template>
 
 <script lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue';
+import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Loading, Document, Download, FullScreen, Close, ArrowDown, Promotion, CircleClose } from '@element-plus/icons-vue';
@@ -447,6 +447,9 @@ export default {
     // 状态控制
     const thinkingPreview = ref('');
     const hasFinalMessage = ref(false);
+    // 🔑 assistant 消息是否已保存（独立标志，复用 hasFinalMessage 会冲突——
+    //    hasFinalMessage 在 text 阶段就被 set true，done 兜底永远进不去）
+    const assistantSaved = ref(false);
 
     // 🔑 打字机效果：当前正在打字的消息 ID（text 事件来时更新同一条）
     const streamingMsgId = ref<number | null>(null);
@@ -807,6 +810,46 @@ export default {
       }
     };
 
+    // 🔑 SSE2 链路下保存消息到原 scope 后端（fire-and-forget，失败仅 warn 不影响 UI）
+    //    - 只在 sse2Enabled=true 时启用（同步条件：sse 走 scope2、保存走 scope1）
+    //    - 自动被回车（handleEnterKey → sendMessage）和右侧发送按钮（@click="sendMessage"）覆盖
+    //    - 拦截器自动加 Authorization / User-ID / Tenant-ID
+    //    - assistant 消息去重：内部用 assistantSaved 标志，同一次对话只存一次 assistant
+    const saveMessage = async (
+      role: 'user' | 'assistant',
+      content: string,
+      messageType?: string
+    ) => {
+      console.log(`[saveMessage] called, role=${role}, sse2Enabled=${sse2Enabled.value}, contentLen=${content?.length || 0}, assistantSaved=${assistantSaved.value}`);
+      if (!sse2Enabled.value) return;
+      if (!currentSession.value?.id || !agent.value?.id) {
+        console.warn(`[saveMessage] 跳过：sessionId/agentId 缺失`);
+        return;
+      }
+      if (!content || !content.trim()) {
+        console.warn(`[saveMessage] 跳过：content 为空`);
+        return;
+      }
+      // 🔑 assistant 去重：同一轮对话只存一次（不管从哪个回调触发）
+      if (role === 'assistant' && assistantSaved.value) {
+        console.log(`[saveMessage] 跳过：assistant 已保存过`);
+        return;
+      }
+      try {
+        await agentScopeApi.saveMessage({
+          sessionId: String(currentSession.value.id),
+          agentId: agent.value.id,
+          role,
+          content,
+          messageType: messageType || 'text',
+        });
+        console.log(`[saveMessage] ✅ ${role} 保存成功`);
+        if (role === 'assistant') assistantSaved.value = true;
+      } catch (err) {
+        console.warn(`[saveMessage] ${role} 消息保存失败:`, err);
+      }
+    };
+
     const sendMessage = async () => {
       if (!inputMessage.value.trim() || sending.value || !currentSession.value) return;
 
@@ -820,10 +863,13 @@ export default {
         messageType: 'text',
         createTime: new Date().toLocaleString(),
       });
+      // 🔑 SSE2 链路：保存 user 消息
+      saveMessage('user', userMessage, 'text');
 
       inputMessage.value = '';
       sending.value = true;
       hasFinalMessage.value = false;
+      assistantSaved.value = false; // 🔑 重置：每轮对话重新计数
       thinkingPreview.value = '';
       currentPreviewType.value = 'text'; // 🔑 重置预览类型
       streamingMsgId.value = null;
@@ -964,19 +1010,27 @@ export default {
           const read = () => {
             reader.read().then(({ done, value }) => {
               if (done) {
-                // 🔹 流结束兜底：用思考预览生成最终消息
-                if (!hasFinalMessage.value && thinkingPreview.value && streamingMsgId.value === null) {
-                  // 🔑 关键修复：对兜底消息也进行预处理
-                  const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
-                  currentMessages.value.push({
-                    id: Date.now(),
-                    sessionId: currentSession.value.id,
-                    agentId: agent.value.id,
-                    role: 'assistant',
-                    content: stripReportPrefix(processedContent),
-                    messageType: detectMessageType(processedContent),
-                    createTime: new Date().toLocaleString(),
-                  });
+                // 🔹 流结束兜底：用 assistantSaved 判定（hasFinalMessage 不可靠，text 阶段就 set true 了）
+                if (!assistantSaved.value) {
+                  if (streamingMsgContent.value) {
+                    // 场景 1：打字机有内容（已在 currentMessages 里）—— 只调 saveMessage
+                    saveMessage('assistant', streamingMsgContent.value, detectMessageType(streamingMsgContent.value));
+                  } else if (thinkingPreview.value && streamingMsgId.value === null) {
+                    // 场景 2：完全没文本消息，只有思考预览（极罕见）—— push + save
+                    const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
+                    const finalContent = stripReportPrefix(processedContent);
+                    const finalMessageType = detectMessageType(processedContent);
+                    currentMessages.value.push({
+                      id: Date.now(),
+                      sessionId: currentSession.value.id,
+                      agentId: agent.value.id,
+                      role: 'assistant',
+                      content: finalContent,
+                      messageType: finalMessageType,
+                      createTime: new Date().toLocaleString(),
+                    });
+                    saveMessage('assistant', finalContent, finalMessageType);
+                  }
                 }
                 sending.value = false;
                 hasFinalMessage.value = true;
@@ -1156,16 +1210,18 @@ export default {
 
                     // 🔑 关键修复：对最终消息进行预处理，确保列表格式正确
                     const processedContent = preprocessStreamingContent(content, '');
-                    
+                    const finalContent = stripReportPrefix(processedContent);
+
                     currentMessages.value.push({
                       id: messageId || Date.now(),
                       sessionId: currentSession.value.id,
                       agentId: agent.value.id,
                       role: 'assistant',
-                      content: stripReportPrefix(processedContent), // 🔑 使用预处理后的内容
+                      content: finalContent, // 🔑 使用预处理后的内容
                       messageType: finalMessageType,
                       createTime: new Date().toLocaleString(),
                     });
+                    // 🔑 assistant 保存由 watch(sending) 统一处理，触发时机：流结束
                     hasFinalMessage.value = true;
                     thinkingPreview.value = '';
                     currentPreviewType.value = 'text'; // 🔑 重置
@@ -1176,18 +1232,27 @@ export default {
                       // 🎯 done 事件：流正常结束
                   // ─────────────────────────────────────
                   else if (streamType === 'done') {
-                    if (!hasFinalMessage.value && thinkingPreview.value && streamingMsgId.value === null) {
-                      // 🔑 关键修复：对兜底消息也进行预处理
-                      const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
-                      currentMessages.value.push({
-                        id: Date.now(),
-                        sessionId: currentSession.value.id,
-                        agentId: agent.value.id,
-                        role: 'assistant',
-                        content: stripReportPrefix(processedContent),
-                        messageType: detectMessageType(processedContent),
-                        createTime: new Date().toLocaleString(),
-                      });
+                    // 🔑 done 事件来了 → 立即保存 assistant 完整消息（用 assistantSaved 防止重复）
+                    if (!assistantSaved.value) {
+                      if (streamingMsgContent.value) {
+                        // 场景 1：text 阶段累积了内容（已经在 currentMessages 里了，id=streamingMsgId）—— 不再 push，只调 saveMessage
+                        saveMessage('assistant', streamingMsgContent.value, detectMessageType(streamingMsgContent.value));
+                      } else if (thinkingPreview.value && streamingMsgId.value === null) {
+                        // 场景 2：完全没文本消息，只有思考预览（罕见）—— push + save
+                        const processedContent = preprocessStreamingContent(thinkingPreview.value, '');
+                        const finalContent = stripReportPrefix(processedContent);
+                        const finalMessageType = detectMessageType(processedContent);
+                        currentMessages.value.push({
+                          id: Date.now(),
+                          sessionId: currentSession.value.id,
+                          agentId: agent.value.id,
+                          role: 'assistant',
+                          content: finalContent,
+                          messageType: finalMessageType,
+                          createTime: new Date().toLocaleString(),
+                        });
+                        saveMessage('assistant', finalContent, finalMessageType);
+                      }
                     }
                     sending.value = false;
                     hasFinalMessage.value = true;

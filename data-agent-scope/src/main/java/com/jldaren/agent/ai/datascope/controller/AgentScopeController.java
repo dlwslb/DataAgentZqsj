@@ -24,6 +24,8 @@ import com.jldaren.agent.ai.datascope.mapper.ChatSessionMapper;
 import com.jldaren.agent.ai.datascope.registry.AgentScopeRegistry;
 import com.jldaren.agent.ai.datascope.service.AgentScopeAgentManager;
 import com.jldaren.agent.ai.datascope.service.RagService;
+import com.jldaren.agent.ai.datascope.util.AuthInfo;
+import com.jldaren.agent.ai.datascope.util.AuthUtils;
 import com.jldaren.agent.ai.datascope.vo.ApiResponse;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.ContentBlock;
@@ -58,6 +60,8 @@ public class AgentScopeController {
 
 
     private final ChatSessionMapper chatSessionMapper;
+    // 🔑 认证工具：从 Authorization Bearer 解析 userId/tenantId，注入到 ChatMessage
+    private final AuthUtils authUtils;
 
     private final ChatMessageMapper chatMessageMapper;
 
@@ -326,8 +330,7 @@ public class AgentScopeController {
     @Operation(summary = "保存消息", description = "保存聊天消息（用于SSE流式聊天后的消息持久化）")
     public ApiResponse<ChatMessage> saveMessage(
             @RequestBody ChatMessage message,
-            @RequestHeader(value = "User-ID", required = false) String userIdHeader,
-            @RequestHeader(value = "Tenant-ID", required = false) String tenantIdHeader) {
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         if (message.getSessionId() == null || message.getSessionId().isBlank()) {
             return ApiResponse.error("sessionId is required");
         }
@@ -340,6 +343,18 @@ public class AgentScopeController {
         if (message.getMessageType() == null) {
             message.setMessageType("text");
         }
+
+        // 🔑 从 Authorization Bearer 解析 userId/tenantId（防前端 header 伪造，失败统一 401）
+        AuthInfo auth = authUtils.extractFromHeader(authHeader);
+        if(auth!=null){
+            if (auth.userId() != null) {
+                message.setUserId(auth.userId());
+            }
+            if (auth.tenantId() != null) {
+                message.setTenantId(auth.tenantId());
+            }
+        }
+
         chatMessageMapper.insert(message);
         chatSessionMapper.updateTime(message.getSessionId());
         return ApiResponse.success("保存成功", message);
