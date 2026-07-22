@@ -44,7 +44,7 @@
     <!--    独有: win_tenderer 模糊匹配                                    -->
     <!-- ============================================================ -->
     <select id="queryBidWinner" resultType="java.util.Map">
-        SELECT project_name, win_tenderer, win_bid_price, publish_time
+        SELECT project_name, win_tenderer, win_bid_price
         FROM chatbi.bid_biz_win_bid
         <where>
             deleted = 0
@@ -91,7 +91,7 @@
     <!--    金额列: bidding_budget                                        -->
     <!-- ============================================================ -->
     <select id="queryBidding" resultType="java.util.Map">
-        SELECT project_name, tenderer, bidding_budget, publish_time
+        SELECT project_name, tenderer, bidding_budget
         FROM chatbi.bid_biz_bidding
         <where>
             deleted = 0
@@ -133,7 +133,7 @@
     <!--    独有: time_bid_open / time_bid_close 字段（暂不参与查询条件） -->
     <!-- ============================================================ -->
     <select id="queryPurchaseIntention" resultType="java.util.Map">
-        SELECT project_name, tenderer, bidding_budget, time_bid_open, time_bid_close, publish_time
+        SELECT project_name, tenderer, bidding_budget, time_bid_open, time_bid_close
         FROM chatbi.bid_biz_purchase_intention
         <where>
             deleted = 0
@@ -173,7 +173,7 @@
     <!--    无金额列，排序: publish_time DESC                              -->
     <!-- ============================================================ -->
     <select id="queryPrepose" resultType="java.util.Map">
-        SELECT project_name, tenderer, time_bid_open, time_bid_close, publish_time
+        SELECT project_name, tenderer, time_bid_open, time_bid_close
         FROM chatbi.bid_biz_prepose
         <where>
             deleted = 0
@@ -212,7 +212,7 @@
     <!--    今日/昨日查这个                                                -->
     <!-- ============================================================ -->
     <select id="queryOriginAnnouncement" resultType="java.util.Map">
-        SELECT title, province, win_tenderer, win_bid_amount, publish_time
+        SELECT title, province, win_tenderer, win_bid_amount
         FROM chatbi.bid_origin_announcement
         <where>
             deleted = 0
