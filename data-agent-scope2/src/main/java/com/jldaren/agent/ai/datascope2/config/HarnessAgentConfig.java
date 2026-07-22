@@ -57,6 +57,9 @@ public class HarnessAgentConfig {
     @Value("${agentscope.model.default:dashscope:qwen-plus}")
     private String defaultModel;
 
+    @Value("${agentscope.model.summary:dashscope:qwen-turbo}")
+    private String summaryModel;
+
     @Value("${agentscope.workspace.base-path}")
     private String workspaceBasePath;
 
@@ -287,15 +290,19 @@ public class HarnessAgentConfig {
 
     /**
      * ⭐ 摘要专用轻量模型
-     * <p>用 qwen-turbo 做会话压缩 summary（比主对话的 qwen-plus 快 5-10 倍）
-     * <p>关闭 thinking,摘要不需要思考
+     * <p>用 agentscope.model.summary 配的轻量模型做会话压缩 summary
+     * <p>（默认 qwen-turbo，比主对话的 qwen-plus 快 5-10 倍）
+     * <p>关闭 thinking，摘要不需要思考
      */
     private Model buildDashScopeSummaryModel() {
+        String shortName = summaryModel.startsWith("dashscope:")
+                ? summaryModel.substring("dashscope:".length())
+                : summaryModel;
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        log.info("🔧 构建摘要专用 DashScopeChatModel: model=qwen-turbo, enableThinking=false（摘要不需要思考）");
+        log.info("🔧 构建摘要专用 DashScopeChatModel: model={}, enableThinking=false（摘要不需要思考）", shortName);
         return DashScopeChatModel.builder()
                 .apiKey(apiKey)
-                .modelName("qwen-turbo")
+                .modelName(shortName)
                 .stream(false)             // 摘要不需要流式
                 .enableThinking(false)     // 摘要不需要思考
                 .build();

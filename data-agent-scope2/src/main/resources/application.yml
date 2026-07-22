@@ -55,6 +55,8 @@ agentscope:
   # 模型
   model:
     default: ${AGENTSCOPE_MODEL:dashscope:qwen-plus}
+    # 摘要专用轻量模型（关闭 thinking，压缩上下文用，比主对话快 5-10 倍）
+    summary: ${AGENTSCOPE_SUMMARY_MODEL:dashscope:qwen-turbo}
     api-key: ${DASHSCOPE_API_KEY:}
     base-url: ${DASHSCOPE_BASE_URL:}
     max-tokens: 4096
