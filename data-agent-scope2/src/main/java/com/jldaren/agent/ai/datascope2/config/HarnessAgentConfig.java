@@ -19,8 +19,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
-import io.agentscope.harness.agent.memory.MemoryConfig;
-import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Qualifier;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
@@ -32,11 +31,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
 import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.Arrays;
 
 /**
@@ -103,6 +100,9 @@ public class HarnessAgentConfig {
      */
     @Value("${agentscope.model.thinking-budget:2048}")
     private int thinkingBudget;
+
+    // 单例，避免重复构建
+    private Model summaryModelInstance;
 
     /**
      * Workspace 路径（每个 agentName 一份）
@@ -283,14 +283,14 @@ public class HarnessAgentConfig {
                 // 上下文压缩（用更激进的配置，专治慢）
                 .compaction(CompactionConfig.builder()
                         // —— 触发策略：放宽阈值，少触发 = 少调用摘要 LLM ——
-                        .triggerMessages(12)     //，压缩频率
-                        .triggerTokens(30_000)   // 叠加 token 阈值，长消息也能及时 或 30k tokens 之前
+                        .triggerMessages(40)     // 压缩频率
+                        .triggerTokens(40_000)   // 叠加 token 阈值，长消息也能及时 或 40k tokens 之前
                         // —— 压缩后只保留最近1轮完整对话 —— 1轮 = 4条
-                        .keepMessages(4)         // 摘要窗口更小、更快
+                        .keepMessages(12)         // 摘要窗口更小、更快
                         // —— 摘要专用轻量模型（最关键，单这一项就能把压缩耗时降一个量级）——
                         .model(buildDashScopeSummaryModel())  // 用 qwen-turbo 做 summary
                         // —— 精简摘要 Prompt，结构化 + 控长 ——
-                        .summaryPrompt("请用结构化要点总结以下对话，严格按四段输出，每段不超过3条：" +
+                        .summaryPrompt("请用结构化要点总结以下对话，严格按四段输出，总字数严格控制在200字以内：" +
                                 "SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS。\n对话内容：{messages}")
                         // —— 预压缩参数截断：write_file/edit_file 的大入参先裁掉 ——
                         .truncateArgs(CompactionConfig.TruncateArgsConfig.builder()
@@ -360,17 +360,28 @@ public class HarnessAgentConfig {
      * <p>（默认 qwen-turbo，比主对话的 qwen-plus 快 5-10 倍）
      * <p>关闭 thinking，摘要不需要思考
      */
-    private Model buildDashScopeSummaryModel() {
+    @PostConstruct // 或在 Agent 初始化时调用
+    public void initSummaryModel() {
         String shortName = summaryModel.startsWith("dashscope:")
                 ? summaryModel.substring("dashscope:".length())
                 : summaryModel;
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        log.info("🔧 构建摘要专用 DashScopeChatModel: model={}, enableThinking=false（摘要不需要思考）", shortName);
-        return DashScopeChatModel.builder()
+
+        log.info("🔧 构建摘要专用 DashScopeChatModel: model={}, enableThinking=false", shortName);
+
+        this.summaryModelInstance = DashScopeChatModel.builder()
                 .apiKey(apiKey)
-                .modelName(shortName)
-                .stream(false)             // 摘要不需要流式
-                .enableThinking(false)     // 摘要不需要思考
+                .modelName(shortName)      // 推荐使用 qwen-turbo
+                .stream(false)             // ✅ 摘要不需要流式
+                .enableThinking(false)     // ✅ 关闭思考，核心加速点
                 .build();
     }
+
+    private Model buildDashScopeSummaryModel() {
+        if (this.summaryModelInstance == null) {
+            initSummaryModel();
+        }
+        return this.summaryModelInstance;
+    }
+
 }
