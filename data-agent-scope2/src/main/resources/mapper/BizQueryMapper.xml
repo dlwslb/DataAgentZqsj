@@ -64,7 +64,13 @@
             <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
             <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
             <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
-            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.channelList != null and p.channelList.size() > 0">
+                AND (
+                <foreach collection="p.channelList" item="c" separator=" OR ">
+                    channel LIKE CONCAT('%', #{c}, '%')
+                </foreach>
+                )
+            </if>
             <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
             <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
             <!-- win_bid 表独有: 中标单位 -->
@@ -109,7 +115,13 @@
             <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
             <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
             <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
-            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.channelList != null and p.channelList.size() > 0">
+                AND (
+                <foreach collection="p.channelList" item="c" separator=" OR ">
+                    channel LIKE CONCAT('%', #{c}, '%')
+                </foreach>
+                )
+            </if>
             <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
             <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
             <if test="p.keyword != null and p.keyword != ''">
@@ -151,7 +163,13 @@
             <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
             <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
             <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
-            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.channelList != null and p.channelList.size() > 0">
+                AND (
+                <foreach collection="p.channelList" item="c" separator=" OR ">
+                    channel LIKE CONCAT('%', #{c}, '%')
+                </foreach>
+                )
+            </if>
             <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
             <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
             <if test="p.keyword != null and p.keyword != ''">
@@ -191,7 +209,13 @@
             <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
             <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
             <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
-            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.channelList != null and p.channelList.size() > 0">
+                AND (
+                <foreach collection="p.channelList" item="c" separator=" OR ">
+                    channel LIKE CONCAT('%', #{c}, '%')
+                </foreach>
+                )
+            </if>
             <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
             <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
             <if test="p.keyword != null and p.keyword != ''">
@@ -230,7 +254,13 @@
             <if test="p.district != null and p.district != ''">AND district = #{p.district}</if>
             <if test="p.industry != null and p.industry != ''">AND industry = #{p.industry}</if>
             <if test="p.infoType != null and p.infoType != ''">AND info_type = #{p.infoType}</if>
-            <if test="p.channel != null and p.channel != ''">AND channel LIKE CONCAT('%', #{p.channel}, '%')</if>
+            <if test="p.channelList != null and p.channelList.size() > 0">
+                AND (
+                <foreach collection="p.channelList" item="c" separator=" OR ">
+                    channel LIKE CONCAT('%', #{c}, '%')
+                </foreach>
+                )
+            </if>
             <if test="p.webSourceName != null and p.webSourceName != ''">AND web_source_name = #{p.webSourceName}</if>
             <if test="p.tenderer != null and p.tenderer != ''">AND tenderer LIKE CONCAT('%', #{p.tenderer}, '%')</if>
             <!-- origin_announcement 也有 win_tenderer 字段 -->
@@ -246,7 +276,8 @@
             <if test="p.minBudget != null">AND win_bid_amount >= #{p.minBudget}</if>
             <if test="p.maxBudget != null">AND win_bid_amount &lt;= #{p.maxBudget}</if>
         </where>
-        ORDER BY win_bid_amount DESC, publish_time DESC
+        <!-- ⭐ 排序调整: 两个金额列都是 varchar,CAST 转 DECIMAL(20,2) 后再排,publish_time 兜底. 原因: 字符串排序 "948.02" < "95.20" 字典序错,CAST 后才能按数值排. TODO 长期: 把两列改成 decimal 类型 -->
+        ORDER BY CAST(budget_amount AS DECIMAL(20,2)) DESC, CAST(win_bid_amount AS DECIMAL(20,2)) DESC, publish_time DESC
         LIMIT #{limit}
     </select>
 

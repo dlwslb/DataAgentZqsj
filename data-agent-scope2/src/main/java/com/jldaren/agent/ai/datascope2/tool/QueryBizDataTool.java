@@ -22,10 +22,13 @@ import com.jldaren.agent.ai.datascope2.mapper.BizDetailMapper;
 import com.jldaren.agent.ai.datascope2.mapper.BizQueryMapper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -94,6 +97,10 @@ public class QueryBizDataTool {
           description = "直接查询业务数据表（不走 NL2SQL，速度快）。" +
                   "bizType 支持: bid_winner(中标信息) / bidding(招标信息) / purchase_intention(采购意向) / prepose(前期项目) / origin_announcement(原始每日标讯，今日/昨日查这个）。" +
                   "对应业务类型: 中标信息 / 招标信息 / 采购意向 / 前期项目 / 原始每日标讯（今日/昨日查这个）。" +
+                  "⛔ 【今日/昨日查询硬性规则】datePreset=today/yesterday 时，conditions.channel 必传！" +
+                  "   - 传 '中标' / '招标' / '采购' / '合同' → 按类型过滤（Tool 自动展开 LIKE 链）" +
+                  "   - 传 '' (空字符串) → 全量返回" +
+                  "   - 不传 → Tool 直接报错，强制重试" +
                   "⛔ 【硬性省份权限】province 必传，且必须是用户 authorizedProvince 范围内的省份（系统 prompt 会告诉你授权范围）。" +
                   "   - authorizedProvince='全国' → province 可不传，自动查全量" +
                   "   - authorizedProvince='北京'（单值）→ province='北京'" +
@@ -198,6 +205,19 @@ public class QueryBizDataTool {
                         "不要用 " + bizType + "。请重新调用：bizType=\"origin_announcement\"，datePreset=\"" + datePreset + "\"，" +
                         "province=您授权范围内的省份");
             }
+
+            // ⭐ 强制 channel 校验：today/yesterday 查询必须传 channel（修 LLM 漏传的 bug）
+            //    原因：SKILL 改了好几版 LLM 还是会漏传 channel（"黑龙江今日中标"被识别成泛问今日）
+            //    现在 Tool 层强制：channel 没传 → 返回错误，LLM 必须重试带 channel
+            //    channel="" (空字符串) 表示"全量"（不报错）
+            Object channelVal = cond.get("channel");
+            if (channelVal == null) {
+                return errorJson("🚫 今日/昨日查询必须传 channel 参数！\n" +
+                        "- 传 '中标' / '招标' / '采购' / '合同' → 过滤指定类型（Tool 自动展开 LIKE 链）\n" +
+                        "- 传 '' (空字符串) → 不过滤，全量返回\n" +
+                        "示例：conditions={\"channel\":\"中标\",\"province\":\"黑龙江\",\"datePreset\":\"today\"}\n" +
+                        "（如果不传 channel 之前能跑，那是因为没拦截——但会返回混合类型数据，是 bug）");
+            }
         }
 
         // ⭐ 组装 MyBatis 参数 Map：provinceList（List<String>）+ 其他 conditions 透传
@@ -280,7 +300,120 @@ public class QueryBizDataTool {
                 params.put("provinceList", validProvinces);
             }
         }
+        // ⭐ channel 拆 List<String>：LLM 传类型（"中标"/"招标"/"采购"/"合同"），Tool 展开成实际 channel 值
+        //    原因：LLM 经常漏传 channel（"黑龙江今日中标"被识别成泛问今日），现在 channel 由 Tool 端按"省→List 展开"模式处理
+        //    SQL 用 <foreach> 拼 LIKE OR 链，兼容 LIKE 模糊匹配
+        Object channelRaw = conditions.get("channel");
+        if (channelRaw instanceof String channelStr && !channelStr.isBlank()) {
+            List<String> channelList = expandChannelTypes(channelStr);
+            if (!channelList.isEmpty()) {
+                params.put("channelList", channelList);
+            }
+        }
         return params;
+    }
+
+    /**
+     * channel 类型 → 实际 channel 值列表
+     * <p>设计目的：LLM 传"中标"这种大类名 → Tool 展开成 DB 里实际存的子类型（"中标信息" / "中标候选人" / "中标结果" / "合同公告"），
+     *    SQL 用 LIKE 模糊匹配。LLM 不需要知道 DB 里具体存什么值，Tool 全包了。
+     * <p>为什么"中标"要包含"合同公告"？因为 SKILL 定义中标类型包含"中标信息"和"合同公告"，
+     *    但 SQL `LIKE '%中标%'` 匹配不到"合同公告"（"合同公告"里没"中标"），
+     *    所以 Tool 端显式加进去，否则中标结果会漏合同公告。
+     *
+     * <p>⭐ <b>数据来源</b>：从 SKILL.md 的 `<!-- channel-mapping -->` 块加载（机器可读格式），
+     *    加载失败 fallback 到下面的硬编码默认值。SKILL 是 single source of truth，
+     *    改 SKILL 即可生效，不用动 Java 代码。
+     */
+    private volatile Map<String, List<String>> channelTypeExpansion;
+
+    /**
+     * 硬编码兜底（SKILL 加载失败时用）
+     */
+    private static final Map<String, List<String>> FALLBACK_CHANNEL_EXPANSION = Map.of(
+            "中标", List.of("中标", "合同公告"),
+            "招标", List.of("招标"),
+            "采购", List.of("采购"),
+            "前置商机", List.of("审批项目", "拟在建", "前期项目")
+    );
+
+    /**
+     * 启动时从 SKILL.md 加载 channel mapping
+     * <p>SKILL.md 里有一个 `<!-- channel-mapping ... end channel-mapping -->` 块，
+     *    格式是 `key=value1,value2,value3` 一行一对。LLM/Linter 改这个块就行。
+     * <p>加载失败/解析失败 → fallback 到硬编码默认值，绝不让 LLM 卡死
+     */
+    @PostConstruct
+    public void loadChannelMappingFromSkill() {
+        Map<String, List<String>> loaded = null;
+        try {
+            ClassPathResource resource = new ClassPathResource(
+                    "skills/query-daily-announcement/SKILL.md");
+            if (!resource.exists()) {
+                log.warn("⚠️ SKILL.md 不存在（{}），用兜底 Map", resource.getPath());
+            } else {
+                String content = StreamUtils.copyToString(resource.getInputStream(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                loaded = parseChannelMappingFromSkill(content);
+                if (loaded == null || loaded.isEmpty()) {
+                    log.warn("⚠️ SKILL.md 解析出来是空，用兜底 Map");
+                    loaded = null;
+                } else {
+                    log.info("✅ 从 SKILL.md 加载 channel mapping: {}", loaded);
+                }
+            }
+        } catch (Exception e) {
+            log.error("❌ 从 SKILL.md 加载 channel mapping 失败，用兜底 Map", e);
+        }
+        this.channelTypeExpansion = loaded != null ? loaded : new HashMap<>(FALLBACK_CHANNEL_EXPANSION);
+    }
+
+    /**
+     * 从 SKILL.md 内容里解析 `<!-- channel-mapping ... end channel-mapping -->` 块
+     * <p>块里每行格式: `类型名=值1,值2,值3`，# 开头的注释行忽略
+     */
+    private static Map<String, List<String>> parseChannelMappingFromSkill(String content) {
+        // 匹配 <!-- channel-mapping (任意内容) --> 到 end channel-mapping --> 之间的内容
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "<!--\\s*channel-mapping[^>]*>([\\s\\S]*?)end channel-mapping\\s*-->",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher m = p.matcher(content);
+        if (!m.find()) {
+            return null;
+        }
+        String block = m.group(1);
+        Map<String, List<String>> result = new HashMap<>();
+        for (String line : block.split("\\r?\\n")) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            int eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            String key = line.substring(0, eq).trim();
+            String[] values = line.substring(eq + 1).split(",");
+            List<String> list = new ArrayList<>();
+            for (String v : values) {
+                String t = v.trim();
+                if (!t.isEmpty()) list.add(t);
+            }
+            if (!list.isEmpty()) result.put(key, list);
+        }
+        return result;
+    }
+
+    private List<String> expandChannelTypes(String channelStr) {
+        List<String> result = new ArrayList<>();
+        for (String c : channelStr.split(",")) {
+            String trimmed = c.trim();
+            if (trimmed.isEmpty()) continue;
+            List<String> expanded = channelTypeExpansion.get(trimmed);
+            if (expanded != null) {
+                result.addAll(expanded);
+            } else {
+                // 未识别的 channel 值，原样透传（LLM 可能知道更具体的子类型）
+                result.add(trimmed);
+            }
+        }
+        return result;
     }
 
     /**
