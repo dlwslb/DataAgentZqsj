@@ -267,8 +267,7 @@
             <if test="p.winTenderer != null and p.winTenderer != ''">AND win_tenderer LIKE CONCAT('%', #{p.winTenderer}, '%')</if>
             <if test="p.keyword != null and p.keyword != ''">
                 AND (title LIKE CONCAT('%', #{p.keyword}, '%')
-                  OR project_name LIKE CONCAT('%', #{p.keyword}, '%')
-                  OR keywords LIKE CONCAT('%', #{p.keyword}, '%'))
+                  OR product LIKE CONCAT('%', #{p.keyword}, '%'))
             </if>
             <if test="p.startDate != null and p.startDate != ''">AND publish_time >= #{p.startDate}</if>
             <if test="p.endDate != null and p.endDate != ''">AND publish_time &lt;= #{p.endDate}</if>
