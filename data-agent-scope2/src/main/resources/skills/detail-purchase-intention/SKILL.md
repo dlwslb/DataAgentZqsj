@@ -1,6 +1,6 @@
 ---
 name: detail-purchase-intention
-description: 【采购意向详情 - 强优先】当用户问**某个具体采购意向/采购计划/采购项目名**的详情时使用本 skill。**触发特征**:用户问题里**必须含具体采购意向名/采购项目名**(典型问法:"XX 采购意向的详情""XX 单位采购计划的内容""XX 采购意向的预算""查一下 XX 采购项目")。调 `get_purchase_intention_detail` 工具按 `keyword` 查 1 条全字段。**关键区分**:用户问"采购意向有哪些/最近有什么采购意向/采购意向汇总"用 `query-purchase-intention`(列表);**用户问"某个具体采购意向的详情"用本 skill**。表 `chatbi.bid_biz_purchase_intention`。
+description: 【采购意向详情 - 强优先】当用户问**某个具体采购意向/采购计划/采购项目名**的详情时使用本 skill。**触发特征**:用户问题里**必须含具体采购意向名/采购项目名**(典型问法:"XX 采购意向的详情""XX 单位采购计划的内容""XX 采购意向的预算""查一下 XX 采购项目")。调 `get_purchase_intention_detail` 工具按 `keyword` 查 1 条全字段。**关键区分**:用户问"采购意向有哪些/最近有什么采购意向/采购意向汇总"用 `query-purchase-intention`(列表);**用户问"某个具体采购意向的详情"用本 skill**。
 ---
 
 # 采购意向详情查询

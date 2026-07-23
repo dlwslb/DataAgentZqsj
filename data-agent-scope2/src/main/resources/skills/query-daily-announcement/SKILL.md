@@ -1,6 +1,6 @@
 ---
 name: query-daily-announcement
-description: 【每日/当日标讯查询专用】当用户问题包含"今日/昨天/今日最新/昨日中标/今日招标/今日采购/今日商机"等关键词时，**必须优先使用本 skill**（不要用 query-bid-winner / query-bidding / query-purchase-intention / query-prepose）。本 skill 走 chatbi.bid_origin_announcement 表，按 channel 区分内容，**province 必传**（用户授权范围内的省份）。
+description: 【每日/当日标讯查询专用】当用户问题包含"今日/昨天/今日最新/昨日中标/今日招标/今日采购/今日商机"等关键词时，**必须优先使用本 skill**（不要用 query-bid-winner / query-bidding / query-purchase-intention / query-prepose）。按 channel 区分内容，**province 必传**（用户授权范围内的省份）。
 ---
 
 # 每日标讯查询

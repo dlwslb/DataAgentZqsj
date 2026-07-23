@@ -1,6 +1,6 @@
 ---
 name: query-bid-winner
-description: 【中标结果查询 - 别和"招标"搞混】当用户查询的是**已经开标后的中标结果**（含"中标"二字但**不含"招标"**）时使用本 skill。例如："中标信息/中标公示/中标候选人/中标金额/中标单位/中标公告/中标结果/中标通知/广西中标/江苏中标"。**关键区分**：用户说"招标公告/招标预告/招标文件"用 `query-bidding`；用户说"中标"**一定**用本 skill（不要误用 `query-bidding`）。表 `chatbi.bid_biz_win_bid`。【注意】"今日/昨天"的中标用 `query-daily-announcement`（原始每日标讯表）。
+description: 【中标结果查询 - 别和"招标"搞混】当用户查询的是**已经开标后的中标结果**（含"中标"二字但**不含"招标"**）时使用本 skill。例如："中标信息/中标公示/中标候选人/中标金额/中标单位/中标公告/中标结果/中标通知/广西中标/江苏中标"。**关键区分**：用户说"招标公告/招标预告/招标文件"用 `query-bidding`；用户说"中标"**一定**用本 skill（不要误用 `query-bidding`）。【注意】"今日/昨天"的中标用 `query-daily-announcement`。
 ---
 
 # 中标信息查询
@@ -66,7 +66,7 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
 - `bizType` = "bid_winner"（固定）
 - `province` = **必填**，用户授权省份（System Context 里的 authorizedProvince）
 
-## 关键字段说明（bid_biz_win_bid 表）
+## 关键字段说明
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
