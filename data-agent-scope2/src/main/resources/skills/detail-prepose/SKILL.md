@@ -112,3 +112,17 @@ description: 【前期项目详情 - 强优先】当用户问**某个具体拟�
 
 用户："查一下 XX 高速公路智能化项目储备的预算和招标方式"
 → 走 detail-prepose，keyword="XX 高速公路智能化"，从 detail 字段里抽 tenderer / biddingBudget / bidWay / serviceTime
+
+## ⭐ 兜底查询（fallback to origin_announcement）
+
+**触发条件**：当主表（`chatbi.bid_biz_prepose`）没数据时，工具会自动用相同 keyword 去 `origin_announcement` 表（原始每日标讯）查，`channel=前置商机`。
+
+**响应里怎么识别兜底**：
+- `source: "origin_announcement_fallback"` ← 看到这字段就是兜底结果
+- `primaryTable: "chatbi.bid_biz_prepose"` ← 主表名
+- `message: "主表未收录，已从原始标讯库找到（数据未经人工审核，详情以主表为准）"`
+
+**用户面前怎么回答**：
+- ✅ 推荐："主表暂未收录此项目，已从原始标讯库找到 X 条记录，建议以原始标讯数据为准"
+- ❌ 不要说："我用另一个表查的"（暴露内部表名）
+- ❌ 不要说："数据可能有误"（原始标讯是实时抓取的，不是有误）

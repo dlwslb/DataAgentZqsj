@@ -256,21 +256,16 @@ public class QueryBizDataTool {
 
     /**
      * 字段归一化：mapper 返回的 Map key 是 snake_case（MyBatis 对 Map 类型不应用 mapUnderscoreToCamelCase）
-     * <p>统一成 amount / amountType / publishTime 驼峰名，方便下游 LLM / Skill 处理
+     * <p>只做日期归一（snake_case publish_time → camelCase publishTime），让日期字段名统一。
+     * <p>⚠️ 不再做金额归一（不加 amount/amountType 重复字段）：
+     * <ul>
+     *   <li>之前会给同一个金额加 2 份（原始 win_bid_amount + 归一化 amount + amountType=winBidAmount），
+     *       详情给用户展示时变成"中标金额/金额/金额类型"三列重复</li>
+     *   <li>现在各表金额列名已经在 XML / 详情 SQL 显式 select 出来，LLM 看到 win_bid_amount / win_bid_price / bidding_budget 自己就懂</li>
+     * </ul>
      */
     private Map<String, Object> normalizeFields(Map<String, Object> row) {
         Map<String, Object> normalized = new LinkedHashMap<>(row);
-        // 金额归一：按表不同的金额列
-        if (row.containsKey("win_bid_price") && row.get("win_bid_price") != null) {
-            normalized.put("amount", row.get("win_bid_price"));
-            normalized.put("amountType", "winBidPrice");
-        } else if (row.containsKey("win_bid_amount") && row.get("win_bid_amount") != null) {
-            normalized.put("amount", row.get("win_bid_amount"));
-            normalized.put("amountType", "winBidAmount");
-        } else if (row.containsKey("bidding_budget") && row.get("bidding_budget") != null) {
-            normalized.put("amount", row.get("bidding_budget"));
-            normalized.put("amountType", "biddingBudget");
-        }
         // 日期归一：snake_case publish_time → camelCase publishTime
         if (row.containsKey("publish_time")) {
             normalized.put("publishTime", row.get("publish_time"));
@@ -768,6 +763,25 @@ public class QueryBizDataTool {
             List<Map<String, Object>> rawResult = dispatchToDetailMapper(bizType, mapperParams);
 
             if (rawResult.isEmpty()) {
+                // ⭐ 兜底查询：主表（bid_biz_win_bid 等）没数据时，自动 fall back 到 origin_announcement
+                //    场景：中标详情/招标详情等走主表，但新数据可能只在原始每日标讯（origin_announcement）里
+                //    主表是人工审核后的，中标库有同步延迟；原始标讯是实时抓取的
+                log.info("🔄 [get_{}_detail] 主表无数据,fall back to origin_announcement, keyword={}", bizType, keyword);
+                Map<String, Object> fallbackRow = tryOriginAnnouncementFallback(bizType, id, keyword, validatedProvince);
+                if (fallbackRow != null) {
+                    Map<String, Object> normalized = normalizeFields(fallbackRow);
+                    Map<String, Object> response = new LinkedHashMap<>();
+                    response.put("success", true);
+                    response.put("bizType", bizType);
+                    response.put("found", true);
+                    response.put("source", "origin_announcement_fallback");
+                    response.put("primaryTable", "chatbi.bid_biz_" + bizType);
+                    response.put("detail", normalized);
+                    response.put("message", "主表未收录，已从原始标讯库找到（数据未经人工审核，详情以主表为准）");
+                    log.info("✅ [get_{}_detail] 兜底找到 1 条详情（来源: origin_announcement）", bizType);
+                    return toJson(response);
+                }
+
                 Map<String, Object> empty = new LinkedHashMap<>();
                 empty.put("success", true);
                 empty.put("bizType", bizType);
@@ -808,5 +822,64 @@ public class QueryBizDataTool {
             case "prepose" -> bizDetailMapper.getPreposeDetail(params);
             default -> throw new IllegalArgumentException("不支持的详情 bizType: " + bizType);
         };
+    }
+
+    /**
+     * ⭐ 详情查询兜底：主表（bid_biz_*）没数据时，fall back 到 origin_announcement
+     * <p>业务背景：主表是人工审核后的"标讯详情库"，有同步延迟；origin_announcement 是原始每日标讯（实时抓取）。
+     *    用户问"今日中标详情"时，主表可能还没收录，但 origin_announcement 已经有这条。
+     * <p>兜底策略：用相同的 id / keyword 查 origin_announcement，按 bizType 映射到对应 channel：
+     * <ul>
+     *   <li>bid_winner → channel=中标（中标信息/中标候选人/合同公告）</li>
+     *   <li>bidding → channel=招标</li>
+     *   <li>purchase_intention → channel=采购</li>
+     *   <li>prepose → channel=前置商机（审批项目/拟在建/项目储备）</li>
+     * </ul>
+     * <p>返回 null = 兜底也查不到；非 null = 找到一条
+     *
+     * @param bizType            业务类型
+     * @param id                 主键（可空，keyword 兜底）
+     * @param keyword            项目名/标题关键词（可空，id 兜底）
+     * @param validatedProvince  已省份权限校验过的省份字符串
+     * @return 找到的第一条记录（Map），未找到返回 null
+     */
+    private Map<String, Object> tryOriginAnnouncementFallback(String bizType, Long id, String keyword, String validatedProvince) {
+        // bizType → channel 映射
+        String fallbackChannel = switch (bizType) {
+            case "bid_winner" -> "中标";
+            case "bidding" -> "招标";
+            case "purchase_intention" -> "采购";
+            case "prepose" -> "前置商机";
+            default -> null;
+        };
+        if (fallbackChannel == null) {
+            return null;
+        }
+
+        // 组装 origin_announcement 查询参数（同 keyword 模糊匹配）
+        Map<String, Object> params = new HashMap<>();
+        if (id != null) {
+            params.put("id", id);
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            params.put("keyword", keyword.trim());
+        }
+        params.put("channel", fallbackChannel);
+        // 复用 buildMapperParams 注入 provinceList（走省份权限）
+        params = buildMapperParams(validatedProvince, params);
+
+        log.info("🔍 [origin_fallback] bizType={}, channel={}, mapperParams={}", bizType, fallbackChannel, params);
+
+        try {
+            // limit=1：兜底只取第一条
+            List<Map<String, Object>> result = bizQueryMapper.queryOriginAnnouncement(params, 1);
+            if (result == null || result.isEmpty()) {
+                return null;
+            }
+            return result.get(0);
+        } catch (Exception e) {
+            log.warn("⚠️ [origin_fallback] 兜底查询异常（不致命，返回 null）", e);
+            return null;
+        }
     }
 }

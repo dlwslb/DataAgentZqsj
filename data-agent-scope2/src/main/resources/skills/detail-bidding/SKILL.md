@@ -119,3 +119,17 @@ description: 【招标信息详情 - 强优先】当用户问**某个具体招�
 
 用户："查一下贵阳市第一人民医院信息化建设项目招标的联系人电话"
 → 走 detail-bidding，keyword="贵阳市第一人民医院信息化建设项目"，从 detail 字段里抽 tendererContact / tendererPhone / agencyContact
+
+## ⭐ 兜底查询（fallback to origin_announcement）
+
+**触发条件**：当主表（`chatbi.bid_biz_bidding`）没数据时，工具会自动用相同 keyword 去 `origin_announcement` 表（原始每日标讯）查，`channel=招标`。
+
+**响应里怎么识别兜底**：
+- `source: "origin_announcement_fallback"` ← 看到这字段就是兜底结果
+- `primaryTable: "chatbi.bid_biz_bidding"` ← 主表名
+- `message: "主表未收录，已从原始标讯库找到（数据未经人工审核，详情以主表为准）"`
+
+**用户面前怎么回答**：
+- ✅ 推荐："主表暂未收录此项目，已从原始标讯库找到 X 条记录，建议以原始标讯数据为准"
+- ❌ 不要说："我用另一个表查的"（暴露内部表名）
+- ❌ 不要说："数据可能有误"（原始标讯是实时抓取的，不是有误）
