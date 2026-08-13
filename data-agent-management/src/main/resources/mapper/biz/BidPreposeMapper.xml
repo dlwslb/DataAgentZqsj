@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.biz.BidPreposeMapper">
+
+    <resultMap id="BaseResultMap" type="com.alibaba.cloud.ai.dataagent.entity.biz.BidPreposeEntity">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="project_name" property="projectName"/>
+        <result column="province" property="province"/>
+        <result column="city" property="city"/>
+        <result column="district" property="district"/>
+        <result column="industry" property="industry"/>
+        <result column="info_type" property="infoType"/>
+        <result column="tenderer" property="tenderer"/>
+        <result column="bidding_budget" property="biddingBudget"/>
+        <result column="bid_way" property="bidWay"/>
+        <result column="channel" property="channel"/>
+        <result column="publish_time" property="publishTime"/>
+        <result column="service_time" property="serviceTime"/>
+        <result column="procurement_system" property="procurementSystem"/>
+        <result column="product" property="product"/>
+        <result column="detail_link" property="detailLink"/>
+        <result column="web_source_name" property="webSourceName"/>
+        <result column="notes" property="notes"/>
+        <result column="collect_status" property="collectStatus"/>
+        <result column="written" property="written"/>
+        <result column="written_time" property="writtenTime"/>
+        <result column="bidding_joined" property="biddingJoined"/>
+        <result column="keywords" property="keywords"/>
+        <result column="tenderer_address" property="tendererAddress"/>
+        <result column="tenderer_contact" property="tendererContact"/>
+        <result column="tenderer_phone" property="tendererPhone"/>
+        <result column="agency" property="agency"/>
+        <result column="agency_contact" property="agencyContact"/>
+        <result column="agency_phone" property="agencyPhone"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, project_name, province, city, district, industry, info_type,
+        tenderer, bidding_budget, bid_way, channel,
+        publish_time, service_time, procurement_system, SUBSTRING_INDEX(product, ',', 5) as product,
+        detail_link, web_source_name,
+        notes,  collect_status, written, written_time,
+        bidding_joined, keywords,
+        tenderer_address, tenderer_contact, tenderer_phone,
+        agency, agency_contact, agency_phone
+    </sql>
+
+    <select id="listByConditions" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <if test="province != null and province != ''">AND province = #{province}</if>
+            <if test="city != null and city != ''">AND city = #{city}</if>
+            <if test="industry != null and industry != ''">AND industry = #{industry}</if>
+            <if test="infoType != null and infoType != ''">AND info_type = #{infoType}</if>
+            <if test="tenderer != null and tenderer != ''">AND tenderer LIKE CONCAT('%', #{tenderer}, '%')</if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                  title LIKE CONCAT('%', #{keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{keyword}, '%')
+                  OR product LIKE CONCAT('%', #{keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="minBudgetYuan != null">AND bidding_budget &gt;= #{minBudgetYuan}</if>
+            <if test="maxBudgetYuan != null">AND bidding_budget &lt;= #{maxBudgetYuan}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_prepose
+        WHERE id = #{id}
+    </select>
+
+    <select id="aggregateProductAsTenderer" resultType="java.util.Map">
+        SELECT product AS keyword,
+               COUNT(*) AS count,
+               COALESCE(SUM(bidding_budget), 0) AS amount
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <if test="tenderer != null and tenderer != ''">
+                AND tenderer LIKE CONCAT('%', #{tenderer}, '%')
+            </if>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+            AND product IS NOT NULL AND product != ''
+        </where>
+        GROUP BY product
+        ORDER BY count DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

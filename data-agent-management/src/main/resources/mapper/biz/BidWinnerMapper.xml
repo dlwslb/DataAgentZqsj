@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.biz.BidWinnerMapper">
+
+    <resultMap id="BaseResultMap" type="com.alibaba.cloud.ai.dataagent.entity.biz.BidWinnerEntity">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="project_name" property="projectName"/>
+        <result column="province" property="province"/>
+        <result column="city" property="city"/>
+        <result column="district" property="district"/>
+        <result column="industry" property="industry"/>
+        <result column="info_type" property="infoType"/>
+        <result column="tenderer" property="tenderer"/>
+        <result column="win_tenderer" property="winTenderer"/>
+        <result column="win_bid_price" property="winBidPrice"/>
+        <result column="bidding_budget" property="biddingBudget"/>
+        <result column="channel" property="channel"/>
+        <result column="publish_time" property="publishTime"/>
+        <result column="product" property="product"/>
+        <result column="agency" property="agency"/>
+        <result column="detail_link" property="detailLink"/>
+        <result column="operator" property="operator"/>
+        <result column="operator_win_status" property="operatorWinStatus"/>
+        <result column="top_grade" property="topGrade"/>
+        <result column="service_start" property="serviceStart"/>
+        <result column="service_day" property="serviceDay"/>
+        <result column="service_period" property="servicePeriod"/>
+        <result column="win_tenderer_email" property="winTendererEmail"/>
+        <result column="win_tenderer_manager" property="winTendererManager"/>
+        <result column="win_tenderer_phone" property="winTendererPhone"/>
+        <result column="keywords" property="keywords"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,  project_name, province, city, district, industry, info_type,
+        tenderer, win_tenderer, win_bid_price, bidding_budget,
+        channel, publish_time, SUBSTRING_INDEX(product, ',', 5) as product, agency, detail_link,
+        operator, operator_win_status, top_grade,
+        service_start, service_day, service_period,
+        win_tenderer_email, win_tenderer_manager, win_tenderer_phone,
+        keywords
+    </sql>
+
+    <select id="listByConditions" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            <if test="province != null and province != ''">AND province = #{province}</if>
+            <if test="city != null and city != ''">AND city = #{city}</if>
+            <if test="industry != null and industry != ''">AND industry = #{industry}</if>
+            <if test="infoType != null and infoType != ''">AND info_type = #{infoType}</if>
+            <if test="tenderer != null and tenderer != ''">AND tenderer LIKE CONCAT('%', #{tenderer}, '%')</if>
+            <if test="winTenderer != null and winTenderer != ''">AND win_tenderer LIKE CONCAT('%', #{winTenderer}, '%')</if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                  title LIKE CONCAT('%', #{keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{keyword}, '%')
+                  OR product LIKE CONCAT('%', #{keyword}, '%')
+                  OR win_tenderer LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="minBudgetYuan != null">AND win_bid_price &gt;= #{minBudgetYuan}</if>
+            <if test="maxBudgetYuan != null">AND win_bid_price &lt;= #{maxBudgetYuan}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_win_bid
+        WHERE id = #{id}
+    </select>
+
+    <!-- 高级搜索：keywordGroups + excludeKeywords（语义同 bidding） -->
+    <select id="listByAdvanced" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="keywordGroups != null and keywordGroups.size() > 0">
+                <foreach collection="keywordGroups" item="group" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        <foreach collection="group" item="kw" separator=" OR ">
+                            (title LIKE CONCAT('%', #{kw}, '%')
+                             OR project_name LIKE CONCAT('%', #{kw}, '%')
+                             OR product LIKE CONCAT('%', #{kw}, '%')
+                             OR win_tenderer LIKE CONCAT('%', #{kw}, '%')
+                             OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                        </foreach>
+                    </trim>
+                </foreach>
+            </if>
+            <if test="excludeKeywords != null and excludeKeywords.size() > 0">
+                <foreach collection="excludeKeywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        title NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND project_name NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND product NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND win_tenderer NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND tenderer NOT LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="minBudgetYuan != null">AND win_bid_price &gt;= #{minBudgetYuan}</if>
+            <if test="maxBudgetYuan != null">AND win_bid_price &lt;= #{maxBudgetYuan}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- Top 中标单位聚合（按 win_tenderer） -->
+    <select id="aggregateTopSuppliers" resultType="java.util.Map">
+        SELECT
+            win_tenderer AS company_name,
+            COUNT(*) AS win_count,
+            COALESCE(SUM(win_bid_price), 0) AS total_amount,
+            MAX(publish_time) AS latest_win_time
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            win_tenderer IS NOT NULL AND win_tenderer != ''
+            <if test="keywords != null and keywords.size() > 0">
+                <foreach collection="keywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        title LIKE CONCAT('%', #{kw}, '%')
+                        OR project_name LIKE CONCAT('%', #{kw}, '%')
+                        OR product LIKE CONCAT('%', #{kw}, '%')
+                        OR win_tenderer LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="minPrice != null">AND win_bid_price &gt;= #{minPrice}</if>
+            <if test="maxPrice != null">AND win_bid_price &lt;= #{maxPrice}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY win_tenderer
+        ORDER BY win_count DESC, total_amount DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- Top 关键词聚合（按 keywords 字段聚合；keywords 是逗号分隔的关键词如 "数字化,监测,系统"，更纯文本更易分组）
+         同时返回 province，用于 service 层做关键词×省份双维度分析 -->
+    <select id="aggregateTopBrands" resultType="java.util.Map">
+        SELECT
+            keywords AS brand,
+            province AS province,
+            COUNT(*) AS win_count,
+            COALESCE(SUM(win_bid_price), 0) AS total_amount,
+            COALESCE(AVG(win_bid_price), 0) AS avg_price,
+            MAX(publish_time) AS last_win_time
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            keywords IS NOT NULL AND keywords != ''
+            <if test="product != null and product != ''">
+                AND keywords LIKE CONCAT('%', #{product}, '%')
+            </if>
+            <if test="excludeKeywords != null and excludeKeywords.size() > 0">
+                <foreach collection="excludeKeywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        keywords NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND title NOT LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="minPrice != null">AND win_bid_price &gt;= #{minPrice}</if>
+            <if test="maxPrice != null">AND win_bid_price &lt;= #{maxPrice}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY keywords, province
+        ORDER BY win_count DESC, total_amount DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- search_company (win_tenderer 候选)：按公司名 LIKE 模糊，返回该 win_tenderer 的中标次数、地区 -->
+    <select id="searchCompanyCandidatesWinner" resultType="java.util.Map">
+        SELECT
+            win_tenderer AS fullname,
+            win_tenderer AS name,
+            COUNT(*) AS win_count,
+            MAX(province) AS province,
+            MAX(city) AS city,
+            MAX(publish_time) AS latest_pub_time
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            win_tenderer IS NOT NULL AND win_tenderer != ''
+            AND win_tenderer LIKE CONCAT('%', #{companyName}, '%')
+            <if test="province != null and province != ''">AND province = #{province}</if>
+            <if test="city != null and city != ''">AND city = #{city}</if>
+        </where>
+        GROUP BY win_tenderer
+        ORDER BY win_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_company_profile (中标方维度)：聚合 win_tenderer 的画像 -->
+    <select id="getCompanyProfileAsWinner" resultType="java.util.Map">
+        SELECT
+            win_tenderer AS fullname,
+            win_tenderer AS name,
+            COUNT(*) AS winner_count,
+            COUNT(DISTINCT province) AS province_count,
+            MAX(province) AS province,
+            MAX(city) AS city,
+            COALESCE(SUM(win_bid_price), 0) AS total_revenue,
+            MAX(publish_time) AS latest_pub_time,
+            MAX(industry) AS top_industry
+        FROM chatbi.bid_biz_win_bid
+        WHERE win_tenderer = #{companyName}
+        GROUP BY win_tenderer
+    </select>
+
+    <!-- get_company_partners (partner_type=供应商)：通过 join 招标表，找出该 win_tenderer 合作过的 tenderer -->
+    <select id="getCompanyPartnersAsWinner" resultType="java.util.Map">
+        SELECT
+            b.tenderer AS company_name,
+            COUNT(*) AS cooperation_count,
+            COALESCE(SUM(w.win_bid_price), 0) AS cooperation_amount,
+            MAX(w.publish_time) AS last_cooperation_time,
+            GROUP_CONCAT(DISTINCT b.product SEPARATOR ',') AS products
+        FROM chatbi.bid_biz_win_bid w
+        INNER JOIN chatbi.bid_biz_bidding b ON b.project_name = w.project_name
+        <where>
+            w.win_tenderer = #{companyName}
+            AND b.tenderer IS NOT NULL AND b.tenderer != ''
+            <if test="provinces != null and provinces.size() > 0">
+                AND b.province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="keywords != null and keywords.size() > 0">
+                <foreach collection="keywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        w.title LIKE CONCAT('%', #{kw}, '%')
+                        OR w.product LIKE CONCAT('%', #{kw}, '%')
+                        OR b.keywords LIKE CONCAT('%', #{kw}, '%')
+                        OR b.project_name LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="minAmount != null">AND w.win_bid_price &gt;= #{minAmount}</if>
+            <if test="beginDate != null and beginDate != ''">AND w.publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND w.publish_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY b.tenderer
+        ORDER BY cooperation_count DESC, cooperation_amount DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_company_business_keywords (中标方维度)：用 product 字段直接 GROUP BY 当作关键词频次 -->
+    <select id="getCompanyBusinessKeywordsAsWinner" resultType="java.util.Map">
+        SELECT
+            product AS keyword,
+            COUNT(*) AS count,
+            COALESCE(SUM(win_bid_price), 0) AS amount
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            win_tenderer = #{companyName}
+            AND product IS NOT NULL AND product != ''
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY product
+        ORDER BY count DESC, amount DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- find_competitors：通过 join 招标表找出该 win_tenderer 参与项目的其他 win_tenderer（即竞争对手） -->
+    <select id="findCompetitorsByCoBid" resultType="java.util.Map">
+        SELECT
+            w2.win_tenderer AS company_name,
+            COUNT(*) AS co_bid_count,
+            MAX(w2.publish_time) AS latest_co_bid_time,
+            GROUP_CONCAT(DISTINCT b.product SEPARATOR ',') AS top_co_bid_products,
+            GROUP_CONCAT(DISTINCT b.tenderer SEPARATOR ',') AS top_co_bid_callers,
+            GROUP_CONCAT(DISTINCT b.province SEPARATOR ',') AS top_co_bid_provinces
+        FROM chatbi.bid_biz_win_bid w1
+        INNER JOIN chatbi.bid_biz_bidding b ON b.project_name = w1.project_name
+        INNER JOIN chatbi.bid_biz_win_bid w2 ON w2.project_name = w1.project_name
+        <where>
+            w1.win_tenderer = #{companyName}
+            AND w2.win_tenderer IS NOT NULL AND w2.win_tenderer != ''
+            AND w2.win_tenderer != #{companyName}
+        </where>
+        GROUP BY w2.win_tenderer
+        ORDER BY co_bid_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- find_competitors 辅助 1：基于"共享客户"找对手
+         与本方中标过同一招标方的其他中标方（即同一客户的多供应商关系） -->
+    <select id="findCompetitorsBySharedCaller" resultType="java.util.Map">
+        SELECT
+            w2.win_tenderer AS company_name,
+            COUNT(*) AS co_bid_count,
+            MAX(w2.publish_time) AS latest_co_bid_time,
+            GROUP_CONCAT(DISTINCT w1.tenderer SEPARATOR ',') AS top_co_bid_callers,
+            GROUP_CONCAT(DISTINCT w1.province SEPARATOR ',') AS top_co_bid_provinces,
+            GROUP_CONCAT(DISTINCT w1.product SEPARATOR ',') AS top_co_bid_products
+        FROM chatbi.bid_biz_win_bid w1
+        INNER JOIN chatbi.bid_biz_win_bid w2
+            ON w2.tenderer = w1.tenderer
+            AND w2.id != w1.id
+        <where>
+            w1.win_tenderer = #{companyName}
+            AND w1.tenderer IS NOT NULL AND w1.tenderer != ''
+            AND w2.win_tenderer IS NOT NULL AND w2.win_tenderer != ''
+            AND w2.win_tenderer != #{companyName}
+        </where>
+        GROUP BY w2.win_tenderer
+        ORDER BY co_bid_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- find_competitors 辅助 2：基于"同省份 + 同 product 前缀 + 时间接近"找对手
+         不用 project_name 关联；改用 product 前 2 字符 + province + publish_time ±90 天近似 -->
+    <select id="findCompetitorsByRegionProduct" resultType="java.util.Map">
+        SELECT
+            w2.win_tenderer AS company_name,
+            COUNT(*) AS co_bid_count,
+            MAX(w2.publish_time) AS latest_co_bid_time,
+            GROUP_CONCAT(DISTINCT w1.province SEPARATOR ',') AS top_co_bid_provinces,
+            GROUP_CONCAT(DISTINCT w1.product SEPARATOR ',') AS top_co_bid_products,
+            GROUP_CONCAT(DISTINCT w1.tenderer SEPARATOR ',') AS top_co_bid_callers
+        FROM chatbi.bid_biz_win_bid w1
+        INNER JOIN chatbi.bid_biz_win_bid w2
+            ON w2.province = w1.province
+            AND SUBSTRING(w2.product, 1, 2) = SUBSTRING(w1.product, 1, 2)
+            AND w2.id != w1.id
+            AND ABS(DATEDIFF(w2.publish_time, w1.publish_time)) &lt;= 90
+        <where>
+            w1.win_tenderer = #{companyName}
+            AND w1.product IS NOT NULL AND w1.product != ''
+            AND w1.province IS NOT NULL AND w1.province != ''
+            AND w2.win_tenderer IS NOT NULL AND w2.win_tenderer != ''
+            AND w2.win_tenderer != #{companyName}
+        </where>
+        GROUP BY w2.win_tenderer
+        ORDER BY co_bid_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- aggregate_bids_advanced (中标方)：多维度聚合。groupBy: province / industry / month -->
+    <select id="aggregateBidsAsWinner" resultType="java.util.Map">
+        SELECT
+            <choose>
+                <when test="groupBy == 'province'">province AS bucket_key,</when>
+                <when test="groupBy == 'industry'">industry AS bucket_key,</when>
+                <when test="groupBy == 'month'">DATE_FORMAT(publish_time, '%Y-%m') AS bucket_key,</when>
+                <otherwise>province AS bucket_key,</otherwise>
+            </choose>
+            COUNT(*) AS cnt,
+            COALESCE(SUM(win_bid_price), 0) AS sum_amount
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            <if test="keywords != null and keywords.size() > 0">
+                <foreach collection="keywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        title LIKE CONCAT('%', #{kw}, '%')
+                        OR project_name LIKE CONCAT('%', #{kw}, '%')
+                        OR product LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="minPrice != null">AND win_bid_price &gt;= #{minPrice}</if>
+            <if test="maxPrice != null">AND win_bid_price &lt;= #{maxPrice}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        GROUP BY bucket_key
+        ORDER BY cnt DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- search_expiring_projects (winner 表合同期)：拉近 3 年内有 service_period / service_start 的中标合同 -->
+    <select id="listExpiringCandidates" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            (
+                (service_period IS NOT NULL AND service_period != '')
+                OR (service_start IS NOT NULL AND service_start != '')
+                OR (service_day IS NOT NULL AND service_day &gt; 0)
+            )
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                  project_name LIKE CONCAT('%', #{keyword}, '%')
+                  OR win_tenderer LIKE CONCAT('%', #{keyword}, '%')
+                  OR tenderer LIKE CONCAT('%', #{keyword}, '%')
+                  OR product LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_company_contacts (中标方维度)：聚合 win_tenderer_manager / phone / email + 关联项目 -->
+    <select id="aggregateContactsAsWinner" resultType="java.util.Map">
+        SELECT
+            win_tenderer_manager AS name,
+            win_tenderer_phone AS phone,
+            win_tenderer_email AS email,
+            COUNT(*) AS contact_count,
+            MAX(publish_time) AS latest_contact_time,
+            GROUP_CONCAT(DISTINCT project_name ORDER BY publish_time DESC SEPARATOR '||') AS related_projects
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            win_tenderer = #{companyName}
+            AND win_tenderer_manager IS NOT NULL AND win_tenderer_manager != ''
+            AND (
+                (win_tenderer_phone IS NOT NULL AND win_tenderer_phone != '')
+                OR (win_tenderer_email IS NOT NULL AND win_tenderer_email != '')
+            )
+        </where>
+        GROUP BY win_tenderer_manager, win_tenderer_phone, win_tenderer_email
+        ORDER BY contact_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_company_contacts (招标方维度)：从 bidding 表聚合 tenderer_contact / phone / address -->
+    <select id="aggregateContactsAsTenderer" resultType="java.util.Map">
+        SELECT
+            tenderer_contact AS name,
+            tenderer_phone AS phone,
+            tenderer_address AS address,
+            COUNT(*) AS contact_count,
+            MAX(publish_time) AS latest_contact_time,
+            GROUP_CONCAT(DISTINCT project_name ORDER BY publish_time DESC SEPARATOR '||') AS related_projects
+        FROM chatbi.bid_biz_bidding
+        <where>
+            tenderer = #{companyName}
+            AND tenderer_contact IS NOT NULL AND tenderer_contact != ''
+            AND (
+                (tenderer_phone IS NOT NULL AND tenderer_phone != '')
+                OR (tenderer_address IS NOT NULL AND tenderer_address != '')
+            )
+        </where>
+        GROUP BY tenderer_contact, tenderer_phone, tenderer_address
+        ORDER BY contact_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_company_contacts (代理机构维度)：从 bidding 表聚合 agency_contact / phone（agency LIKE 公司名） -->
+    <select id="aggregateContactsAsAgency" resultType="java.util.Map">
+        SELECT
+            agency_contact AS name,
+            agency_phone AS phone,
+            agency AS company,
+            COUNT(*) AS contact_count,
+            MAX(publish_time) AS latest_contact_time,
+            GROUP_CONCAT(DISTINCT project_name ORDER BY publish_time DESC SEPARATOR '||') AS related_projects
+        FROM chatbi.bid_biz_bidding
+        <where>
+            agency LIKE CONCAT('%', #{companyName}, '%')
+            AND agency_contact IS NOT NULL AND agency_contact != ''
+            AND agency_phone IS NOT NULL AND agency_phone != ''
+        </where>
+        GROUP BY agency_contact, agency_phone, agency
+        ORDER BY contact_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- get_price_trends：按 brand/product 命中拉所有 win_bid_price 记录（service 层算分位数） -->
+    <select id="listPricesByBrandProduct" resultType="java.util.Map">
+        SELECT
+            DATE_FORMAT(publish_time, '%Y-%m') AS month,
+            win_bid_price AS price,
+            project_name AS project_name,
+            win_tenderer AS winner,
+            province AS province
+        FROM chatbi.bid_biz_win_bid
+        <where>
+            product LIKE CONCAT('%', #{brand}, '%')
+            <if test="product != null and product != ''">
+                AND product LIKE CONCAT('%', #{product}, '%')
+            </if>
+            <if test="model != null and model != ''">
+                AND (
+                  product LIKE CONCAT('%', #{model}, '%')
+                  OR project_name LIKE CONCAT('%', #{model}, '%')
+                )
+            </if>
+            AND win_bid_price IS NOT NULL AND win_bid_price &gt; 0
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

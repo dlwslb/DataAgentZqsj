@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.biz.BidPurchaseIntentionMapper">
+
+    <resultMap id="BaseResultMap" type="com.alibaba.cloud.ai.dataagent.entity.biz.BidPurchaseIntentionEntity">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="project_name" property="projectName"/>
+        <result column="province" property="province"/>
+        <result column="city" property="city"/>
+        <result column="district" property="district"/>
+        <result column="industry" property="industry"/>
+        <result column="info_type" property="infoType"/>
+        <result column="tenderer" property="tenderer"/>
+        <result column="bidding_budget" property="biddingBudget"/>
+        <result column="time_bid_open" property="timeBidOpen"/>
+        <result column="time_bid_close" property="timeBidClose"/>
+        <result column="product" property="product"/>
+        <result column="channel" property="channel"/>
+        <result column="publish_time" property="publishTime"/>
+        <result column="detail_link" property="detailLink"/>
+        <result column="web_source_name" property="webSourceName"/>
+        <result column="keywords" property="keywords"/>
+        <result column="notes" property="notes"/>
+        <result column="marketing_unit" property="marketingUnit"/>
+        <result column="list_level" property="listLevel"/>
+        <result column="list_grid_cus" property="listGridCus"/>
+        <result column="yewuleixing" property="yewuleixing"/>
+        <result column="field" property="field"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, project_name, province, city, district, industry, info_type,
+        tenderer, bidding_budget, time_bid_open, time_bid_close,
+        SUBSTRING_INDEX(product, ',', 5) as product, channel, publish_time, detail_link, web_source_name,
+        keywords, notes, marketing_unit, list_level, list_grid_cus,
+        yewuleixing, field
+    </sql>
+
+    <select id="listByConditions" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_purchase_intention
+        <where>
+            <if test="province != null and province != ''">AND province = #{province}</if>
+            <if test="city != null and city != ''">AND city = #{city}</if>
+            <if test="industry != null and industry != ''">AND industry = #{industry}</if>
+            <if test="infoType != null and infoType != ''">AND info_type = #{infoType}</if>
+            <if test="tenderer != null and tenderer != ''">AND tenderer LIKE CONCAT('%', #{tenderer}, '%')</if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                  title LIKE CONCAT('%', #{keyword}, '%')
+                  OR project_name LIKE CONCAT('%', #{keyword}, '%')
+                  OR product LIKE CONCAT('%', #{keyword}, '%')
+                  OR keywords LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="minBudgetYuan != null">AND bidding_budget &gt;= #{minBudgetYuan}</if>
+            <if test="maxBudgetYuan != null">AND bidding_budget &lt;= #{maxBudgetYuan}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_purchase_intention
+        WHERE id = #{id}
+    </select>
+
+</mapper>
