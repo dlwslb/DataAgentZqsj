@@ -68,6 +68,7 @@ public class TenderSearchService {
     public Map<String, Object> searchBids(Map<String, Object> req) {
         String bidType = strOr(req, "bid_type", "全部");
         List<String> keywords = listOr(req, "keywords");
+        List<String> matchModes = listOr(req, "match_modes");
         List<String> provinces = normalizeProvinces(listOr(req, "provinces"));
         String beginDate = strOr(req, "begin_date", null);
         String endDate = strOr(req, "end_date", null);
@@ -80,8 +81,16 @@ public class TenderSearchService {
         List<Map<String, Object>> items = new ArrayList<>();
         int total = 0;
         // bid_type 决定查哪几张表
-        boolean wantBidding = "全部".equals(bidType) || "招标".equals(bidType);
-        boolean wantWinner = "全部".equals(bidType) || "中标".equals(bidType);
+        boolean wantPrepose = "商机".equals(bidType);
+        boolean wantPurchaseIntention = "采购".equals(bidType);
+        boolean wantBidding = "招标".equals(bidType);
+        boolean wantWinner = "中标".equals(bidType);
+        if(matchModes!=null && matchModes.size()==1){
+            wantPrepose = "prepose".equals(matchModes.get(0));
+            wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
+            wantBidding = "bidding".equals(matchModes.get(0));
+            wantWinner =  "winner".equals(matchModes.get(0));
+        }
 
         // 合并 keywords + tenderer 模糊匹配
         String keyword = keywords.isEmpty() ? null : String.join(" ", keywords);
@@ -139,8 +148,16 @@ public class TenderSearchService {
             effectiveGroups.add(0, topGroup);
         }
 
-        boolean wantBidding = "全部".equals(bidType) || "招标".equals(bidType);
-        boolean wantWinner = "全部".equals(bidType) || "中标".equals(bidType);
+        boolean wantPrepose = "商机".equals(bidType);
+        boolean wantPurchaseIntention = "采购".equals(bidType);
+        boolean wantBidding = "招标".equals(bidType);
+        boolean wantWinner = "中标".equals(bidType);
+        if(matchModes!=null && matchModes.size()==1){
+            wantPrepose = "prepose".equals(matchModes.get(0));
+            wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
+            wantBidding = "bidding".equals(matchModes.get(0));
+            wantWinner =  "winner".equals(matchModes.get(0));
+        }
 
         List<Map<String, Object>> items = new ArrayList<>();
         int total = 0;
