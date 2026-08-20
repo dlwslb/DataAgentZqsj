@@ -102,4 +102,48 @@
         LIMIT #{limit}
     </select>
 
+    <!-- 高级搜索：keywordGroups（AND）+ excludeKeywords（NOT LIKE），与 bidding 表 listByAdvanced 字段一致 -->
+    <select id="listByAdvanced" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <if test="provinces != null and provinces.size() > 0">
+                AND province IN
+                <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                    #{p}
+                </foreach>
+            </if>
+            <if test="keywordGroups != null and keywordGroups.size() > 0">
+                <foreach collection="keywordGroups" item="group" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        <foreach collection="group" item="kw" separator=" OR ">
+                            (title LIKE CONCAT('%', #{kw}, '%')
+                             OR project_name LIKE CONCAT('%', #{kw}, '%')
+                             OR product LIKE CONCAT('%', #{kw}, '%')
+                             OR keywords LIKE CONCAT('%', #{kw}, '%')
+                             OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                        </foreach>
+                    </trim>
+                </foreach>
+            </if>
+            <if test="excludeKeywords != null and excludeKeywords.size() > 0">
+                <foreach collection="excludeKeywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        title NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND project_name NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND product NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND keywords NOT LIKE CONCAT('%', #{kw}, '%')
+                        AND tenderer NOT LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
+            <if test="minBudgetYuan != null">AND bidding_budget &gt;= #{minBudgetYuan}</if>
+            <if test="maxBudgetYuan != null">AND bidding_budget &lt;= #{maxBudgetYuan}</if>
+            <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+            <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

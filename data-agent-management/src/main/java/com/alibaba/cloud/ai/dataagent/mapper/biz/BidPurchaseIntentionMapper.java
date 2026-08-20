@@ -40,5 +40,18 @@ public interface BidPurchaseIntentionMapper {
                                                        @Param("endDate") String endDate,
                                                        @Param("limit") int limit);
 
+    /**
+     * 高级搜索（query_bids_advanced）。与 bidding 表 listByAdvanced 字段含义一致：
+     * keywordGroups 是 AND 关系（每个 group 内部是 OR），excludeKeywords 任一命中即整条排除。
+     */
+    List<BidPurchaseIntentionEntity> listByAdvanced(@Param("provinces") java.util.List<String> provinces,
+                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
+                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
+                                                     @Param("minBudgetYuan") BigDecimal minBudgetYuan,
+                                                     @Param("maxBudgetYuan") BigDecimal maxBudgetYuan,
+                                                     @Param("beginDate") String beginDate,
+                                                     @Param("endDate") String endDate,
+                                                     @Param("limit") int limit);
+
     BidPurchaseIntentionEntity selectById(@Param("id") Long id);
 }

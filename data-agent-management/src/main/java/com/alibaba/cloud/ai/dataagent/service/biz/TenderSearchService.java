@@ -81,11 +81,14 @@ public class TenderSearchService {
         List<Map<String, Object>> items = new ArrayList<>();
         int total = 0;
         // bid_type 决定查哪几张表
-        boolean wantPrepose = "商机".equals(bidType);
-        boolean wantPurchaseIntention = "采购".equals(bidType);
-        boolean wantBidding = "招标".equals(bidType);
-        boolean wantWinner = "中标".equals(bidType);
+        // "全部"（或 null/空）→ 四张表都查；"采购"→ purchase_intention；"商机"→ prepose；"招标"→ bidding；"中标"→ winner
+        boolean wantAll = bidType == null || bidType.isEmpty() || "全部".equals(bidType);
+        boolean wantPrepose = wantAll || "商机".equals(bidType);
+        boolean wantPurchaseIntention = wantAll || "采购".equals(bidType);
+        boolean wantBidding = wantAll || "招标".equals(bidType);
+        boolean wantWinner = wantAll || "中标".equals(bidType);
         if(matchModes!=null && matchModes.size()==1){
+            // match_modes 单值会覆盖 bid_type 的表选择（精细化场景：agent 用 match_modes 锁定单表）
             wantPrepose = "prepose".equals(matchModes.get(0));
             wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
             wantBidding = "bidding".equals(matchModes.get(0));
@@ -94,12 +97,12 @@ public class TenderSearchService {
 
         // 合并 keywords + tenderer 模糊匹配
         String keyword = keywords.isEmpty() ? null : String.join(" ", keywords);
+        String province0 = provinces.isEmpty() ? null : provinces.get(0);
+        String city0 = provinces.size() >= 2 ? provinces.get(1) : null; // 简化为省份=provinces[0]、城市=provinces[1]
 
         if (wantBidding) {
-            String province = provinces.isEmpty() ? null : provinces.get(0);
-            String city = provinces.size() >= 2 ? provinces.get(1) : null; // 简化为省份=provinces[0]、城市=provinces[1]
             List<BidBiddingEntity> rows = biddingMapper.listByConditions(
-                    province, city, null, null, null, keyword,
+                    province0, city0, null, null, null, keyword,
                     minAmount, maxAmount, beginDate, endDate, pageSize);
             total += rows.size();
             for (BidBiddingEntity e : rows) {
@@ -108,14 +111,34 @@ public class TenderSearchService {
         }
 
         if (wantWinner) {
-            String province = provinces.isEmpty() ? null : provinces.get(0);
-            String city = provinces.size() >= 2 ? provinces.get(1) : null;
             List<BidWinnerEntity> rows = winnerMapper.listByConditions(
-                    province, city, null, null, null, null, keyword,
+                    province0, city0, null, null, null, null, keyword,
                     minAmount, maxAmount, beginDate, endDate, pageSize);
             total += rows.size();
             for (BidWinnerEntity e : rows) {
                 items.add(toBidItem(e, 7, "中标"));
+            }
+        }
+
+        if (wantPurchaseIntention) {
+            // 采购意向表：标的物 = product（取前 5 个逗号分隔 token 已在 XML SUBSTRING_INDEX 处理）
+            List<BidPurchaseIntentionEntity> rows = purchaseIntentionMapper.listByConditions(
+                    province0, city0, null, null, null, keyword,
+                    minAmount, maxAmount, beginDate, endDate, pageSize);
+            total += rows.size();
+            for (BidPurchaseIntentionEntity e : rows) {
+                items.add(toBidItem(e, 1, "采购"));
+            }
+        }
+
+        if (wantPrepose) {
+            // 拟在建项目表：金额在 toBidItem 里以空字符串返回（prepose 是项目储备，金额字段不严格）
+            List<BidPreposeEntity> rows = preposeMapper.listByConditions(
+                    province0, city0, null, null, null, keyword,
+                    minAmount, maxAmount, beginDate, endDate, pageSize);
+            total += rows.size();
+            for (BidPreposeEntity e : rows) {
+                items.add(toBidItem(e, 2, "商机"));
             }
         }
 
@@ -148,11 +171,13 @@ public class TenderSearchService {
             effectiveGroups.add(0, topGroup);
         }
 
-        boolean wantPrepose = "商机".equals(bidType);
-        boolean wantPurchaseIntention = "采购".equals(bidType);
-        boolean wantBidding = "招标".equals(bidType);
-        boolean wantWinner = "中标".equals(bidType);
+        boolean wantAll = bidType == null || bidType.isEmpty() || "全部".equals(bidType);
+        boolean wantPrepose = wantAll || "商机".equals(bidType);
+        boolean wantPurchaseIntention = wantAll || "采购".equals(bidType);
+        boolean wantBidding = wantAll || "招标".equals(bidType);
+        boolean wantWinner = wantAll || "中标".equals(bidType);
         if(matchModes!=null && matchModes.size()==1){
+            // match_modes 单值会覆盖 bid_type 的表选择（精细化场景：agent 用 match_modes 锁定单表）
             wantPrepose = "prepose".equals(matchModes.get(0));
             wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
             wantBidding = "bidding".equals(matchModes.get(0));
@@ -175,6 +200,20 @@ public class TenderSearchService {
                     minAmount, maxAmount, beginDate, endDate, pageSize);
             total += rows.size();
             for (BidWinnerEntity e : rows) items.add(toBidItem(e, 7, "中标"));
+        }
+        if (wantPurchaseIntention) {
+            List<BidPurchaseIntentionEntity> rows = purchaseIntentionMapper.listByAdvanced(
+                    provinces, effectiveGroups, excludeKeywords,
+                    minAmount, maxAmount, beginDate, endDate, pageSize);
+            total += rows.size();
+            for (BidPurchaseIntentionEntity e : rows) items.add(toBidItem(e, 1, "采购"));
+        }
+        if (wantPrepose) {
+            List<BidPreposeEntity> rows = preposeMapper.listByAdvanced(
+                    provinces, effectiveGroups, excludeKeywords,
+                    minAmount, maxAmount, beginDate, endDate, pageSize);
+            total += rows.size();
+            for (BidPreposeEntity e : rows) items.add(toBidItem(e, 2, "商机"));
         }
 
         Map<String, Object> data = new LinkedHashMap<>();

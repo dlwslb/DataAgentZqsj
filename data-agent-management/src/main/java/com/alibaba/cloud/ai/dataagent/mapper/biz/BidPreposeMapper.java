@@ -40,6 +40,18 @@ public interface BidPreposeMapper {
                                              @Param("endDate") String endDate,
                                              @Param("limit") int limit);
 
+    /**
+     * 高级搜索（query_bids_advanced）。与 bidding 表 listByAdvanced 字段含义一致。
+     */
+    List<BidPreposeEntity> listByAdvanced(@Param("provinces") java.util.List<String> provinces,
+                                          @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
+                                          @Param("excludeKeywords") java.util.List<String> excludeKeywords,
+                                          @Param("minBudgetYuan") BigDecimal minBudgetYuan,
+                                          @Param("maxBudgetYuan") BigDecimal maxBudgetYuan,
+                                          @Param("beginDate") String beginDate,
+                                          @Param("endDate") String endDate,
+                                          @Param("limit") int limit);
+
     BidPreposeEntity selectById(@Param("id") Long id);
 
     /**
