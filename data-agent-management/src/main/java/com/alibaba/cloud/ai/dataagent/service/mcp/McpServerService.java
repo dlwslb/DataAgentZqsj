@@ -66,16 +66,30 @@ public class McpServerService {
 	}
 
 
+	/**
+	 * 清洗省份名称，去除常见的行政区域后缀
+	 */
+	private String cleanProvinceName(String province) {
+		if (province == null || province.trim().isEmpty()) {
+			return "";
+		}
+		// 去除首尾空格，并用正则去掉结尾的 省/市/自治区/特别行政区 等
+		return province.trim().replaceAll(
+				"(特别行政区|维吾尔自治区|回族自治区|壮族自治区|自治区|省|市)$",
+				""
+		);
+	}
 
-	@Tool(description = "公开市场标讯推送")
+	@Tool(description = "公开市场标讯")
 	public Map getDayRangProvinceText(
 			@ToolParam(description = "省份，例如：北京", required = true) String province,
 			@ToolParam(description = "查询日期数组，格式例如：[\"2026-08-04\", \"2026-08-20\"]", required = true) List<String> publishTime
 			) {
-
+		// 1. 对传入的 province 进行清洗，去掉省、市、自治区等后缀
+		String cleanProvince = cleanProvinceName(province);
 		// 手动组装 VO 传给业务层
 		WeekParamsVO bean = new WeekParamsVO();
-		bean.setProvince(province);
+		bean.setProvince(cleanProvince);
 		bean.setPublishTime(publishTime);
 		Assert.hasText(bean.getProvince(), "Province cannot be empty");
 		Assert.notEmpty(bean.getPublishTime(), "Publish time cannot be empty");
@@ -86,8 +100,10 @@ public class McpServerService {
 	public Map getDayProvinceText(
 			@ToolParam(description = "省份名称，例如：北京", required = true) String province,
 			@ToolParam(description = "具体的日期时间，格式例如：\"2026-08-04\"", required = true) String dateTime) {
+		// 1. 对传入的 province 进行清洗，去掉省、市、自治区等后缀
+		String cleanProvince = cleanProvinceName(province);
 		WeekParamsVO bean = new WeekParamsVO();
-		bean.setProvince(province);
+		bean.setProvince(cleanProvince);
 		bean.setDateTime(dateTime);
 		Assert.hasText(bean.getProvince(), "Province cannot be empty");
 		Assert.hasText(bean.getDateTime(), "AgentId cannot be empty");
