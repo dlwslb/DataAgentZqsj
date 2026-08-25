@@ -38,8 +38,8 @@ description: 当用户要查询采购意向、采购计划、采购预告、政�
     "keyword": "<项目名/标题/关键词，模糊匹配>",
     "startDate": "yyyy-MM-dd",
     "endDate": "yyyy-MM-dd",
-    "minBudget": <最小预算，万元>,
-    "maxBudget": <最大预算，万元>
+    "minBudget": <最小预算，元（过滤条件仍按元，Tool 内部转万元过滤）>,
+    "maxBudget": <最大预算，元（过滤条件仍按元，Tool 内部转万元过滤）>
   },
   "limit": <1-100，默认 20>
 }
@@ -58,7 +58,7 @@ description: 当用户要查询采购意向、采购计划、采购预告、政�
 | 最近 7 天 | `last7Days` |
 | 最近 30 天 | `last30Days` |
 
-**注意金额单位**：purchase_intention 用**万元**（区别于 bid_winner/bidding 的元）。
+**注意金额单位**：purchase_intention 用**元**（区别于 bid_winner/bidding 的元）。
 
 ## 必传参数
 - `bizType` = "purchase_intention"（固定）
@@ -74,7 +74,7 @@ description: 当用户要查询采购意向、采购计划、采购预告、政�
 | `industry` | String | 行业分类（大类）|
 | `infoType` | String | 行业分类（中类）|
 | `tenderer` | String | 招标单位 |
-| `biddingBudget` | BigDecimal | **招标预算金额**（注意：单位是万元，见原 DO 注释）|
+| `biddingBudget` | BigDecimal | **招标预算金额**（DB 存元，Tool 输出已转**万元**，保留 2 位小数）|
 | `timeBidOpen` | LocalDate | 预计采购开始时间 |
 | `timeBidClose` | LocalDate | 预计采购结束时间 |
 | `product` | String | **采购需求概况** |
@@ -120,7 +120,7 @@ description: 当用户要查询采购意向、采购计划、采购预告、政�
 **总数**：XX 条，**总预算**：XX 万元
 
 ### Top 10
-| 招标单位 | 项目名称 | 预算金额 | 预计采购时间 | 行业 |
+| 招标单位 | 项目名称 | 预算金额（万元） | 预计采购时间 | 行业 |
 |---|---|---|---|---|
 | ... | ... | ... | ... | ... |
 

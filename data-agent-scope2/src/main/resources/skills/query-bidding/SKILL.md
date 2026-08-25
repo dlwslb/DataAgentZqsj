@@ -39,8 +39,8 @@ description: 【招标信息查询 - 招标未开标阶段】当用户查询**�
     "keyword": "<项目名/标题/关键词，模糊匹配>",
     "startDate": "yyyy-MM-dd",
     "endDate": "yyyy-MM-dd",
-    "minBudget": <最小预算金额，元>,
-    "maxBudget": <最大预算金额，元>
+    "minBudget": <最小预算金额，元（过滤条件仍按元，Tool 内部转万元过滤）>,
+    "maxBudget": <最大预算金额，元（过滤条件仍按元，Tool 内部转万元过滤）>
   },
   "limit": <1-100，默认 20>
 }
@@ -80,7 +80,7 @@ description: 【招标信息查询 - 招标未开标阶段】当用户查询**�
 | `tendererPhone` | String | 招标联系电话 |
 | `agency` | String | 代理机构 |
 | `agencyContact` / `agencyPhone` | String | 代理机构联系人/电话 |
-| `biddingBudget` | BigDecimal | **预算价格**（元）|
+| `biddingBudget` | BigDecimal | **预算价格**（DB 存元，Tool 输出已转**万元**，保留 2 位小数）|
 | `bidWay` | String | **招标方式**（公开招标/邀请招标/竞争性谈判等）|
 | `channel` | String | 公告类型 |
 | `publishTime` | LocalDate | 发布时间 |
@@ -132,7 +132,7 @@ description: 【招标信息查询 - 招标未开标阶段】当用户查询**�
 
 **总数**：XX 条
 
-| 项目名称 | 招标单位 | 预算金额 | 招标方式 | 投标截止 | 发布时间 |
+| 项目名称 | 招标单位 | 预算金额（万元） | 招标方式 | 投标截止 | 发布时间 |
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 ```

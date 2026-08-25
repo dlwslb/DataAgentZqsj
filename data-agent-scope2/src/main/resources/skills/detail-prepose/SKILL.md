@@ -46,7 +46,7 @@ description: 【前期项目详情 - 强优先】当用户问**某个具体拟�
 | `title` | String | 公告标题 |
 | `projectName` | String | 项目名称 |
 | `tenderer` | String | 招标单位 |
-| `biddingBudget` | BigDecimal | **预算价格（万元）** ⚠️ 注意单位是万元 |
+| `biddingBudget` | BigDecimal | **预算价格**（DB 存元，Tool 输出已转**万元**，保留 2 位小数）|
 | `bidWay` | String | 招标方式 |
 | `timeBidOpen` / `timeBidClose` | String | 开标时间/截止时间 |
 | `timeGetFileStart` / `timeGetFileEnd` | String | 文件获取开始/截止 |
@@ -113,16 +113,12 @@ description: 【前期项目详情 - 强优先】当用户问**某个具体拟�
 用户："查一下 XX 高速公路智能化项目储备的预算和招标方式"
 → 走 detail-prepose，keyword="XX 高速公路智能化"，从 detail 字段里抽 tenderer / biddingBudget / bidWay / serviceTime
 
-## ⭐ 兜底查询（fallback to origin_announcement）
+## ⭐ 兜底查询（详情数据二次匹配）
 
-**触发条件**：当主表（`chatbi.bid_biz_prepose`）没数据时，工具会自动用相同 keyword 去 `origin_announcement` 表（原始每日标讯）查，`channel=前置商机`。
-
-**响应里怎么识别兜底**：
-- `source: "origin_announcement_fallback"` ← 看到这字段就是兜底结果
-- `primaryTable: "chatbi.bid_biz_prepose"` ← 主表名
-- `message: "主表未收录，已从原始标讯库找到（数据未经人工审核，详情以主表为准）"`
+**业务背景**：详情数据可能有同步延迟。当主表没匹配到时，系统会从**标讯库**（每日实时抓取的公告）二次匹配，命中后会在响应里标注 `source: "origin_announcement_fallback"`（LLM 不需要识别这字段，按 sysPrompt 的"详情兜底"规则处理即可）。
 
 **用户面前怎么回答**：
-- ✅ 推荐："主表暂未收录此项目，已从原始标讯库找到 X 条记录，建议以原始标讯数据为准"
-- ❌ 不要说："我用另一个表查的"（暴露内部表名）
-- ❌ 不要说："数据可能有误"（原始标讯是实时抓取的，不是有误）
+- ✅ 推荐："该项目的详细数据已从标讯库匹配到，详情信息如下："（直接展示 detail 字段）
+- ✅ 可补充一句："此条信息来自标讯库，详情库后续会更新"
+- ❌ **绝不可**说"主表/原始标讯库/表名/Skill 名"等内部技术概念
+- ❌ 不要说"数据可能有误"（标讯是实时抓取的，不是错误）

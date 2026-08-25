@@ -14,7 +14,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 
 ## 业务特点
 - 时间上比"采购意向"更早（项目立项、审批阶段）
-- 金额字段 `biddingBudget` 单位是**万元**（与 purchase_intention 一致）
+- 金额字段 `biddingBudget` 单位是**元**（DB 存元，Tool 输出已转**万元**；与 purchase_intention / bidding / bid_winner 一致）
 - 适合做"早期商机挖掘"和"市场预测"
 
 ## 工具调用
@@ -38,8 +38,8 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
     "keyword": "<项目名/标题/关键词，模糊匹配>",
     "startDate": "yyyy-MM-dd",
     "endDate": "yyyy-MM-dd",
-    "minBudget": <最小预算，万元>,
-    "maxBudget": <最大预算，万元>
+    "minBudget": <最小预算，元（过滤条件仍按元，Tool 内部转万元过滤）>,
+    "maxBudget": <最大预算，元（过滤条件仍按元，Tool 内部转万元过滤）>
   },
   "limit": <1-100，默认 20>
 }
@@ -58,7 +58,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 | 最近 7 天 | `last7Days` |
 | 最近 30 天 | `last30Days` |
 
-**注意金额单位**：prepose 用**万元**。
+**注意金额单位**：prepose 用**元**。
 
 ## 必传参数
 - `bizType` = "prepose"（固定）
@@ -74,7 +74,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 | `industry` | String | 行业分类（大类）|
 | `infoType` | String | 行业分类（中类）|
 | `tenderer` | String | 招标单位 |
-| `biddingBudget` | BigDecimal | **预算价格（万元）** ⚠️ 注意单位是万元 |
+| `biddingBudget` | BigDecimal | **预算价格**（DB 存元，Tool 输出已转**万元**，保留 2 位小数）|
 | `bidWay` | String | 招标方式 |
 | `timeBidOpen` / `timeBidClose` | String | 开标时间/截止时间 |
 | `timeGetFileStart` / `timeGetFileEnd` | String | 文件获取开始/截止 |
@@ -124,7 +124,7 @@ description: 当用户要查询拟在建项目、审批项目、预招标项目�
 **总数**：XX 条，**总预算**：XX 万元
 
 ### Top 10
-| 项目名称 | 招标单位 | 预算金额（万元）| 预计开标时间 | 行业 |
+| 项目名称 | 招标单位 | 预算金额（万元） | 预计开标时间 | 行业 |
 |---|---|---|---|---|
 | ... | ... | ... | ... | ... |
 

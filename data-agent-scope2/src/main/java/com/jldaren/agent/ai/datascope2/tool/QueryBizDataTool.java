@@ -32,6 +32,8 @@ import org.springframework.util.StreamUtils;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -124,7 +126,8 @@ public class QueryBizDataTool {
                   "maxBudget(最大预算, biddingBudget/winBidPrice)。" +
                   "limit 默认 20，最大 100，按金额列降序（具体列由表决定：win_bid_price / bidding_budget / win_bid_amount），" +
                   "金额相同时按 publishTime 降序。prepose（前期项目）无金额列，按 publishTime 降序。" +
-                  "注意：金额单位用万元。" +
+                  "⭐ 金额单位：所有金额字段（win_bid_price / bidding_budget 等）Tool 已自动从元转万元，保留 2 位小数。" +
+                  "LLM 输出时按响应 JSON 中的 `unit: \"万元\"` 标识展示，对应表格列写'金额（万元）'。" +
                   "deleted=0 逻辑删除过滤自动加，不用传。",
           readOnly = true,
           concurrencySafe = true)
@@ -229,9 +232,9 @@ public class QueryBizDataTool {
             //   Mapper 是同步阻塞的，但 Tool 已经在 Mono.fromCallable(...).subscribeOn(boundedElastic) 里被调
             List<Map<String, Object>> rawResult = dispatchToMapper(bizTypeLower, mapperParams, realLimit);
 
-            // 字段归一化：snake_case → 统一 amount / amountType / publishTime(驼峰)
+            // 字段归一化：日期 publish_time → publishTime + 金额元 → 万元（按 bizType）
             List<Map<String, Object>> resultSet = rawResult.stream()
-                    .map(this::normalizeFields)
+                    .map(r -> normalizeFields(r, bizTypeLower))
                     .collect(Collectors.toList());
 
             Map<String, Object> response = new LinkedHashMap<>();
@@ -239,6 +242,7 @@ public class QueryBizDataTool {
             response.put("bizType", bizType);
             response.put("province", validatedProvince);
             response.put("total", resultSet.size());
+            response.put("unit", "万元");  // ⭐ 金额单位标识：4 张业务表已统一转万元，origin_announcement 字段本身就是万元
             response.put("conditions", cond);
             response.put("resultSet", resultSet);
             response.put("message", resultSet.isEmpty()
@@ -256,22 +260,71 @@ public class QueryBizDataTool {
 
     /**
      * 字段归一化：mapper 返回的 Map key 是 snake_case（MyBatis 对 Map 类型不应用 mapUnderscoreToCamelCase）
-     * <p>只做日期归一（snake_case publish_time → camelCase publishTime），让日期字段名统一。
-     * <p>⚠️ 不再做金额归一（不加 amount/amountType 重复字段）：
+     * <p>做两件事：
+     * <ul>
+     *   <li>日期归一：snake_case publish_time → camelCase publishTime</li>
+     *   <li>金额归一：4 张业务表（DB 存元）的金额字段 → Tool 输出统一为万元（除 10000，保留 2 位小数）</li>
+     * </ul>
+     * <p>⚠️ 不再做"金额类型"重复字段：
      * <ul>
      *   <li>之前会给同一个金额加 2 份（原始 win_bid_amount + 归一化 amount + amountType=winBidAmount），
      *       详情给用户展示时变成"中标金额/金额/金额类型"三列重复</li>
-     *   <li>现在各表金额列名已经在 XML / 详情 SQL 显式 select 出来，LLM 看到 win_bid_amount / win_bid_price / bidding_budget 自己就懂</li>
+     *   <li>现在各表金额列名已经在 XML / 详情 SQL 显式 select 出来，LLM 看到 win_bid_price / bidding_budget 自己就懂</li>
      * </ul>
+     *
+     * @param row     Mapper 返回的单行 Map（snake_case key）
+     * @param bizType 业务类型（用于判断是否做金额转换）：bidding / bid_winner / purchase_intention / prepose 需要转换，origin_announcement 跳过
      */
-    private Map<String, Object> normalizeFields(Map<String, Object> row) {
+    private Map<String, Object> normalizeFields(Map<String, Object> row, String bizType) {
         Map<String, Object> normalized = new LinkedHashMap<>(row);
         // 日期归一：snake_case publish_time → camelCase publishTime
         if (row.containsKey("publish_time")) {
             normalized.put("publishTime", row.get("publish_time"));
             normalized.remove("publish_time");
         }
+        // 金额归一：DB 存元的 4 张业务表 → 输出统一为万元
+        if (bizType != null && BIZ_TYPES_IN_YUAN.contains(bizType)) {
+            convertYuanToWanYuan(normalized, "win_bid_price");
+            convertYuanToWanYuan(normalized, "bidding_budget");
+        }
         return normalized;
+    }
+
+    /**
+     * 业务表金额单位是"元"的 4 张表（Tool 输出统一转万元）
+     * <p>origin_announcement 不在内——它的金额字段是 win_bid_amount / budget_amount，
+     *    按 SKILL.md 描述本身已经是万元，不重复转换。
+     */
+    private static final Set<String> BIZ_TYPES_IN_YUAN = Set.of(
+            "bidding", "bid_winner", "purchase_intention", "prepose"
+    );
+
+    /**
+     * 把元转万元（除 10000，保留 2 位小数，HALF_UP）
+     * <p>支持 BigDecimal / Number / String（数字）三种输入；null / 非数字 / 0 直接跳过
+     * <p>原地修改 row（值类型变 BigDecimal，序列化后是数字，LLM 拿到不会拼字符串）
+     */
+    private void convertYuanToWanYuan(Map<String, Object> row, String fieldName) {
+        Object val = row.get(fieldName);
+        if (val == null) return;
+        BigDecimal wan;
+        try {
+            if (val instanceof BigDecimal bd) {
+                wan = bd.divide(BigDecimal.valueOf(10000), 2, RoundingMode.HALF_UP);
+            } else if (val instanceof Number n) {
+                wan = BigDecimal.valueOf(n.doubleValue())
+                        .divide(BigDecimal.valueOf(10000), 2, RoundingMode.HALF_UP);
+            } else if (val instanceof String s && !s.isBlank()) {
+                wan = new BigDecimal(s.trim())
+                        .divide(BigDecimal.valueOf(10000), 2, RoundingMode.HALF_UP);
+            } else {
+                return; // 未知类型 / null / 空字符串 → 跳过
+            }
+        } catch (NumberFormatException e) {
+            log.debug("⚠️ 金额字段 {} 不是数字，跳过转换: {}", fieldName, val);
+            return;
+        }
+        row.put(fieldName, wan);
     }
 
     /**
@@ -769,7 +822,7 @@ public class QueryBizDataTool {
                 log.info("🔄 [get_{}_detail] 主表无数据,fall back to origin_announcement, keyword={}", bizType, keyword);
                 Map<String, Object> fallbackRow = tryOriginAnnouncementFallback(bizType, id, keyword, validatedProvince);
                 if (fallbackRow != null) {
-                    Map<String, Object> normalized = normalizeFields(fallbackRow);
+                    Map<String, Object> normalized = normalizeFields(fallbackRow, bizType);
                     Map<String, Object> response = new LinkedHashMap<>();
                     response.put("success", true);
                     response.put("bizType", bizType);
@@ -791,14 +844,15 @@ public class QueryBizDataTool {
                 return toJson(empty);
             }
 
-            // 6) 字段归一化（金额列→amount，publish_time→publishTime）
+            // 6) 字段归一化（日期 publish_time→publishTime + 金额元→万元，按 bizType）
             Map<String, Object> detail = rawResult.get(0);
-            Map<String, Object> normalized = normalizeFields(detail);
+            Map<String, Object> normalized = normalizeFields(detail, bizType);
 
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("success", true);
             response.put("bizType", bizType);
             response.put("found", true);
+            response.put("unit", "万元");  // ⭐ 金额单位标识：4 张业务表已统一转万元
             response.put("detail", normalized);
             response.put("message", "查询成功，返回 1 条详情");
 

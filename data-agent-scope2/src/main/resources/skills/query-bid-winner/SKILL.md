@@ -1,6 +1,6 @@
 ---
 name: query-bid-winner
-description: 【中标结果查询 - 别和"招标"搞混】当用户查询的是**已经开标后的中标结果**（含"中标"二字但**不含"招标"**）时使用本 skill。例如："中标信息/中标公示/中标候选人/中标金额/中标单位/中标公告/中标结果/中标通知/广西中标/江苏中标"。**关键区分**：用户说"招标公告/招标预告/招标文件"用 `query-bidding`；用户说"中标"**一定**用本 skill（不要误用 `query-bidding`）。【注意】"今日/昨天"的中标用 `query-daily-announcement`。
+description: 【中标信息查询 - 别和"招标"搞混】当用户查询的是**已经开标后的中标结果**（含"中标"二字但**不含"招标"**）时使用本 skill。例如："中标信息/中标公示/中标候选人/中标金额/中标单位/中标公告/中标结果/中标通知/广西中标/江苏中标"。**关键区分**：用户说"招标公告/招标预告/招标文件"用 `query-bidding`；用户说"中标"**一定**用本 skill（不要误用 `query-bidding`）。【注意】"今日/昨天"的中标用 `query-daily-announcement`。
 ---
 
 # 中标信息查询
@@ -40,8 +40,8 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
     "keyword": "<项目名/标题/关键词，模糊匹配>",
     "startDate": "yyyy-MM-dd",
     "endDate": "yyyy-MM-dd",
-    "minBudget": <最小中标金额，元>,
-    "maxBudget": <最大中标金额，元>
+    "minBudget": <最小中标金额，元（过滤条件仍按元，Tool 内部转万元过滤）>,
+    "maxBudget": <最大中标金额，元（过滤条件仍按元，Tool 内部转万元过滤）>
   },
   "limit": <1-100，默认 20>
 }
@@ -77,8 +77,8 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
 | `infoType` | String | 行业中类 |
 | `tenderer` | String | 招标单位（注意：不是中标单位）|
 | `winTenderer` | String | **中标单位**（win_bid 表独有）|
-| `winBidPrice` | BigDecimal | **中标金额**（元，win_bid 表独有，Tool 归一化为 amount）|
-| `biddingBudget` | BigDecimal | 预算金额 |
+| `winBidPrice` | BigDecimal | **中标金额**（DB 存元，Tool 输出已转**万元**，保留 2 位小数）|
+| `biddingBudget` | BigDecimal | **预算金额**（DB 存元，Tool 输出已转**万元**）|
 | `channel` | String | 公告类型 |
 | `publishTime` | LocalDate | 发布时间 |
 | `product` | String | 产品/采购需求 |
@@ -112,7 +112,7 @@ description: 【中标结果查询 - 别和"招标"搞混】当用户查询的�
 **总数**：XX 条
 
 ### Top 10
-| 项目名称 | 招标单位 | 中标单位 | 中标金额 | 发布时间 |
+| 项目名称 | 招标单位 | 中标单位 | 中标金额（万元） | 发布时间 |
 |---|---|---|---|---|
 | ... | ... | ... | ... | ... |
 
