@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.bizStatistics.BizStatisticsMapper">
+
+    <select id="getSumText" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekRepRespVO">
+        select '合计'                                as                             city,
+               t_week.operatorPrice                      as                             weekOperatorPrice,
+               t_week.operatorNum                        as                             weekOperatorNum,
+               t_week.unicomPrice                        as                             weekUnicomPrice,
+               ifnull(CONCAT(ROUND(t_week.unicomPrice * 100 / t_week.operatorPrice, 1), '%')  ,'0%') weekUnicomPricePercent,
+               ifnull(CONCAT(ROUND(t_week.mobilePrice * 100 / t_week.operatorPrice, 1), '%')  ,'0%')   weekMobilePricePercent,
+               ifnull(CONCAT(ROUND(t_week.telecomPrice * 100 / t_week.operatorPrice, 1), '%') ,'0%')    weekTelecomPricePercent,
+               ifnull(CONCAT(ROUND(t_week.radioTVPrice * 100 / t_week.operatorPrice, 1), '%') ,'0%')    weekRadioTVPricePercent,
+               ifnull(t_week.unicomNum, 0)                                                       weekUnicomNum,
+               ifnull(CONCAT(ROUND(t_week.unicomNum * 100 / t_week.operatorNum, 1), '%') ,'0%')   weekUnicomNumPercent,
+               ifnull(CONCAT(ROUND(t_week.mobileNum * 100 / t_week.operatorNum, 1), '%') ,'0%')   weekMobileNumPercent,
+               ifnull(CONCAT(ROUND(t_week.telecomNum * 100 / t_week.operatorNum, 1), '%'),'0%')    weekTelecomNumPercent,
+               ifnull(CONCAT(ROUND(t_week.radioTVNum * 100 / t_week.operatorNum, 1), '%'),'0%')    weekRadioTVNumPercent,
+               ifnull(t_week.operatorPrice - t_week.unicomPrice,0) as                             weekLostPrice,
+               ifnull(t_week.operatorNum - t_week.unicomNum    ,0) as                             weekLostNum,
+               ifnull(t_week.unBizNum,0) as weekUnBizNum,
+               ifnull(t_month.OperatorPrice, 0)                     as                             monthOperatorPrice,
+               ifnull(t_month.operatorNum  , 0)                     as                             monthOperatorNum,
+               ifnull(t_month.unicomPrice  , 0)                     as                             monthUnicomPrice,
+               ifnull(CONCAT(ROUND(t_month.unicomPrice * 100 / t_month.operatorPrice, 0), '%'),'0%') monthPricePercent,
+               ifnull(ROUND(t_month.unicomPrice * 100 / t_month.operatorPrice, 0) - ROUND(t_last_month.unicomPrice * 100 / t_last_month.operatorPrice, 0),'0')    monthUnicomPPPrice,
+               ifnull(t_month.unicomNum, 0)                         as                             monthUnicomNum,
+               ifnull(CONCAT(ROUND(t_month.unicomNum * 100 / t_month.operatorNum, 0), '%') ,'0%')    monthUnicomNumPercent,
+               ifnull(ROUND(t_month.unicomNum * 100 / t_month.operatorNum, 0) - ROUND(t_last_month.unicomNum * 100 / t_last_month.operatorNum, 0),'0')        monthUnicomPPNum,
+               t_year.publicPrice as yearPublicPrice,
+               t_year.publicNum as yearPublicNum,
+               t_year.operatorPrice as yearOperatorPrice,
+               CONCAT(ROUND(t_year.operatorPrice * 100 / t_year.publicPrice, 0), '%')   yearOperatorPricePercent,
+               t_year.operatorNum as yearOperatorNum,
+               CONCAT(ROUND(t_year.operatorNum * 100 / t_year.publicNum, 0), '%')       yearOperatorNumPercent,
+               ifnull(t_year.unicomPrice,0)  as yearUnicomPrice,
+               ifnull(CONCAT(ROUND(t_year.unicomPrice * 100 / t_year.operatorPrice, 0), '%'),0)    yearUnicomPricePercent,
+               ifnull(CONCAT(ROUND(t_year.mobilePrice * 100 / t_year.operatorPrice, 0), '%'),0)    yearMobilePricePercent,
+               ifnull(CONCAT(ROUND(t_year.telecomPrice * 100 / t_year.operatorPrice, 0), '%'),0)    yearTelecomPricePercent,
+               ifnull(CONCAT(ROUND(t_year.radioTVPrice * 100 / t_year.operatorPrice, 0), '%'),0)    yearRadioTVPricePercent,
+               ifnull(t_year.unicomNum,0) as yearUnicomNum,
+               ifnull(CONCAT(ROUND(t_year.unicomNum * 100 / t_year.operatorNum, 0), '%') ,0)     yearUnicomNumPercent,
+               ifnull(CONCAT(ROUND(t_year.mobileNum * 100 / t_year.operatorNum, 0), '%') ,0)     yearMobileNumPercent,
+               ifnull(CONCAT(ROUND(t_year.telecomNum * 100 / t_year.operatorNum, 0), '%'),0)    yearTelecomNumPercent,
+               ifnull(CONCAT(ROUND(t_year.radioTVNum * 100 / t_year.operatorNum, 0), '%'),0)      yearRadioTVNumPercent
+        from (select '合计' as city,
+                     COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                     count(1)                                                                                       as operatorNum,
+                     COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as unicomPrice,
+                     SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+                     COALESCE(ROUND(SUM(CASE WHEN b.operator = '移动' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as mobilePrice,
+                     SUM(CASE WHEN b.operator = '移动' THEN 1 ELSE 0 END)                                           as mobileNum,
+                     COALESCE(ROUND(SUM(CASE WHEN b.operator = '电信' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as telecomPrice,
+                     SUM(CASE WHEN b.operator = '电信' THEN 1 ELSE 0 END)                                           as telecomNum,
+                     COALESCE(ROUND(SUM(CASE WHEN b.operator = '广电' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as radioTVPrice,
+                     SUM(CASE WHEN b.operator = '广电' THEN 1 ELSE 0 END)                                           as radioTVNum,
+                     SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+              from chatbi.bid_biz_win_bid b
+              left join chatbi.bid_customer bc on b.customer_id = bc.id
+              where b.province=#{province}
+                and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                and b.publish_time between #{weekStartTime} and #{weekEndTime}
+        ) t_week
+        join (select '合计' as city,
+                      COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                      count(1)                                                                                       as operatorNum,
+                      COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                               0)                                                                                    as unicomPrice,
+                      SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+                      SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+               from chatbi.bid_biz_win_bid b
+               left join chatbi.bid_customer bc on b.customer_id = bc.id
+               where b.province=#{province}
+                 and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                 and b.publish_time between #{weekStartTime} and #{weekEndTime}
+        ) t_month on t_week.city = t_month.city
+        join (select '合计' as city,
+                      COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                      count(1)                                                                                       as operatorNum,
+                      COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                               0)                                                                                    as unicomPrice,
+                      SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum
+               from chatbi.bid_biz_win_bid b
+               where b.province=#{province}
+                 and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                 and b.publish_time between date_sub(#{monthStartDate}, INTERVAL 1 month) and date_sub(#{monthEndDate}, INTERVAL 1 month)
+        ) t_last_month on t_month.city = t_last_month.city
+        join
+        (select '合计' as city,
+             COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as publicPrice,
+             count(1)                                                                                       as publicNum,
+             COALESCE(ROUND(SUM(CASE
+                                    WHEN b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or
+                                         b.operator = '广电' THEN b.win_bid_price
+                                    ELSE 0 END) / 10000),
+                      0)                                                                                    as operatorPrice,
+             SUM(CASE
+                     WHEN b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电'
+                         THEN 1
+                     ELSE 0 END)                                                                            as operatorNum,
+             COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as unicomPrice,
+             COALESCE(ROUND(SUM(CASE WHEN b.operator = '移动' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as mobilePrice,
+             COALESCE(ROUND(SUM(CASE WHEN b.operator = '电信' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as telecomPrice,
+             COALESCE(ROUND(SUM(CASE WHEN b.operator = '广电' THEN b.win_bid_price ELSE 0 END) / 10000), 0) as radioTVPrice,
+             SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+             SUM(CASE WHEN b.operator = '移动' THEN 1 ELSE 0 END)                                           as mobileNum,
+             SUM(CASE WHEN b.operator = '电信' THEN 1 ELSE 0 END)                                           as telecomNum,
+             SUM(CASE WHEN b.operator = '广电' THEN 1 ELSE 0 END)                                           as radioTVNum,
+             SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+        from chatbi.bid_biz_win_bid b
+        left join chatbi.bid_customer bc on b.customer_id = bc.id
+        where b.province=#{province}
+        and b.publish_time between #{yearStartDate} and #{yearEndDate}
+        ) t_year on t_month.city = t_year.city
+    </select>
+
+    <select id="getWeekProvince" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekRepRespVO">
+        SELECT dict.label                                AS                             city,
+               dict.sort                                 AS                             citySort,
+               ifnull(t_week.operatorPrice, 0)                      AS                             weekOperatorPrice,
+               ifnull(t_week.operatorNum , 0)                        AS                             weekOperatorNum,
+               ifnull(t_week.unicomPrice , 0)                        AS                             weekUnicomPrice,
+               ifnull(CONCAT(ROUND(t_week.unicomPrice * 100 / t_week.operatorPrice, 0), '%'), '-')   weekUnicomPricePercent,
+               ifnull(t_week.unicomNum     , 0)                                                     weekUnicomNum,
+               ifnull(CONCAT(ROUND(t_week.unicomNum * 100 / t_week.operatorNum, 0), '%') , '-')       weekUnicomNumPercent,
+               ifnull(t_week.operatorPrice - t_week.unicomPrice, 0) AS                             weekLostPrice,
+               ifnull(t_week.operatorNum - t_week.unicomNum    , 0) AS                             weekLostNum,
+               ifnull(t_week.unBizNum       , 0)                   AS                             weekUnBizNum,
+               ifnull(t_month.OperatorPrice , 0)                   AS                             monthOperatorPrice,
+               ifnull(t_month.operatorNum   , 0)                   AS                             monthOperatorNum,
+               ifnull(t_month.unicomPrice   , 0)                   AS                             monthUnicomPrice,
+               ifnull(CONCAT(ROUND(t_month.unicomPrice * 100 / t_month.operatorPrice, 0), '%'), '-') monthPricePercent,
+               ifnull(ROUND(t_month.unicomPrice * 100 / t_month.operatorPrice, 0) -
+                      ROUND(t_last_month.unicomPrice * 100 / t_last_month.operatorPrice, 0) ,0)    monthUnicomPPPrice,
+               ifnull(t_month.unicomNum , 0)                        AS                             monthUnicomNum,
+               ifnull(CONCAT(ROUND(t_month.unicomNum * 100 / t_month.operatorNum, 0), '%'), '-')     monthUnicomNumPercent,
+               ifnull(ROUND(t_month.unicomNum * 100 / t_month.operatorNum, 0) -
+                      ROUND(t_last_month.unicomNum * 100 / t_last_month.operatorNum, 0),0)        monthUnicomPPNum,
+               ifnull(t_year.publicPrice    , 0)                    AS                  yearPublicPrice,
+               ifnull(t_year.publicNum      , 0)                    AS                  yearPublicNum,
+               ifnull(t_year.operatorPrice  , 0)                    AS                  yearOperatorPrice,
+               ifnull(CONCAT(ROUND(t_year.operatorPrice * 100 / t_year.publicPrice, 0), '%'), '-')    yearOperatorPricePercent,
+               ifnull(t_year.operatorNum,0)                        AS                             yearOperatorNum,
+               ifnull(CONCAT(ROUND(t_year.operatorNum * 100 / t_year.publicNum, 0), '%'), '-')      yearOperatorNumPercent,
+               ifnull(t_year.unicomPrice,0)                        AS                             yearUnicomPrice,
+               ifnull(CONCAT(ROUND(t_year.unicomPrice * 100 / t_year.operatorPrice, 0), '%') , '-')  yearUnicomPricePercent,
+               ifnull(t_year.unicomNum,0)                          AS                             yearUnicomNum,
+               ifnull(CONCAT(ROUND(t_year.unicomNum * 100 / t_year.operatorNum, 0), '%'), '-')       yearUnicomNumPercent
+        from chatbi.bid_dict_data dict
+                 left join (select b.city,
+                                   COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                                   count(1)                                                                                       as operatorNum,
+                                   COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                                            0)                                                                                    as unicomPrice,
+                                   SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+                                   SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+                            from chatbi.bid_biz_win_bid b left join chatbi.bid_customer bc on b.customer_id = bc.id
+                            where b.province=#{province}
+                              and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                              and b.publish_time between #{weekStartTime} and #{weekEndTime}
+                            group by b.city) t_week on t_week.city = convert(dict.value using utf8mb4) collate utf8mb4_general_ci and dict_type = 'bid_statistics_city'
+                 left join (select b.city,
+                                   COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                                   count(1)                                                                                       as operatorNum,
+                                   COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                                            0)                                                                                    as unicomPrice,
+                                   SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+                                   SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+                            from chatbi.bid_biz_win_bid b
+                            left join chatbi.bid_customer bc on b.customer_id = bc.id
+                            where b.province=#{province}
+                              and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                              and b.publish_time between #{weekStartTime} and #{weekEndTime}
+                            group by b.city) t_month on t_week.city = t_month.city
+                 left join (select b.city,
+                                   COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as operatorPrice,
+                                   count(1)                                                                                       as operatorNum,
+                                   COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                                            0)                                                                                    as unicomPrice,
+                                   SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum
+                            from chatbi.bid_biz_win_bid b
+                            where b.province=#{province}
+                              and (b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电')
+                              and b.publish_time between date_sub(#{monthStartDate}, INTERVAL 1 month) and date_sub(#{monthEndDate}, INTERVAL 1 month)
+                            group by b.city) t_last_month on t_month.city = t_last_month.city
+                 left join
+             (select b.city,
+                     COALESCE(ROUND(SUM(ifnull(b.win_bid_price, 0)) / 10000), 0)                                    as publicPrice,
+                     count(1)                                                                                       as publicNum,
+                     COALESCE(ROUND(SUM(CASE
+                                            WHEN b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or
+                                                 b.operator = '广电' THEN b.win_bid_price
+                                            ELSE 0 END) / 10000),
+                              0)                                                                                    as operatorPrice,
+                     SUM(CASE
+                             WHEN b.operator = '电信' or b.operator = '联通' or b.operator = '移动' or b.operator = '广电'
+                                 THEN 1
+                             ELSE 0 END)                                                                            as operatorNum,
+                     COALESCE(ROUND(SUM(CASE WHEN b.operator = '联通' THEN b.win_bid_price ELSE 0 END) / 10000),
+                              0)                                                                                    as unicomPrice,
+                     SUM(CASE WHEN b.operator = '联通' THEN 1 ELSE 0 END)                                           as unicomNum,
+                     SUM(CASE WHEN bc.id is null THEN 1 ELSE 0 END)                                                 as unBizNum
+              from chatbi.bid_biz_win_bid b
+              left join chatbi.bid_customer bc on b.customer_id = bc.id
+              where b.province=#{province}
+                and b.publish_time between #{yearStartDate} and #{yearEndDate}
+              group by b.city) t_year on t_month.city = t_year.city
+        WHERE dict.dict_type = 'bid_statistics_city'
+        order by monthUnicomPPPrice desc
+    </select>
+
+    <select id="getKnowWeekPage" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekKnowRespVO">
+        select k.label as city,purchaseNum + biddingNum as totalNum, purchaseBudget + biddingBudget as totalBudget,
+               purchaseKnowNum + biddingKnowNum as totalKnowNum, purchaseKnowBudget + biddingKnowBudget as totalKnowBudget,
+               CONCAT(ROUND(ifnull(purchaseKnowNum + biddingKnowNum,0) * 100 / (purchaseNum + biddingNum), 0), '%') as totalNumPercent,
+               purchaseNum, purchaseBudget, purchaseKnowNum, purchaseKnowBudget, purchaseNumPercent, biddingNum, biddingBudget, biddingKnowNum, biddingKnowBudget, biddingNumPercent
+        from (
+                 select label, p.num as purchaseNum, p.bidding_budget as purchaseBudget,
+                        if(pknow.num is null and p.num is not null, 0, pknow.num) as purchaseKnowNum,
+                        if(pknow.bidding_budget is null and p.bidding_budget is not null, 0, pknow.num) as purchaseKnowBudget,
+                        CONCAT(ROUND(ifnull(pknow.num,0) * 100 / p.num, 0), '%') as purchaseNumPercent,
+                        b.num as biddingNum,
+                        b.bidding_budget as biddingBudget,
+                        if(bknow.num is null and b.num is not null, 0, bknow.num) as biddingKnowNum,
+                        if(bknow.bidding_budget is null and b.bidding_budget is not null, 0, bknow.num) as biddingKnowBudget,
+                        CONCAT(ROUND(ifnull(bknow.num,0) * 100 / b.num, 0), '%') as biddingNumPercent
+                from chatbi.bid_dict_data dict
+                left join (select city, count(1) num, round(bidding_budget/10000, 0) bidding_budget
+                         from chatbi.bid_biz_purchase_intention
+                         where province=#{province} and publish_time between #{weekStartTime} and #{weekEndTime}
+                         group by city) p on convert(dict.value using utf8mb4) collate utf8mb4_general_ci = p.city
+                left join(select city, count(1) num, round(bidding_budget/10000, 0) bidding_budget
+                        from chatbi.bid_biz_purchase_intention t
+                        join chatbi.bid_business a
+                        where a.id = t.bid_bus_id and t.province=#{province} and t.publish_time between #{weekStartTime} and #{weekEndTime}
+                        group by city) pknow on pknow.city = p.city
+                left join (select city, count(1) num, round(bidding_budget/10000, 0) bidding_budget
+                         from chatbi.bid_biz_bidding t
+                         where t.publish_time and t.province=#{province} between #{weekStartTime} and #{weekEndTime}
+                         group by city) b on b.city = p.city
+                left join(select city, count(1) num, round(bidding_budget/10000, 0) bidding_budget
+                        from chatbi.bid_biz_bidding t
+                        join chatbi.bid_business a
+                        where a.id = t.bid_bus_id and t.province=#{province}
+                        and t.publish_time between #{weekStartTime} and #{weekEndTime}
+                        group by city) bknow on bknow.city = p.city
+                 where dict_type = 'bid_statistics_city' and dict.province=#{province}
+                 order by sort
+             ) k
+    </select>
+
+    <select id="getSumKnowWeekPage" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekKnowRespVO">
+        select p.city, p.num + b.num  as totalNum,  p.bidding_budget + b.bidding_budget as totalBudget,
+               pknow.num +  bknow.num as totalKnowNum, pknow.bidding_budget + bknow.bidding_budget as totalKnowBudget,
+               CONCAT(ROUND(ifnull(pknow.num + bknow.num,0) * 100 / (p.num + b.num), 0), '%') as totalNumPercent,
+               p.num as purchaseNum, p.bidding_budget as purchaseBudget,
+               pknow.num as purchaseKnowNum, pknow.bidding_budget as purchaseKnowBudget,
+               CONCAT(ROUND(ifnull(pknow.num,0) * 100 / p.num, 0), '%') as purchaseNumPercent,
+               b.num biddingNum, b.bidding_budget biddingBudget, bknow.num biddingKnowNum, bknow.bidding_budget biddingKnowBudget,
+               CONCAT(ROUND(ifnull(bknow.num,0) * 100 / b.num, 0), '%') as biddingNumPercent
+        from (select '合计' city, count(1) num, round(bidding_budget/10000, 0) bidding_budget from chatbi.bid_biz_purchase_intention where province=#{province} and publish_time between #{weekStartTime} and #{weekEndTime}) p
+        join (select '合计' city, count(1) num, round(bidding_budget/10000, 0) bidding_budget from chatbi.bid_biz_purchase_intention t join chatbi.bid_business a
+                  where a.id = t.bid_bus_id and t.province=#{province} and t.publish_time between #{weekStartTime} and #{weekEndTime}) pknow on p.city = pknow.city
+        join (select '合计' city, count(1) num, round(bidding_budget/10000, 0) bidding_budget from chatbi.bid_biz_purchase_intention where province=#{province} and publish_time between #{weekStartTime} and #{weekEndTime}) b on p.city = b.city
+        join (select '合计' city, count(1) num, round(bidding_budget/10000, 0) bidding_budget from chatbi.bid_biz_bidding t join chatbi.bid_business a
+        where a.id = t.bid_bus_id and t.province=#{province} and t.publish_time between #{weekStartTime} and #{weekEndTime}) bknow on p.city = bknow.city
+    </select>
+
+
+
+
+    <select id="getSumKnowDayPage"
+            resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekKnowRespVO">
+        select '合计' as city,
+               ifnull(purchaseNum,0) + ifnull(biddingNum,0) as totalNum,
+               ifnull(purchaseBudget,0) + ifnull(biddingBudget,0) as totalBudget,
+               0 as totalKnowNum, 0 as totalKnowBudget, '0%' as totalNumPercent,
+               purchaseNum, purchaseBudget, 0 as purchaseKnowNum, 0 as purchaseKnowBudget, '0%' as purchaseNumPercent,
+               biddingNum, biddingBudget, 0 as biddingKnowNum, 0 as biddingKnowBudget, '0%' as biddingNumPercent,
+               ifnull(purchaseOver300Num,0) as purchaseOver300Num,
+               ifnull(biddingOver300Num,0) as biddingOver300Num
+        from (
+                 select count(1) as purchaseNum, round(ifnull(sum(bidding_budget),0)/10000, 0) as purchaseBudget,
+                        count(case when bidding_budget &gt;= 3000000 then 1 end) as purchaseOver300Num
+                 from chatbi.bid_biz_purchase_intention where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime}
+             ) p, (
+                 select count(1) as biddingNum, round(ifnull(sum(bidding_budget),0)/10000, 0) as biddingBudget,
+                        count(case when bidding_budget &gt;= 3000000 then 1 end) as biddingOver300Num
+                 from chatbi.bid_biz_bidding where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime}
+             ) b
+    </select>
+
+    <select id="getDayPurchasePage" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekKnowRespVO">
+        select dict.label as city,
+               ifnull(p.num,0) as purchaseNum, ifnull(p.budget,0) as purchaseBudget,
+               0 as purchaseKnowNum, 0 as purchaseKnowBudget, '0%' as purchaseNumPercent
+        from chatbi.bid_dict_data dict
+        left join (
+            select city, count(1) as num, round(ifnull(sum(bidding_budget),0)/10000, 0) as budget
+            from chatbi.bid_biz_purchase_intention where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime} group by city
+        ) p on convert(dict.value using utf8mb4) collate utf8mb4_general_ci = p.city
+        where dict_type = 'bid_statistics_city' and dict.province=#{province}
+        order by dict.sort asc
+    </select>
+
+    <select id="getDayBiddingPage" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekKnowRespVO">
+        select dict.label as city,
+               ifnull(b.num,0) as biddingNum, ifnull(b.budget,0) as biddingBudget,
+               0 as biddingKnowNum, 0 as biddingKnowBudget, '0%' as biddingNumPercent
+        from chatbi.bid_dict_data dict
+        left join (
+            select city, count(1) as num, round(ifnull(sum(bidding_budget),0)/10000, 0) as budget
+            from chatbi.bid_biz_bidding where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime} group by city
+        ) b on convert(dict.value using utf8mb4) collate utf8mb4_general_ci = b.city
+        where dict_type = 'bid_statistics_city' and dict.province=#{province}
+        order by dict.sort asc
+    </select>
+
+    <!-- 新增：查询当天采购意向超过 300 万的地市分布 -->
+    <select id="getDayPurchaseOver300Cities" resultType="java.lang.String">
+        select group_concat(city separator '、') as cities
+        from (
+                 select distinct p.city, d.sort
+                 from chatbi.bid_biz_purchase_intention p
+                 left join chatbi.bid_dict_data d on convert(p.city using utf8mb4) collate utf8mb4_general_ci = d.value and d.dict_type = 'bid_statistics_city'
+                 where p.province=#{province} and p.publish_time &gt;= #{publishStartTime} and p.publish_time &lt;= #{publishEndTime} and p.bidding_budget &gt;= 3000000
+                 order by sort asc
+             ) t
+    </select>
+
+    <!-- 新增：查询当天招标公告超过 300 万的地市分布 -->
+    <select id="getDayBiddingOver300Cities" resultType="java.lang.String">
+        select group_concat(city separator '、') as cities
+        from (
+                 select distinct b.city, d.sort
+                 from chatbi.bid_biz_bidding b
+                 left join chatbi.bid_dict_data d on convert(b.city using utf8mb4) collate utf8mb4_general_ci = d.value and d.dict_type = 'bid_statistics_city'
+                 where b.province=#{province} and b.publish_time &gt;= #{publishStartTime} and b.publish_time &lt;= #{publishEndTime} and b.bidding_budget &gt;= 3000000
+                 order by sort asc
+             ) t
+    </select>
+
+    <select id="getDayWinBidList" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekWinRespVO">
+        select city, tenderer, industry, project_name as projectName,
+               round(ifnull(win_bid_price,0)/10000, 0) as winBidPrice, operator
+        from chatbi.bid_biz_win_bid
+        where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime}
+        order by win_bid_price desc
+    </select>
+
+    <select id="getSumDayWinBid" resultType="com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekWinRespVO">
+        select '合计' as city,
+               count(1) as totalNum, round(ifnull(sum(win_bid_price),0)/10000, 0) as totalPrice,
+               sum(case when operator in ('联通','移动','电信','广电') then 1 else 0 end) as operatorNum,
+               round(ifnull(sum(case when operator in ('联通','移动','电信','广电') then win_bid_price else 0 end),0)/10000, 0) as operatorPrice,
+               round(ifnull(sum(case when operator = '联通' then win_bid_price else 0 end),0)/10000, 0) as unicomPrice,
+               CONCAT(ROUND(ifnull(sum(case when operator = '联通' then win_bid_price else 0 end),0) * 100 /
+                            ifnull(sum(case when operator in ('联通','移动','电信','广电') then win_bid_price else 0 end),1), 0), '%') as unicomPercent
+        from chatbi.bid_biz_win_bid
+        where province=#{province} and publish_time &gt;= #{publishStartTime} and publish_time &lt;= #{publishEndTime}
+    </select>
+    
+</mapper>
