@@ -15,13 +15,18 @@
  */
 package com.alibaba.cloud.ai.dataagent.controller.biz;
 
+import com.alibaba.cloud.ai.dataagent.entity.User;
+import com.alibaba.cloud.ai.dataagent.service.UserService;
 import com.alibaba.cloud.ai.dataagent.service.biz.TenderSearchService;
+import com.alibaba.cloud.ai.dataagent.util.ProvinceUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * tender-search skill 后端 Controller（v0.1 极简实现）
@@ -39,105 +44,140 @@ public class TenderSearchController {
 
     private final TenderSearchService tenderSearchService;
 
+    @Autowired
+    private UserService userService;
+
     // ===== 标讯搜索（4 个）=====
 
     @PostMapping(value = "/search_bids", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> searchBids(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> searchBids(@RequestBody(required = false) Map<String, Object> req,@RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/search_bids] req={}", req);
-        return tenderSearchService.searchBids(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::searchBids);
     }
 
     @PostMapping(value = "/query_bids_advanced", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> queryBidsAdvanced(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> queryBidsAdvanced(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/query_bids_advanced] req={}", req);
-        return tenderSearchService.queryBidsAdvanced(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::queryBidsAdvanced);
     }
 
     @PostMapping(value = "/get_bid_detail", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getBidDetail(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getBidDetail(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_bid_detail] req={}", req);
-        return tenderSearchService.getBidDetail(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getBidDetail);
     }
 
     @PostMapping(value = "/search_expiring_projects", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> searchExpiringProjects(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> searchExpiringProjects(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/search_expiring_projects] req={}", req);
-        return tenderSearchService.searchExpiringProjects(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::searchExpiringProjects);
     }
 
     // ===== 企业分析（7 个）=====
 
     @PostMapping(value = "/search_company", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> searchCompany(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> searchCompany(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/search_company] req={}", req);
-        return tenderSearchService.searchCompany(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::searchCompany);
     }
 
     @PostMapping(value = "/get_company_profile", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getCompanyProfile(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getCompanyProfile(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_company_profile] req={}", req);
-        return tenderSearchService.getCompanyProfile(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getCompanyProfile);
     }
 
     @PostMapping(value = "/get_company_business_keywords", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getCompanyBusinessKeywords(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getCompanyBusinessKeywords(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_company_business_keywords] req={}", req);
-        return tenderSearchService.getCompanyBusinessKeywords(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getCompanyBusinessKeywords);
     }
 
     @PostMapping(value = "/get_company_partners", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getCompanyPartners(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getCompanyPartners(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_company_partners] req={}", req);
-        return tenderSearchService.getCompanyPartners(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getCompanyPartners);
     }
 
     @PostMapping(value = "/get_company_contacts", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getCompanyContacts(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getCompanyContacts(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_company_contacts] req={}", req);
-        return tenderSearchService.getCompanyContacts(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getCompanyContacts);
     }
 
     @PostMapping(value = "/find_competitors", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> findCompetitors(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> findCompetitors(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/find_competitors] req={}", req);
-        return tenderSearchService.findCompetitors(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::findCompetitors);
     }
 
     @PostMapping(value = "/find_potential_bidders", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> findPotentialBidders(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> findPotentialBidders(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/find_potential_bidders] req={}", req);
-        return tenderSearchService.findPotentialBidders(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::findPotentialBidders);
     }
 
     // ===== 市场分析（5 个）=====
 
     @PostMapping(value = "/get_top_purchasers", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getTopPurchasers(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getTopPurchasers(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_top_purchasers] req={}", req);
-        return tenderSearchService.getTopPurchasers(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getTopPurchasers);
     }
 
     @PostMapping(value = "/get_top_suppliers", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getTopSuppliers(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getTopSuppliers(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_top_suppliers] req={}", req);
-        return tenderSearchService.getTopSuppliers(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getTopSuppliers);
     }
 
     @PostMapping(value = "/get_top_brands", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getTopBrands(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getTopBrands(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_top_brands] req={}", req);
-        return tenderSearchService.getTopBrands(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getTopBrands);
     }
 
     @PostMapping(value = "/aggregate_bids_advanced", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> aggregateBidsAdvanced(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> aggregateBidsAdvanced(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/aggregate_bids_advanced] req={}", req);
-        return tenderSearchService.aggregateBidsAdvanced(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::aggregateBidsAdvanced);
     }
 
     @PostMapping(value = "/get_price_trends", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> getPriceTrends(@RequestBody(required = false) Map<String, Object> req) {
+    public Map<String, Object> getPriceTrends(@RequestBody(required = false) Map<String, Object> req, @RequestHeader(value = "Authorization", required = false) String authHeader) {
         log.info("[/api_v2/get_price_trends] req={}", req);
-        return tenderSearchService.getPriceTrends(req);
+        return executeWithAuth(authHeader, req, tenderSearchService::getPriceTrends);
+    }
+
+    /**
+     * 公共 token 校验 + 业务执行模板。
+     *
+     * <p>携带了 {@code Bearer} token 时进行校验，失败则返回统一的 error 结构；
+     * 未携带 token 或校验通过时，继续执行具体业务逻辑。
+     * @param authHeader Authorization 请求头（可选）
+     * @param req 请求体
+     * @param action 具体的业务查询逻辑
+     * @return 业务结果，或校验失败的 error 结构
+     */
+    private Map<String, Object> executeWithAuth(String authHeader, Map<String, Object> req,
+            Function<Map<String, Object>, Map<String, Object>> action) {
+        if(authHeader == null){
+            return Map.of("error", "无效 token");
+        }else if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            // 一次性获取所有信息
+            User user = userService.getUserInfoFromToken(token);
+            if (user == null) {
+                log.warn("无法解析 token，token 可能无效或已过期");
+                return Map.of("error", "无效 token");
+            }
+            String authorizedProvince = (user != null && user.getProvince() != null) ? user.getProvince() : "";
+            authorizedProvince = ProvinceUtil.normalizeList(authorizedProvince);
+            if (authorizedProvince.isBlank()) {
+                log.warn("⛔ [query_biz_data] 用户无任何省份授权: userId={}, AuthContext={}",user != null ? user.getId() : "null", user);
+                return Map.of("error", "此省份未授权,需要请联系客户经理进行开通。");
+            }
+        }
+        return action.apply(req);
     }
 }

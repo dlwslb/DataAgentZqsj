@@ -17,6 +17,7 @@ package com.alibaba.cloud.ai.dataagent.service;
 
 import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.mapper.UserMapper;
+import com.alibaba.cloud.ai.dataagent.util.JwtUtil;
 import com.alibaba.cloud.ai.dataagent.util.Sm3PasswordEncoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,9 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class UserService {
+
+	private final JwtUtil jwtUtil;
+
 
 	private final UserMapper userMapper;
 
@@ -197,4 +201,29 @@ public class UserService {
 		return Sm3PasswordEncoder.encode(frontendHash);
 	}
 
+
+	/**
+	 * 从Token解析获取完整用户信息（无需远程调用）
+	 * 包含: id, username, tenantId, role
+	 */
+	public User getUserInfoFromToken(String token) {
+		try {
+			Long userId = jwtUtil.getUserIdFromToken(token);
+			String username = jwtUtil.getUsernameFromToken(token);
+			Long tenantId = jwtUtil.getTenantIdFromToken(token);
+			String role = jwtUtil.getRoleFromToken(token);
+			String province = jwtUtil.getProvinceFromToken(token);
+
+			User info = new User();
+			info.setId(userId);
+			info.setUsername(username);
+			info.setTenantId(tenantId);
+			info.setRole(role);
+			info.setProvince(province);
+			return info;
+		} catch (Exception e) {
+			log.error("解析Token获取用户信息失败: {}", e.getMessage());
+			return null;
+		}
+	}
 }

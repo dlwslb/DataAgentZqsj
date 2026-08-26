@@ -129,6 +129,10 @@ public class JwtUtil {
 		Claims claims = parseToken(token);
 		return claims.get("role", String.class);
 	}
+	public String getProvinceFromToken(String token) {
+		Claims claims = parseToken(token);
+		return claims.get("province", String.class);
+	}
 
 	public String getTokenType(String token) {
 		Claims claims = parseToken(token);
