@@ -80,7 +80,7 @@ public class McpServerService {
 		);
 	}
 
-	@Tool(description = "公开市场标讯")
+	@Tool(description = "生成某省份在指定日期区间内的公开市场标讯【汇总简报】，返回全省整体概况文本（条数、金额等统计摘要）。仅当用户明确索要某省份一段时间的整体标讯概况、简报、摘要时使用。注意：本工具查不到具体项目明细列表；凡用户要求查询具体商机/采购/招标/中标项目明细（如“吉林8月24日具体中标项目”），禁止调用本工具")
 	public Map getDayRangProvinceText(
 			@ToolParam(description = "省份，例如：北京", required = true) String province,
 			@ToolParam(description = "查询日期数组，格式例如：[\"2026-08-04\", \"2026-08-20\"]", required = true) List<String> publishTime
@@ -96,7 +96,7 @@ public class McpServerService {
 		return statisticsService.getDayProvinceText(bean);
 	}
 
-	@Tool(description = "标讯通报")
+	@Tool(description = "生成某省份在某一具体日期的标讯【通报】，返回当日全省标讯统计通报文本。仅当用户明确索要某省份某天的标讯通报/当日概况时使用。注意：本工具查不到具体项目明细列表；凡用户要求查询具体商机/采购/招标/中标项目明细（如“吉林8月24日具体中标项目”），禁止调用本工具")
 	public Map getDayProvinceText(
 			@ToolParam(description = "省份名称，例如：北京", required = true) String province,
 			@ToolParam(description = "具体的日期时间，格式例如：\"2026-08-04\"", required = true) String dateTime) {
