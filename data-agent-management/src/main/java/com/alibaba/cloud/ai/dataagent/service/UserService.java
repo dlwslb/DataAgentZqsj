@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -106,6 +107,12 @@ public class UserService {
 	 */
 	public User getUserById(Long id) {
 		return userMapper.selectById(id);
+	}
+	public Map getUserProvince(Long id) {
+		User user =	userMapper.selectById(id);
+		Map<String, String> paramMap = new HashMap<>();
+		paramMap.put("province", user!=null?user.getProvince():null);
+		return paramMap;
 	}
 
 	/**
