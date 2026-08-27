@@ -117,6 +117,7 @@ public class AuthController {
 					"id", user.getId(),
 					"username", user.getUsername(),
 					"nickname", user.getNickname() != null ? user.getNickname() : "",
+					"province", user.getProvince() != null ? user.getProvince() : "",
 					"email", user.getEmail() != null ? user.getEmail() : "",
 					"avatar", user.getAvatar() != null ? user.getAvatar() : "",
 					"role", user.getRole(),
