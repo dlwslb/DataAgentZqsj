@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.alibaba.cloud.ai.dataagent.filter;
 
 import com.alibaba.cloud.ai.dataagent.service.TokenBlacklistService;
@@ -11,6 +26,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
@@ -35,7 +51,10 @@ public class JwtAuthenticationFilter implements WebFilter {
             "/api/system/config",
             "/api/model-config/check-ready",
             //"/api/auth/generate-complete-password",
-            "/actuator/health"
+            "/actuator/health",
+            "/sse",
+            // 招中标查询：deer-flow 的 tender-search skill 调用（不要求 token）
+            "/api_v2"
     );
 
     // 完全公开的正则路径模式
@@ -47,7 +66,8 @@ public class JwtAuthenticationFilter implements WebFilter {
     private static final List<String> INTERNAL_AUTH_PATHS = List.of(
             "/api/stream/search",
             "/api/agent/",
-            "/api/agent-scope/"
+            "/api/agent-scope/",
+            "/mcp"
     );
 
     @Value("${jwt.internal-api-key:DataAgentInternalKey2026}")
@@ -111,13 +131,14 @@ public class JwtAuthenticationFilter implements WebFilter {
                         Long userId = claims.get("userId", Long.class);
                         String username = claims.getSubject();
 
-                        exchange.getRequest().mutate()
+                        // mutate() 返回的是新 request，必须重新组装 exchange 再往下传，否则新增的请求头不会生效
+                        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
                                 .header("X-User-Id", String.valueOf(userId))
                                 .header("X-Username", username)
                                 .build();
 
                         log.debug("Authenticated: {} (id={})", username, userId);
-                        return chain.filter(exchange);
+                        return chain.filter(exchange.mutate().request(mutatedRequest).build());
                     });
         } catch (ExpiredJwtException e) {
             return unauthorized(exchange, "Token expired");
