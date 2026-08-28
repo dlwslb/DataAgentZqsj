@@ -35,7 +35,7 @@ import java.util.UUID;
 public class JwtUtil {
 
 	private static final long ACCESS_TOKEN_EXPIRATION = 2 * 60 * 60 * 1000;
-	private static final long REFRESH_TOKEN_EXPIRATION = 7 * 24 * 60 * 60 * 1000;
+	private static final long REFRESH_TOKEN_EXPIRATION = 90L * 24 * 60 * 60 * 1000;
 	private static final long TEMP_TOKEN_EXPIRATION = 5 * 60 * 1000; // 临时Token有效期5分钟
 
 	@Value("${jwt.secret:DataAgentZqsjSecretKey2026ForJWTTokenGeneration}")
