@@ -79,11 +79,14 @@ public class McpServerService {
 	public Map getUserProvince(
 			@ToolParam(description = "当前登录用户的登录令牌（JWT token，即请求头 Authorization: Bearer 后面的部分）", required = false) String token) {
 		return executeWithAuth(token, user -> {
-			// 优先用 token 里携带的省份，否则回源查库拿最新授权
-			if (StringUtils.isNotEmpty(user.getProvince())) {
+			// 优先查库拿最新授权的省份
+			Map openprovince =  userService.getUserProvince(user.getId());
+			// 用 token 里携带的省份
+			if (openprovince == null) {
 				return Map.of("province", user.getProvince());
+			}else {
+				return openprovince;
 			}
-			return userService.getUserProvince(user.getId());
 		});
 	}
 
