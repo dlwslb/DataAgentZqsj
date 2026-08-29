@@ -230,6 +230,7 @@
                 collapse-tags-tooltip
                 :max-collapse-tags="3"
                 style="width: 100%;"
+                @change="handleProvinceChange"
               >
                 <el-option
                   v-for="p in provinceList"
@@ -368,17 +369,45 @@ export default defineComponent({
     // 全国省份列表
     const provinceList = [
       '全国',
-      '北京市', '天津市', '上海市', '重庆市',
-      '河北省', '山西省', '辽宁省', '吉林省', '黑龙江省',
-      '江苏省', '浙江省', '安徽省', '福建省', '江西省', '山东省',
-      '河南省', '湖北省', '湖南省', '广东省', '海南省',
-      '四川省', '贵州省', '云南省', '陕西省', '甘肃省', '青海省', '台湾省',
-      '内蒙古自治区', '广西壮族自治区', '西藏自治区', '宁夏回族自治区', '新疆维吾尔自治区',
-      '香港特别行政区', '澳门特别行政区'
+      '北京', '天津', '上海', '重庆',
+      '河北', '山西', '辽宁', '吉林', '黑龙江',
+      '江苏', '浙江', '安徽', '福建', '江西', '山东',
+      '河南', '湖北', '湖南', '广东', '海南',
+      '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾',
+      '内蒙古', '广西', '西藏', '宁夏', '新疆',
+      '香港', '澳门'
     ];
 
     const filterSqlInjection = (value) => {
       return value.replace(SQL_INJECTION_REGEX, '');
+    };
+
+    // 「全国」与具体省份互斥：选中「全国」则清空其他，选了具体省份则剔除「全国」
+    const handleProvinceChange = (val) => {
+      if (!Array.isArray(val) || val.length <= 1) return;
+      if (val[val.length - 1] === '全国') {
+        userForm.province = ['全国'];
+      } else if (val.includes('全国')) {
+        userForm.province = val.filter(p => p !== '全国');
+      }
+    };
+
+    // 历史数据兼容：把旧格式全称（如「北京市」「内蒙古自治区」）归一化成当前选项的简称，保证回显能匹配上选项
+    const normalizeProvinceName = (name) => {
+      const trimmed = String(name || '').trim();
+      if (!trimmed) return '';
+      if (provinceList.includes(trimmed)) return trimmed;
+      const aliases = {
+        '全国': '全国',
+        '北京市': '北京', '天津市': '天津', '上海市': '上海', '重庆市': '重庆',
+        '河北省': '河北', '山西省': '山西', '辽宁省': '辽宁', '吉林省': '吉林', '黑龙江省': '黑龙江',
+        '江苏省': '江苏', '浙江省': '浙江', '安徽省': '安徽', '福建省': '福建', '江西省': '江西', '山东省': '山东',
+        '河南省': '河南', '湖北省': '湖北', '湖南省': '湖南', '广东省': '广东', '海南省': '海南',
+        '四川省': '四川', '贵州省': '贵州', '云南省': '云南', '陕西省': '陕西', '甘肃省': '甘肃', '青海省': '青海', '台湾省': '台湾',
+        '内蒙古自治区': '内蒙古', '广西壮族自治区': '广西', '西藏自治区': '西藏', '宁夏回族自治区': '宁夏', '新疆维吾尔自治区': '新疆',
+        '香港特别行政区': '香港', '澳门特别行政区': '澳门',
+      };
+      return aliases[trimmed] || trimmed;
     };
 
     const updateTableHeight = () => {
@@ -590,9 +619,9 @@ export default defineComponent({
     const openEditDialog = (user) => {
       isEdit.value = true;
       currentUserId.value = user.id;
-      // 后端 province 存的是逗号分隔字符串,前端表单用数组承载
+      // 后端 province 存的是逗号分隔字符串,前端表单用数组承载；旧数据全称归一化为简称后再回显
       const provinceArr = user.province
-        ? String(user.province).split(',').map(s => s.trim()).filter(Boolean)
+        ? String(user.province).split(',').map(normalizeProvinceName).filter(Boolean)
         : [];
       Object.assign(userForm, {
         username: user.username,
@@ -742,6 +771,7 @@ export default defineComponent({
       searchKeyword,
       defaultPassword,
       filterSqlInjection,
+      handleProvinceChange,
       provinceList,
       agentList,
       userForm,

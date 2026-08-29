@@ -110,9 +110,14 @@ public class UserController {
 			user.setRemark((String) request.get("remark"));
 			user.setRole((String) request.getOrDefault("role", "user"));
 			user.setAvatar((String) request.get("avatar"));
+			user.setProvince((String) request.get("province"));
 			// 处理 tenantId
 			if (request.get("tenantId") != null) {
 				user.setTenantId(((Number) request.get("tenantId")).longValue());
+			}
+			// 处理 agentId
+			if (request.get("agentId") != null) {
+				user.setAgentId(((Number) request.get("agentId")).longValue());
 			}
 
 			String rawPassword = (String) request.get("password");
