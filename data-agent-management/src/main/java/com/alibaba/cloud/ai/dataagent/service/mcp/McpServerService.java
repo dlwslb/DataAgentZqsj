@@ -75,9 +75,9 @@ public class McpServerService {
 	}
 
 
-	@Tool(description = "获取当前登录用户已开通的省份列表。调用方需把请求 Authorization 头中 Bearer 后面的登录令牌作为 token 参数传入，用户身份由服务端从 token 自动解析，无需传用户ID。当标讯查询（商机/采购/招标/中标/通报/简报等）未指定省份时，应先调用本工具获取用户开通省份，作为默认查询范围")
+	@Tool(description = "获取当前登录用户已开通的省份列表。token 参数由平台 user_auth 拦截器自动注入，禁止手动填写或向用户索要；用户身份由服务端从 token 自动解析，无需传用户ID。当标讯查询（商机/采购/招标/中标/通报/简报等）未指定省份时，应先调用本工具获取用户开通省份，作为默认查询范围")
 	public Map getUserProvince(
-			@ToolParam(description = "当前登录用户的登录令牌（JWT token，即请求头 Authorization: Bearer 后面的部分）", required = false) String token) {
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入）", required = false) String token) {
 		return executeWithAuth(token, user -> {
 			// 优先查库拿最新授权的省份
 			Map openprovince =  userService.getUserProvince(user.getId());
@@ -104,8 +104,8 @@ public class McpServerService {
 			"\n" +
 			"【何时必须调用】\n" +
 			"- 仅当用户明确表达\"给我一份XX省X月的标讯简报\"之类意图时。\n")
-	public Map getDayRangProvinceText(
-			@ToolParam(description = "当前登录用户的登录令牌（JWT token，即请求头 Authorization: Bearer 后面的部分）", required = false) String token,
+	public Map getDayProvinceText(
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
 			@ToolParam(description = "省份，例如：北京", required = true) String province,
 			@ToolParam(description = "查询日期数组，格式例如：[\"2026-08-04\", \"2026-08-20\"]", required = true) List<String> publishTime
 			) {
@@ -134,8 +134,8 @@ public class McpServerService {
 			"不调用的情况：\n" +
 			"- 用户索要的是项目列表、明细、具体商机、某类招标/中标信息（即使措辞是\"数据\"\"情况\"也算明细需求）；\n" +
 			"- 用户意图模糊（如只说\"看看吉林的招标\"），此时先向用户澄清要\"汇总通报\"还是\"项目明细\"，不要直接调用。\n")
-	public Map getDayProvinceText(
-			@ToolParam(description = "当前登录用户的登录令牌（JWT token，即请求头 Authorization: Bearer 后面的部分）", required = false) String token,
+	public Map getWeekProvinceText(
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
 			@ToolParam(description = "省份名称，例如：北京", required = true) String province,
 			@ToolParam(description = "具体的日期时间，格式例如：\"2026-08-04\"", required = true) String dateTime) {
 		return executeWithAuth(token, user -> {
