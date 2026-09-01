@@ -177,6 +177,11 @@ public class TenderSearchController {
                 log.warn("⛔ [query_biz_data] 用户无任何省份授权: userId={}, AuthContext={}",user != null ? user.getId() : "null", user);
                 return Map.of("error", "此省份未授权,需要请联系客户经理进行开通。");
             }
+            // AI 每日调用限制：业务调用前检查并扣减当日次数，用完拒绝（跨天自动重置）
+            if (!userService.tryConsumeAiQuota(user.getId())) {
+                log.warn("⛔ [api_v2] 用户 AI 每日调用配额已用完: userId={}", user.getId());
+                return Map.of("error", "今日 AI 调用次数已用完，次日将自动恢复。");
+            }
         }
         return action.apply(req);
     }

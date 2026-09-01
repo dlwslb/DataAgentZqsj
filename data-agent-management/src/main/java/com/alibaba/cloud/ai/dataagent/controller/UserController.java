@@ -111,6 +111,10 @@ public class UserController {
 			user.setRole((String) request.getOrDefault("role", "user"));
 			user.setAvatar((String) request.get("avatar"));
 			user.setProvince((String) request.get("province"));
+			// 处理 aiDailyLimit（AI 每日调用上限，null/0 表示不限）
+			if (request.get("aiDailyLimit") != null) {
+				user.setAiDailyLimit(((Number) request.get("aiDailyLimit")).intValue());
+			}
 			// 处理 tenantId
 			if (request.get("tenantId") != null) {
 				user.setTenantId(((Number) request.get("tenantId")).longValue());
@@ -162,6 +166,10 @@ public class UserController {
 			user.setRole((String) request.get("role"));
 			user.setAvatar((String) request.get("avatar"));
 			user.setProvince((String) request.get("province"));
+			// 处理 aiDailyLimit（AI 每日调用上限，null/0 表示不限；前端编辑时总会携带）
+			user.setAiDailyLimit(request.get("aiDailyLimit") != null
+					? ((Number) request.get("aiDailyLimit")).intValue()
+					: null);
 			// 处理 tenantId
 			if (request.get("tenantId") != null) {
 				user.setTenantId(((Number) request.get("tenantId")).longValue());

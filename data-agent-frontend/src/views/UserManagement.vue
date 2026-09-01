@@ -127,6 +127,15 @@
             <el-table-column prop="email" label="邮箱" width="180" show-overflow-tooltip />
             <el-table-column prop="phone" label="电话" width="130" />
             <el-table-column prop="province" label="省份" width="100" show-overflow-tooltip />
+            <el-table-column label="AI每日限制" width="110">
+              <template #default="{ row }">
+                <el-tag v-if="!row.aiDailyLimit" type="success" size="small">不限</el-tag>
+                <span v-else :style="{ color: getTodayUsed(row) >= row.aiDailyLimit ? '#f56c6c' : '', fontWeight: 600 }"
+                      :title="'今日已用 ' + getTodayUsed(row) + ' 次，次日自动重置'">
+                  {{ getTodayUsed(row) }}/{{ row.aiDailyLimit }}
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column prop="agentId" label="绑定智能体" width="120">
               <template #default="{ row }">
                 <span
@@ -266,6 +275,26 @@
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="AI每日限制" prop="aiDailyLimit">
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <el-radio-group v-model="userForm.aiLimitType">
+                  <el-radio label="unlimited">不限</el-radio>
+                  <el-radio label="custom">自定义限制</el-radio>
+                </el-radio-group>
+                <el-input-number
+                  v-if="userForm.aiLimitType === 'custom'"
+                  v-model="userForm.aiDailyLimit"
+                  :min="1"
+                  :max="1000000"
+                  :step="1"
+                  placeholder="每日限制次数"
+                  style="width: 160px;"
+                />
+              </div>
+              <div v-if="userForm.aiLimitType === 'custom'" style="color: #909399; font-size: 12px; line-height: 1.4; margin-top: 4px;">
+                每调用一次 AI 扣减 1 次，用完后当日拒绝调用，次日自动重置为该限额
+              </div>
+            </el-form-item>
             <el-form-item label="角色" prop="role">
               <el-select v-model="userForm.role" style="width: 100%;">
                 <el-option label="普通用户" value="user" />
@@ -398,14 +427,14 @@ export default defineComponent({
       if (!trimmed) return '';
       if (provinceList.includes(trimmed)) return trimmed;
       const aliases = {
-        '全国': '全国',
-        '北京市': '北京', '天津市': '天津', '上海市': '上海', '重庆市': '重庆',
-        '河北省': '河北', '山西省': '山西', '辽宁省': '辽宁', '吉林省': '吉林', '黑龙江省': '黑龙江',
-        '江苏省': '江苏', '浙江省': '浙江', '安徽省': '安徽', '福建省': '福建', '江西省': '江西', '山东省': '山东',
-        '河南省': '河南', '湖北省': '湖北', '湖南省': '湖南', '广东省': '广东', '海南省': '海南',
-        '四川省': '四川', '贵州省': '贵州', '云南省': '云南', '陕西省': '陕西', '甘肃省': '甘肃', '青海省': '青海', '台湾省': '台湾',
-        '内蒙古自治区': '内蒙古', '广西壮族自治区': '广西', '西藏自治区': '西藏', '宁夏回族自治区': '宁夏', '新疆维吾尔自治区': '新疆',
-        '香港特别行政区': '香港', '澳门特别行政区': '澳门',
+        全国: '全国',
+        北京市: '北京', 天津市: '天津', 上海市: '上海', 重庆市: '重庆',
+        河北省: '河北', 山西省: '山西', 辽宁省: '辽宁', 吉林省: '吉林', 黑龙江省: '黑龙江',
+        江苏省: '江苏', 浙江省: '浙江', 安徽省: '安徽', 福建省: '福建', 江西省: '江西', 山东省: '山东',
+        河南省: '河南', 湖北省: '湖北', 湖南省: '湖南', 广东省: '广东', 海南省: '海南',
+        四川省: '四川', 贵州省: '贵州', 云南省: '云南', 陕西省: '陕西', 甘肃省: '甘肃', 青海省: '青海', 台湾省: '台湾',
+        内蒙古自治区: '内蒙古', 广西壮族自治区: '广西', 西藏自治区: '西藏', 宁夏回族自治区: '宁夏', 新疆维吾尔自治区: '新疆',
+        香港特别行政区: '香港', 澳门特别行政区: '澳门',
       };
       return aliases[trimmed] || trimmed;
     };
@@ -421,6 +450,8 @@ export default defineComponent({
       email: '',
       phone: '',
       province: [],
+      aiLimitType: 'unlimited', // unlimited=不限，custom=自定义限制
+      aiDailyLimit: null,
       tenantId: null,
       agentId: null,
       role: 'user',
@@ -549,6 +580,13 @@ export default defineComponent({
       loadUsers();
     };
     
+    // 用户今日已用 AI 调用次数（aiUsageDate 不是今天则视为已重置，归 0）
+    const getTodayUsed = (row) => {
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return row.aiUsageDate === todayStr ? (row.aiUsedCount || 0) : 0;
+    };
+
     // 根据ID获取智能体名称
     const getAgentName = (agentId) => {
       if (!agentId) return '-';
@@ -608,6 +646,8 @@ export default defineComponent({
         email: '',
         phone: '',
         province: [],
+        aiLimitType: 'unlimited',
+        aiDailyLimit: null,
         tenantId: null,
         agentId: null,
         role: 'user',
@@ -630,6 +670,8 @@ export default defineComponent({
         email: user.email || '',
         phone: user.phone || '',
         province: provinceArr,
+        aiLimitType: user.aiDailyLimit > 0 ? 'custom' : 'unlimited',
+        aiDailyLimit: user.aiDailyLimit > 0 ? user.aiDailyLimit : null,
         tenantId: user.tenantId || null,
         agentId: user.agentId || null,
         role: user.role || 'user',
@@ -655,6 +697,13 @@ export default defineComponent({
           const provinceValue = Array.isArray(userForm.province)
             ? userForm.province.filter(Boolean).join(',')
             : (userForm.province || '');
+          // AI 每日限制：不限 → null；自定义 → 校验后取输入值
+          if (userForm.aiLimitType === 'custom' && (!userForm.aiDailyLimit || userForm.aiDailyLimit < 1)) {
+            ElMessage.error('请输入有效的每日限制次数');
+            submitting.value = false;
+            return;
+          }
+          const aiDailyLimitValue = userForm.aiLimitType === 'custom' ? userForm.aiDailyLimit : null;
           try {
             if (isEdit.value && currentUserId.value) {
               await userService.updateUser(currentUserId.value, {
@@ -663,6 +712,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: provinceValue,
+                aiDailyLimit: aiDailyLimitValue,
                 tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
@@ -677,6 +727,7 @@ export default defineComponent({
                 email: userForm.email,
                 phone: userForm.phone,
                 province: provinceValue,
+                aiDailyLimit: aiDailyLimitValue,
                 tenantId: userForm.tenantId,
                 agentId: userForm.agentId,
                 role: userForm.role,
@@ -795,6 +846,7 @@ export default defineComponent({
       loadAgentList,
       loadTenants,
       handleTenantClick,
+      getTodayUsed,
       getAgentName,
       goToAgentRun,
       handleSearch,

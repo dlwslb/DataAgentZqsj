@@ -116,6 +116,32 @@ public class UserService {
 	}
 
 	/**
+	 * 检查并扣减用户当日 AI 调用次数（原子操作，含跨天自动重置）。
+	 *
+	 * <p>不限（ai_daily_limit 为 NULL/≤0）的用户直接放行，不做任何扣减。
+	 * <p>容错：DB 异常时放行（不因配额功能故障阻断主流程）。
+	 * @param userId 用户ID
+	 * @return true=允许调用（已扣减 1 次或不限），false=当日配额耗尽
+	 */
+	public boolean tryConsumeAiQuota(Long userId) {
+		if (userId == null) {
+			return true;
+		}
+		try {
+			// 先判断是否不限：不限的用户直接放行，不扣减、不写库
+			User user = userMapper.selectById(userId);
+			if (user == null || user.getAiDailyLimit() == null || user.getAiDailyLimit() <= 0) {
+				return true;
+			}
+			// 有限额：原子扣减，影响行数 0 表示当日配额耗尽
+			return userMapper.consumeAiQuota(userId) > 0;
+		} catch (Exception e) {
+			log.warn("AI 配额扣减异常，默认放行: userId={}, error={}", userId, e.getMessage());
+			return true;
+		}
+	}
+
+	/**
 	 * 创建用户
 	 */
 	@Transactional

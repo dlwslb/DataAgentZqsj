@@ -170,6 +170,10 @@ public class McpServerService {
 		if (user == null || user.getId() == null) {
 			return Map.of("error", "无法解析 token，token 可能无效或已过期");
 		}
+		// AI 每日调用限制：工具调用前检查并扣减当日次数，用完拒绝（跨天自动重置）
+		if (!userService.tryConsumeAiQuota(user.getId())) {
+			return Map.of("error", "今日 AI 调用次数已用完，次日将自动恢复。");
+		}
 		return action.apply(user);
 	}
 

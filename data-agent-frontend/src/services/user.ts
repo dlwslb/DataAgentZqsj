@@ -27,6 +27,12 @@ export interface UserInfo {
   role: string;
   status: number;
   province: string;
+  /** AI 每日调用上限，null/0 表示不限 */
+  aiDailyLimit: number | null;
+  /** AI 当日已调用次数 */
+  aiUsedCount: number;
+  /** aiUsedCount 所属日期（yyyy-MM-dd），跨天自动重置 */
+  aiUsageDate: string | null;
   agentId: number | null;
   loginIp: string;
   loginDate: string;
@@ -48,6 +54,8 @@ export interface CreateUserRequest {
   email?: string;
   phone?: string;
   province?: string;
+  /** AI 每日调用上限，null/0 表示不限 */
+  aiDailyLimit?: number | null;
   agentId?: number | null;
   remark?: string;
   role?: string;
@@ -60,6 +68,8 @@ export interface UpdateUserRequest {
   email?: string;
   phone?: string;
   province?: string;
+  /** AI 每日调用上限，null/0 表示不限 */
+  aiDailyLimit?: number | null;
   agentId?: number | null;
   remark?: string;
   role?: string;

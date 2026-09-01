@@ -49,6 +49,15 @@ public class User {
 
 	private String province;
 
+	/** AI 每日调用上限，NULL 或 0 表示不限 */
+	private Integer aiDailyLimit;
+
+	/** AI 当日已调用次数 */
+	private Integer aiUsedCount;
+
+	/** aiUsedCount 所属日期，跨天自动重置 */
+	private java.time.LocalDate aiUsageDate;
+
 	private String loginIp;
 
 	private LocalDateTime loginDate;
