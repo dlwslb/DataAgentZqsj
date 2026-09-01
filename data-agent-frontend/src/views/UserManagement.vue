@@ -488,6 +488,33 @@ export default defineComponent({
         { required: true, message: '请输入密码', trigger: 'blur' },
         { min: 8, max: 20, message: '密码长度在 8 到 20 个字符', trigger: 'blur' },
       ],
+      nickname: [
+        { required: true, message: '请输入昵称', trigger: 'blur' },
+      ],
+      email: [
+        { required: true, message: '请输入邮箱', trigger: 'blur' },
+        { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' },
+      ],
+      phone: [
+        { required: true, message: '请输入电话', trigger: 'blur' },
+        { pattern: /^[\d\-+ ]{5,20}$/, message: '请输入正确的电话号码', trigger: 'blur' },
+      ],
+      province: [
+        {
+          required: true,
+          validator: (_rule, value, callback) => {
+            if (Array.isArray(value) ? value.length === 0 : !value) {
+              callback(new Error('请选择省份'));
+            } else {
+              callback();
+            }
+          },
+          trigger: 'change',
+        },
+      ],
+      role: [
+        { required: true, message: '请选择角色', trigger: 'change' },
+      ],
       remark: [
         { max: 500, message: '备注不能超过 500 个字符', trigger: 'blur' },
       ],
