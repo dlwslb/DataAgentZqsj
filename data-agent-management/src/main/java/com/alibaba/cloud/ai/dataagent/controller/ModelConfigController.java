@@ -15,17 +15,22 @@
  */
 package com.alibaba.cloud.ai.dataagent.controller;
 
+import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.enums.ModelType;
 import com.alibaba.cloud.ai.dataagent.dto.ModelConfigDTO;
 import com.alibaba.cloud.ai.dataagent.service.aimodelconfig.ModelConfigDataService;
 import com.alibaba.cloud.ai.dataagent.service.aimodelconfig.ModelConfigOpsService;
+import com.alibaba.cloud.ai.dataagent.util.CurrentUserResolver;
 import com.alibaba.cloud.ai.dataagent.vo.ApiResponse;
 import com.alibaba.cloud.ai.dataagent.vo.ModelCheckVo;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @AllArgsConstructor
 @RestController
@@ -36,9 +41,15 @@ public class ModelConfigController {
 
 	private final ModelConfigOpsService modelConfigOpsService;
 
+	private final CurrentUserResolver currentUserResolver;
+
 	// 1. 获取列表
 	@GetMapping("/list")
-	public ApiResponse<List<ModelConfigDTO>> list() {
+	public ApiResponse<List<ModelConfigDTO>> list(ServerHttpRequest request) {
+		User userInfo = currentUserResolver.resolve(request);
+		if(!userInfo.getRole().contains("super_admin")){
+			return ApiResponse.error("无权限访问");
+		}
 		try {
 			return ApiResponse.success("获取模型配置列表成功", modelConfigDataService.listConfigs());
 		}
@@ -49,8 +60,12 @@ public class ModelConfigController {
 
 	// 2. 新增配置
 	@PostMapping("/add")
-	public ApiResponse<String> add(@Valid @RequestBody ModelConfigDTO config) {
+	public ApiResponse<String> add(ServerHttpRequest request,@Valid @RequestBody ModelConfigDTO config) {
 		try {
+			User userInfo = currentUserResolver.resolve(request);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ApiResponse.error("无权限访问");
+			}
 			modelConfigDataService.addConfig(config);
 			return ApiResponse.success("配置已保存");
 		}

@@ -19,9 +19,11 @@ import com.alibaba.cloud.ai.dataagent.dto.TenantDTO;
 import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.mapper.SystemTenantMapper;
 import com.alibaba.cloud.ai.dataagent.service.UserService;
+import com.alibaba.cloud.ai.dataagent.util.CurrentUserResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -39,17 +41,27 @@ public class UserController {
 
 	private final UserService userService;
 	private final SystemTenantMapper systemTenantMapper;
+	private final CurrentUserResolver currentUserResolver;
 
 	/**
 	 * 获取用户列表（分页）
 	 */
 	@GetMapping
 	public ResponseEntity<Map<String, Object>> listUsers(
+			ServerHttpRequest request,
 			@RequestParam(required = false, defaultValue = "1") int page,
 			@RequestParam(required = false, defaultValue = "10") int pageSize,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Long tenantId) {
 		try {
+			User userInfo = currentUserResolver.resolve(request);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
+
 			Map<String, Object> result = userService.getUsersPage(page, pageSize, keyword, tenantId);
 			List<User> users = (List<User>) result.get("list");
 
@@ -73,8 +85,15 @@ public class UserController {
 	 * 获取单个用户
 	 */
 	@GetMapping("/{id}")
-	public ResponseEntity<Map<String, Object>> getUser(@PathVariable Long id) {
+	public ResponseEntity<Map<String, Object>> getUser(ServerHttpRequest request,@PathVariable Long id) {
 		try {
+			User userInfo = currentUserResolver.resolve(request);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
 			User user = userService.getUserById(id);
 			if (user == null) {
 				return ResponseEntity.status(404).body(Map.of(
@@ -100,8 +119,15 @@ public class UserController {
 	 * 创建用户
 	 */
 	@PostMapping
-	public ResponseEntity<Map<String, Object>> createUser(@RequestBody Map<String, Object> request) {
+	public ResponseEntity<Map<String, Object>> createUser(ServerHttpRequest request1,@RequestBody Map<String, Object> request) {
 		try {
+			User userInfo = currentUserResolver.resolve(request1);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
 			User user = new User();
 			user.setUsername((String) request.get("username"));
 			user.setNickname((String) request.get("nickname"));
@@ -154,9 +180,17 @@ public class UserController {
 	 */
 	@PutMapping("/{id}")
 	public ResponseEntity<Map<String, Object>> updateUser(
+			ServerHttpRequest request1,
 			@PathVariable Long id,
 			@RequestBody Map<String, Object> request) {
 		try {
+			User userInfo = currentUserResolver.resolve(request1);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
 			User user = new User();
 			user.setId(id);
 			user.setNickname((String) request.get("nickname"));
@@ -232,8 +266,15 @@ public class UserController {
 	 * 删除用户
 	 */
 	@DeleteMapping("/{id}")
-	public ResponseEntity<Map<String, Object>> deleteUser(@PathVariable Long id) {
+	public ResponseEntity<Map<String, Object>> deleteUser(ServerHttpRequest request,@PathVariable Long id) {
 		try {
+			User userInfo = currentUserResolver.resolve(request);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
 			userService.deleteUser(id);
 
 			return ResponseEntity.ok(Map.of(
@@ -254,9 +295,18 @@ public class UserController {
 	 */
 	@PutMapping("/{id}/status")
 	public ResponseEntity<Map<String, Object>> toggleStatus(
+			ServerHttpRequest request1,
 			@PathVariable Long id,
 			@RequestBody Map<String, Integer> request) {
 		try {
+			User userInfo = currentUserResolver.resolve(request1);
+			if(!userInfo.getRole().contains("super_admin")){
+				return ResponseEntity.status(403).body(Map.of(
+						"code", 403,
+						"message", "无权限访问"
+				));
+			}
+
 			Integer status = request.get("status");
 			if (status == null) {
 				return ResponseEntity.badRequest().body(Map.of(

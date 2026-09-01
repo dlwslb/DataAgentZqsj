@@ -16,7 +16,9 @@
 package com.alibaba.cloud.ai.dataagent.controller;
 
 import com.alibaba.cloud.ai.dataagent.entity.Agent;
+import com.alibaba.cloud.ai.dataagent.entity.User;
 import com.alibaba.cloud.ai.dataagent.service.agent.AgentService;
+import com.alibaba.cloud.ai.dataagent.util.CurrentUserResolver;
 import com.alibaba.cloud.ai.dataagent.vo.ApiKeyResponse;
 import com.alibaba.cloud.ai.dataagent.vo.ApiResponse;
 import java.util.List;
@@ -24,6 +26,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,11 +48,17 @@ import org.springframework.web.server.ResponseStatusException;
 public class AgentController {
 
 	private final AgentService agentService;
+	private final CurrentUserResolver currentUserResolver;
 
 	/** Get agent list */
 	@GetMapping("/list")
-	public List<Agent> list(@RequestParam(value = "status", required = false) String status,
-			@RequestParam(value = "keyword", required = false) String keyword) {
+	public List<Agent> list(ServerHttpRequest request,@RequestParam(value = "status", required = false) String status,
+							@RequestParam(value = "keyword", required = false) String keyword) {
+		User userInfo = currentUserResolver.resolve(request);
+		if(!userInfo.getRole().contains("super_admin")){
+			return null;
+		}
+
 		List<Agent> result;
 		if (StringUtils.isNotBlank(keyword)) {
 			result = agentService.search(keyword);
@@ -71,7 +80,11 @@ public class AgentController {
 
 	/** Create agent */
 	@PostMapping
-	public Agent create(@RequestBody Agent agent) {
+	public Agent create(ServerHttpRequest request,@RequestBody Agent agent) {
+		User userInfo = currentUserResolver.resolve(request);
+		if(!userInfo.getRole().contains("super_admin")){
+			return null;
+		}
 		// Set default status
 		if (StringUtils.isBlank(agent.getStatus())) {
 			agent.setStatus("draft");
