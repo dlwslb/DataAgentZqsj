@@ -267,4 +267,8 @@ public class UserService {
 			return null;
 		}
 	}
+
+	public Long getTenantId(String tenantName) {
+		return userMapper.getTenantId(tenantName);
+	}
 }

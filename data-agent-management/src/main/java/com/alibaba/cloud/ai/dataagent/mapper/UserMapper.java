@@ -103,4 +103,6 @@ public interface UserMapper {
 	@Select("SELECT COUNT(*) FROM system_users WHERE tenant_id = #{tenantId} AND (username LIKE CONCAT('%', #{keyword}, '%') OR nickname LIKE CONCAT('%', #{keyword}, '%'))")
 	int countByTenantAndKeyword(@Param("tenantId") Long tenantId, @Param("keyword") String keyword);
 
+	@Select("SELECT id FROM system_tenant WHERE name LIKE CONCAT('%', #{tenantName}, '%') and deleted = 0")
+	Long getTenantId(@Param("tenantName") String tenantName);
 }

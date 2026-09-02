@@ -21,6 +21,7 @@ import com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekParamsVO;
 import com.alibaba.cloud.ai.dataagent.mapper.AgentMapper;
 import com.alibaba.cloud.ai.dataagent.service.UserService;
 import com.alibaba.cloud.ai.dataagent.service.bizStatistics.StatisticsService;
+import com.alibaba.cloud.ai.dataagent.service.corecustomer.CoreCustomerService;
 import com.alibaba.cloud.ai.dataagent.service.graph.GraphService;
 import com.alibaba.cloud.ai.dataagent.util.ProvinceUtil;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
@@ -47,6 +48,8 @@ public class McpServerService {
 	private GraphService graphService;
 
 	private StatisticsService statisticsService;
+
+	private final CoreCustomerService coreCustomerService;
 
 	@Autowired
 	private UserService userService;
@@ -87,6 +90,36 @@ public class McpServerService {
 			}else {
 				return openprovince;
 			}
+		});
+	}
+
+	@Tool(description = "查询核心客户信息（bid_customer）。适用于用户明确要查询『某省/市的重点客户、名单制客户、核心要客、战略/价值客户』"
+			+ "或其客户经理（A角/B角/挂帅领导）归属等客户档案信息时调用。\n"
+			+ "【调用条件】\n"
+			+ "1. 必须指定省份（或全国），且省份需在用户授权范围内；\n"
+			+ "2. 可按 客户名称、行业、客户经理、是否核心/名单制/战略/价值 等条件过滤。\n"
+			+ "【禁止调用】用户询问标讯/招标/中标等公开市场数据时不要调用本工具。")
+	public Map queryCoreCustomer(
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
+			@ToolParam(description = "省份名称，例如：北京", required = true) String province,
+			@ToolParam(description = "地市名称，可选，例如：长春", required = false) String city,
+			@ToolParam(description = "客户名称关键词，可选，模糊匹配名单客户名称或自然客户名称", required = false) String customerName,
+			@ToolParam(description = "行业，可选，精确匹配行业划分", required = false) String industry,
+			@ToolParam(description = "客户经理姓名或OA工号，可选，匹配A/B角或挂帅领导", required = false) String manager,
+			@ToolParam(description = "是否仅核心要客，可选，true仅返回is_core=1的客户；不传则不限制", required = false) Boolean onlyCore,
+			@ToolParam(description = "返回条数上限，可选，默认20，最大100", required = false) Integer limit) {
+		return executeWithAuth(token, user -> {
+			String cleanProvince = ProvinceUtil.normalizeList(province);
+			Map<String, Object> error = checkProvinceAuthorized(user, cleanProvince);
+			if (error != null) {
+				return error;
+			}
+			Long tenantId = userService.getTenantId(cleanProvince);
+			if (tenantId == null) {
+				return Map.of("error", cleanProvince+" 未入住平台");
+			}
+			return coreCustomerService.queryCoreCustomer(tenantId, cleanProvince, city, customerName,
+					industry, manager, onlyCore, limit);
 		});
 	}
 

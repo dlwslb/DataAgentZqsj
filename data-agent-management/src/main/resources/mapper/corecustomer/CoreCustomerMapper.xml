@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.corecustomer.CoreCustomerMapper">
+
+    <sql id="baseColumns">
+        id,
+        list_id,list_level, list_city, list_district,
+        customer_type, industry, head_industry, province_industry,
+        manager_a, manager_a_oa,field,
+        nature_name, nature_id, nature_province_industry
+        is_core, listed, is_strategy, is_valuable, pertain_type, shangqi_label
+    </sql>
+
+    <sql id="queryCondition">
+        tenant_id = #{tenantId}
+        AND deleted = b'0'
+        <if test="province != null and province != ''">
+            AND list_province = #{province}
+        </if>
+        <if test="city != null and city != ''">
+            AND list_city = #{city}
+        </if>
+        <if test="customerName != null and customerName != ''">
+            AND (list_name LIKE CONCAT('%', #{customerName}, '%')
+            OR nature_name LIKE CONCAT('%', #{customerName}, '%'))
+        </if>
+        <if test="industry != null and industry != ''">
+            AND industry = #{industry}
+        </if>
+        <if test="manager != null and manager != ''">
+            AND (manager_a LIKE CONCAT('%', #{manager}, '%')
+            OR manager_a_oa = #{manager}
+            OR manager_b LIKE CONCAT('%', #{manager}, '%')
+            OR manager_b_oa = #{manager}
+            OR leader LIKE CONCAT('%', #{manager}, '%')
+            OR leader_oa = #{manager})
+        </if>
+        <if test="onlyCore != null and onlyCore == true">
+            AND is_core = b'1'
+        </if>
+    </sql>
+
+    <select id="selectCoreCustomerList" resultType="java.util.LinkedHashMap">
+        SELECT <include refid="baseColumns"/>
+        FROM chatbi.bid_customer
+        WHERE <include refid="queryCondition"/>
+        ORDER BY update_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countCoreCustomer" resultType="long">
+        SELECT COUNT(1)
+        FROM chatbi.bid_customer
+        WHERE <include refid="queryCondition"/>
+    </select>
+</mapper>
