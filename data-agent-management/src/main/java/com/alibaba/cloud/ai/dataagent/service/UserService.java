@@ -42,6 +42,8 @@ public class UserService {
 
 	private final UserMapper userMapper;
 
+	private String provinceList="北京,天津,上海,重庆,河北,山西,辽宁,吉林,黑龙江,江苏,浙江,安徽,福建,江西,山东,河南,湖北,湖南,广东,海南,四川,贵州,云南,陕西,甘肃,青海,台湾,内蒙古,广西,西藏,宁夏,新疆,香港,澳门";
+
 	/**
 	 * 获取所有用户列表
 	 */
@@ -110,6 +112,9 @@ public class UserService {
 	}
 	public Map getUserProvince(Long id) {
 		User user =	userMapper.selectById(id);
+		if("全国".equals(user.getProvince())){
+			user.setProvince(provinceList);
+		}
 		Map<String, String> paramMap = new HashMap<>();
 		paramMap.put("province", user!=null?user.getProvince():null);
 		return paramMap;
@@ -246,6 +251,9 @@ public class UserService {
 			Long tenantId = jwtUtil.getTenantIdFromToken(token);
 			String role = jwtUtil.getRoleFromToken(token);
 			String province = jwtUtil.getProvinceFromToken(token);
+			if("全国".equals(province)){
+				province = provinceList;
+			}
 
 			User info = new User();
 			info.setId(userId);
