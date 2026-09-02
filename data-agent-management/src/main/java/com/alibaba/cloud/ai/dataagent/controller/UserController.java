@@ -133,7 +133,7 @@ public class UserController {
 			user.setNickname((String) request.get("nickname"));
 			user.setEmail((String) request.get("email"));
 			user.setPhone((String) request.get("phone"));
-			user.setRemark((String) request.get("remark"));
+			user.setManagerAOa((String) request.get("managerAOa"));			user.setRemark((String) request.get("remark"));
 			user.setRole((String) request.getOrDefault("role", "user"));
 			user.setAvatar((String) request.get("avatar"));
 			user.setProvince((String) request.get("province"));
@@ -196,6 +196,7 @@ public class UserController {
 			user.setNickname((String) request.get("nickname"));
 			user.setEmail((String) request.get("email"));
 			user.setPhone((String) request.get("phone"));
+			user.setManagerAOa((String) request.get("managerAOa"));
 			user.setRemark((String) request.get("remark"));
 			user.setRole((String) request.get("role"));
 			user.setAvatar((String) request.get("avatar"));

@@ -22,6 +22,7 @@ export interface UserInfo {
   nickname: string;
   email: string;
   phone: string;
+  managerAOa: string | null;
   remark: string;
   avatar: string;
   role: string;
@@ -53,6 +54,7 @@ export interface CreateUserRequest {
   nickname?: string;
   email?: string;
   phone?: string;
+  managerAOa?: string | null;
   province?: string;
   /** AI 每日调用上限，null/0 表示不限 */
   aiDailyLimit?: number | null;
@@ -67,6 +69,7 @@ export interface UpdateUserRequest {
   nickname?: string;
   email?: string;
   phone?: string;
+  managerAOa?: string | null;
   province?: string;
   /** AI 每日调用上限，null/0 表示不限 */
   aiDailyLimit?: number | null;

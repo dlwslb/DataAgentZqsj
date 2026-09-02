@@ -228,6 +228,14 @@
             <el-form-item label="电话" prop="phone">
               <el-input v-model="userForm.phone" placeholder="请输入电话" />
             </el-form-item>
+            <el-form-item label="OA账号" prop="managerAOa">
+              <el-input
+                  v-model="userForm.managerAOa"
+                  placeholder="请输入OA账号（客户经理 A 角 OA 工号）"
+                  clearable
+                  @input="userForm.managerAOa = userForm.managerAOa.trim()"
+              />
+            </el-form-item>
             <el-form-item label="省份" prop="province">
               <el-select
                 v-model="userForm.province"
@@ -449,6 +457,7 @@ export default defineComponent({
       nickname: '',
       email: '',
       phone: '',
+      managerAOa: '',
       province: [],
       aiLimitType: 'unlimited', // unlimited=不限，custom=自定义限制
       aiDailyLimit: null,
@@ -498,6 +507,9 @@ export default defineComponent({
       phone: [
         { required: true, message: '请输入电话', trigger: 'blur' },
         { pattern: /^[\d\-+ ]{5,20}$/, message: '请输入正确的电话号码', trigger: 'blur' },
+      ],
+      managerAOa: [
+        { max: 64, message: 'OA账号不能超过 64 个字符', trigger: 'blur' },
       ],
       province: [
         {
@@ -672,6 +684,7 @@ export default defineComponent({
         nickname: '',
         email: '',
         phone: '',
+        managerAOa: '',
         province: [],
         aiLimitType: 'unlimited',
         aiDailyLimit: null,
@@ -696,6 +709,7 @@ export default defineComponent({
         nickname: user.nickname || '',
         email: user.email || '',
         phone: user.phone || '',
+        managerAOa: user.managerAOa || '',
         province: provinceArr,
         aiLimitType: user.aiDailyLimit > 0 ? 'custom' : 'unlimited',
         aiDailyLimit: user.aiDailyLimit > 0 ? user.aiDailyLimit : null,
@@ -738,6 +752,7 @@ export default defineComponent({
                 nickname: userForm.nickname,
                 email: userForm.email,
                 phone: userForm.phone,
+                managerAOa: userForm.managerAOa,
                 province: provinceValue,
                 aiDailyLimit: aiDailyLimitValue,
                 tenantId: userForm.tenantId,
@@ -753,6 +768,7 @@ export default defineComponent({
                 nickname: userForm.nickname,
                 email: userForm.email,
                 phone: userForm.phone,
+                managerAOa: userForm.managerAOa,
                 province: provinceValue,
                 aiDailyLimit: aiDailyLimitValue,
                 tenantId: userForm.tenantId,

@@ -40,6 +40,8 @@ public class User {
 
 	private String email;
 	private String phone;
+	/** OA 账号（首席客户经理 A 角 OA 工号），对应列 manager_a_oa */
+	private String managerAOa;
 	private String remark;
 	private String avatar;
 

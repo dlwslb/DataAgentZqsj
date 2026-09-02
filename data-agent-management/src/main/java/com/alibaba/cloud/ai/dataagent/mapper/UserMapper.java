@@ -38,11 +38,11 @@ public interface UserMapper {
 	@Select("SELECT * FROM system_users WHERE username LIKE CONCAT('%', #{keyword}, '%') OR nickname LIKE CONCAT('%', #{keyword}, '%') ORDER BY create_time DESC")
 	List<User> searchByKeyword(@Param("keyword") String keyword);
 
-	@Insert("INSERT INTO system_users (username, password, nickname, email, phone, remark, avatar, role, status, province, ai_daily_limit, tenant_id, agent_id, create_time, update_time) VALUES (#{username}, #{password}, #{nickname}, #{email}, #{phone}, #{remark}, #{avatar}, #{role}, #{status}, #{province}, #{aiDailyLimit}, #{tenantId}, #{agentId}, NOW(), NOW())")
+	@Insert("INSERT INTO system_users (username, password, nickname, email, phone,manager_a_oa, remark, avatar, role, status, province, ai_daily_limit, tenant_id, agent_id, create_time, update_time) VALUES (#{username}, #{password}, #{nickname}, #{email}, #{phone}, #{remark}, #{avatar}, #{role}, #{status}, #{province}, #{aiDailyLimit}, #{tenantId}, #{agentId}, NOW(), NOW())")
 	@Options(useGeneratedKeys = true, keyProperty = "id")
 	int insert(User user);
 
-	@Update("UPDATE system_users SET nickname = #{nickname}, email = #{email}, phone = #{phone}, remark = #{remark}, avatar = #{avatar}, role = #{role}, status = #{status}, province = #{province}, ai_daily_limit = #{aiDailyLimit}, tenant_id = #{tenantId}, agent_id = #{agentId}, update_time = NOW() WHERE id = #{id}")
+	@Update("UPDATE system_users SET nickname = #{nickname}, email = #{email}, phone = #{phone}, manager_a_oa = #{managerAOa}, remark = #{remark}, avatar = #{avatar}, role = #{role}, status = #{status}, province = #{province}, ai_daily_limit = #{aiDailyLimit}, tenant_id = #{tenantId}, agent_id = #{agentId}, update_time = NOW() WHERE id = #{id}")
 	int update(User user);
 
 	/**
