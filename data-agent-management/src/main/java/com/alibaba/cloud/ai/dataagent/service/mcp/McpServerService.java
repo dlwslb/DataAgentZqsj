@@ -21,6 +21,7 @@ import com.alibaba.cloud.ai.dataagent.entity.bizStatistics.WeekParamsVO;
 import com.alibaba.cloud.ai.dataagent.mapper.AgentMapper;
 import com.alibaba.cloud.ai.dataagent.service.UserService;
 import com.alibaba.cloud.ai.dataagent.service.bizStatistics.StatisticsService;
+import com.alibaba.cloud.ai.dataagent.service.bizopportunity.BizOpportunityService;
 import com.alibaba.cloud.ai.dataagent.service.corecustomer.CoreCustomerService;
 import com.alibaba.cloud.ai.dataagent.service.graph.GraphService;
 import com.alibaba.cloud.ai.dataagent.util.ProvinceUtil;
@@ -50,6 +51,8 @@ public class McpServerService {
 	private StatisticsService statisticsService;
 
 	private final CoreCustomerService coreCustomerService;
+
+	private final BizOpportunityService bizOpportunityService;
 
 	@Autowired
 	private UserService userService;
@@ -120,6 +123,39 @@ public class McpServerService {
 			}
 			return coreCustomerService.queryCoreCustomer(tenantId, cleanProvince, city, customerName,
 					industry, manager, onlyCore, limit);
+		});
+	}
+
+	@Tool(description = "查询商机信息（bid_business）。适用于用户明确要查询『某省/市自己填报或跟进的商机』"
+			+ "商机进度、环节、客户经理归属、签约/中标情况等业务机会信息时调用。\n"
+			+ "【调用条件】\n"
+			+ "1. 本工具是「运营商内部填报/跟进的商机」，与公开市场拟在建区分；\n"
+			+ "2. 必须指定省份（或全国），且省份需在用户授权范围内；\n"
+			+ "3. 可按 商机/客户名称、商机编号、当前环节/阶段、客户经理、填报时间区间 等条件过滤。\n"
+			+ "【禁止调用】用户问公开市场拟在建/前期商机（bid_biz_prepose）时走 tender-search / query-prepose，不要调用本工具。")
+	public Map queryBizOpportunity(
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
+			@ToolParam(description = "省份名称（按填报人所属省份过滤），例如：北京", required = true) String province,
+			@ToolParam(description = "地市名称，可选，例如：长春", required = false) String city,
+			@ToolParam(description = "关键词，可选，模糊匹配商机名称或客户名称", required = false) String keyword,
+			@ToolParam(description = "商机编号，可选，精确匹配", required = false) String businessNo,
+			@ToolParam(description = "商机环节或阶段，可选，匹配当前环节/商机阶段", required = false) String stage,
+			@ToolParam(description = "客户经理姓名或工号，可选", required = false) String manager,
+			@ToolParam(description = "填报时间起，可选，格式：2026-08-01", required = false) String beginDate,
+			@ToolParam(description = "填报时间止，可选，格式：2026-08-31", required = false) String endDate,
+			@ToolParam(description = "返回条数上限，可选，默认20，最大100", required = false) Integer limit) {
+		return executeWithAuth(token, user -> {
+			String cleanProvince = ProvinceUtil.normalizeList(province);
+			Map<String, Object> error = checkProvinceAuthorized(user, cleanProvince);
+			if (error != null) {
+				return error;
+			}
+			Long tenantId = userService.getTenantId(cleanProvince);
+			if (tenantId == null) {
+				return Map.of("error", cleanProvince+" 未入住平台");
+			}
+			return bizOpportunityService.queryBizOpportunity(tenantId, cleanProvince, city, keyword,
+					businessNo, stage, manager, beginDate, endDate, limit);
 		});
 	}
 

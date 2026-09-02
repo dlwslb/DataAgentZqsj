@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.bizopportunity.BizOpportunityMapper">
+
+    <!-- 只取关键字段，剔除 contact_phone / manager_phone 等敏感电话列 -->
+    <sql id="baseColumns">
+        id,
+        business_no, business_name, business_support_type,
+        current_stage, business_stage, current_stage_handler,
+        customer_name, customer_no, core_customer_level, customer_industry, secondary_industry,
+        manager_name, manager_no, business_writer, writer_province, writer_city, writer_time,
+        expected_signing_time, expected_contract_price, main_type, is_integrate5, integrate5_type,
+        business_source, importance, maturity, new_or_stock,
+        tender_result, is_bidding_project, win_time, win_contract_no, contract_income, contract_name, customer_price
+    </sql>
+
+    <sql id="queryCondition">
+        tenant_id = #{tenantId}
+        AND deleted = b'0'
+        <if test="province != null and province != ''">
+            AND writer_province LIKE CONCAT('%', #{province}, '%')
+        </if>
+        <if test="city != null and city != ''">
+            AND writer_city LIKE CONCAT('%', #{city}, '%')
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (business_name LIKE CONCAT('%', #{keyword}, '%')
+            OR customer_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="businessNo != null and businessNo != ''">
+            AND business_no = #{businessNo}
+        </if>
+        <if test="stage != null and stage != ''">
+            AND (current_stage = #{stage} OR business_stage = #{stage})
+        </if>
+        <if test="manager != null and manager != ''">
+            AND (manager_name LIKE CONCAT('%', #{manager}, '%')
+            OR manager_no = #{manager}
+            OR business_writer LIKE CONCAT('%', #{manager}, '%'))
+        </if>
+        <if test="beginDate != null and beginDate != ''">
+            AND writer_time &gt;= #{beginDate}
+        </if>
+        <if test="endDate != null and endDate != ''">
+            AND writer_time &lt;= CONCAT(#{endDate}, ' 23:59:59')
+        </if>
+    </sql>
+
+    <select id="selectBizOpportunityList" resultType="java.util.LinkedHashMap">
+        SELECT <include refid="baseColumns"/>
+        FROM chatbi.bid_business
+        WHERE <include refid="queryCondition"/>
+        ORDER BY update_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countBizOpportunity" resultType="long">
+        SELECT COUNT(1)
+        FROM chatbi.bid_business
+        WHERE <include refid="queryCondition"/>
+    </select>
+</mapper>
