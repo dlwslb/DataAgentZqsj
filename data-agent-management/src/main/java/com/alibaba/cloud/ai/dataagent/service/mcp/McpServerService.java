@@ -129,13 +129,14 @@ public class McpServerService {
 		});
 	}
 
-	@Tool(description = "查询商机信息（bid_business）。适用于用户明确要查询『某省/市自己填报或跟进的商机』"
-			+ "商机进度、环节、客户经理归属、签约/中标情况等业务机会信息时调用。\n"
+	@Tool(description = "查询【运营商内部填报/跟进的商机】（bid_business 表，本省租户自己录入的业务机会台账）。"
+			+ "⚠️ 本工具不是公开市场商机：用户只说『商机/商机数据/商机明细』而未明确说『自己填报的/跟进的/内部商机』时，"
+			+ "默认指公开市场标讯/拟在建商机，禁止调用本工具，应走 query-prepose / query-bidding / query-bid-winner 等 skill 或 tender-search。\n"
 			+ "【调用条件】\n"
-			+ "1. 本工具是「运营商内部填报/跟进的商机」，与公开市场拟在建区分；\n"
+			+ "1. 用户明确表达了『自己填报或跟进的商机』意图（如：查我填的商机、跟进中的商机、内部商机台账、商机进度/环节/客户经理归属/签约情况）；\n"
 			+ "2. 必须指定省份（或全国），且省份需在用户授权范围内；\n"
-			+ "3. 可按 商机/客户名称、商机编号、当前环节/阶段、客户经理、填报时间区间 等条件过滤。\n"
-			+ "【禁止调用】用户问公开市场拟在建/前期商机（bid_biz_prepose）时走 tender-search / query-prepose，不要调用本工具。")
+			+ "3. 可按 商机/客户名称、商机编号、当前环节/阶段、客户经理、填报时间区间 等条件过滤；"
+			+ "注意本工具按『填报时间』过滤而非公告发布时间，『今日/昨日的商机』类公开市场问题不适用本工具。")
 	public Map queryBizOpportunity(
 			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
 			@ToolParam(description = "省份名称（按填报人所属省份过滤），例如：北京", required = true) String province,

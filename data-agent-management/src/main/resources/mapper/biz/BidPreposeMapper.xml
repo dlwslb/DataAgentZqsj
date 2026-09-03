@@ -102,47 +102,130 @@
         LIMIT #{limit}
     </select>
 
+    <!-- 高级搜索公共条件：provinces IN / keywordGroups（AND，组内 OR）/ excludeKeywords / 金额 / 日期 -->
+    <sql id="advancedWhere">
+        <if test="provinces != null and provinces.size() > 0">
+            AND province IN
+            <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                #{p}
+            </foreach>
+        </if>
+        <if test="keywordGroups != null and keywordGroups.size() > 0">
+            AND
+            <foreach collection="keywordGroups" item="group" separator=" AND ">
+                <trim prefix="(" suffix=")">
+                    <foreach collection="group" item="kw" separator=" OR ">
+                        (title LIKE CONCAT('%', #{kw}, '%')
+                         OR project_name LIKE CONCAT('%', #{kw}, '%')
+                         OR product LIKE CONCAT('%', #{kw}, '%')
+                         OR keywords LIKE CONCAT('%', #{kw}, '%')
+                         OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                    </foreach>
+                </trim>
+            </foreach>
+        </if>
+        <if test="excludeKeywords != null and excludeKeywords.size() > 0">
+            AND
+            <foreach collection="excludeKeywords" item="kw" separator=" AND ">
+                <trim prefix="(" suffix=")">
+                    title NOT LIKE CONCAT('%', #{kw}, '%')
+                    AND project_name NOT LIKE CONCAT('%', #{kw}, '%')
+                    AND product NOT LIKE CONCAT('%', #{kw}, '%')
+                    AND keywords NOT LIKE CONCAT('%', #{kw}, '%')
+                    AND tenderer NOT LIKE CONCAT('%', #{kw}, '%')
+                </trim>
+            </foreach>
+        </if>
+        <if test="minBudgetYuan != null">AND bidding_budget &gt;= #{minBudgetYuan}</if>
+        <if test="maxBudgetYuan != null">AND bidding_budget &lt;= #{maxBudgetYuan}</if>
+        <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
+        <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
+    </sql>
+
     <!-- 高级搜索：keywordGroups（AND）+ excludeKeywords（NOT LIKE），与 bidding 表 listByAdvanced 字段一致 -->
     <select id="listByAdvanced" resultMap="BaseResultMap">
         SELECT <include refid="Base_Column_List"/>
         FROM chatbi.bid_biz_prepose
         <where>
+            <include refid="advancedWhere"/>
+        </where>
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 精确计数：total=公告条数，distinct_total=按(发布日期+项目名+地市+区县)去重后的项目数 -->
+    <select id="countByAdvanced" resultType="java.util.Map">
+        SELECT
+            COUNT(*) AS total,
+            COUNT(DISTINCT CONCAT(IFNULL(publish_time, ''), '|', IFNULL(project_name, ''), '|', IFNULL(city, ''), '|', IFNULL(district, ''))) AS distinct_total
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <include refid="advancedWhere"/>
+        </where>
+    </select>
+
+    <!-- 按发布日期聚合（服务端统计，供 agent 直接引用） -->
+    <select id="statsByDate" resultType="java.util.Map">
+        SELECT DATE_FORMAT(publish_time, '%Y-%m-%d') AS date_key, COUNT(*) AS cnt
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <include refid="advancedWhere"/>
+        </where>
+        GROUP BY date_key
+        ORDER BY date_key DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 按省份+地市聚合（服务端统计，供 agent 直接引用） -->
+    <select id="statsByCity" resultType="java.util.Map">
+        SELECT IFNULL(province, '') AS province, IFNULL(city, '') AS city, COUNT(*) AS cnt
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <include refid="advancedWhere"/>
+        </where>
+        GROUP BY province, city
+        ORDER BY cnt DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- aggregate_bids_advanced（商机/拟在建表）：多维度聚合。groupBy: province / industry / month / date -->
+    <!-- 注意：bidding_budget 数据不严格（部分为空），SUM 仅累计有金额的记录 -->
+    <select id="aggregateBids" resultType="java.util.Map">
+        SELECT
+            <choose>
+                <when test="groupBy == 'province'">province AS bucket_key,</when>
+                <when test="groupBy == 'industry'">industry AS bucket_key,</when>
+                <when test="groupBy == 'month'">DATE_FORMAT(publish_time, '%Y-%m') AS bucket_key,</when>
+                <when test="groupBy == 'date'">DATE_FORMAT(publish_time, '%Y-%m-%d') AS bucket_key,</when>
+                <otherwise>province AS bucket_key,</otherwise>
+            </choose>
+            COUNT(*) AS cnt,
+            COALESCE(SUM(bidding_budget), 0) AS sum_amount
+        FROM chatbi.bid_biz_prepose
+        <where>
+            <if test="keywords != null and keywords.size() > 0">
+                <foreach collection="keywords" item="kw" separator=" AND ">
+                    <trim prefix="(" suffix=")">
+                        title LIKE CONCAT('%', #{kw}, '%')
+                        OR project_name LIKE CONCAT('%', #{kw}, '%')
+                        OR product LIKE CONCAT('%', #{kw}, '%')
+                        OR keywords LIKE CONCAT('%', #{kw}, '%')
+                    </trim>
+                </foreach>
+            </if>
             <if test="provinces != null and provinces.size() > 0">
                 AND province IN
                 <foreach collection="provinces" item="p" open="(" separator="," close=")">
                     #{p}
                 </foreach>
             </if>
-            <if test="keywordGroups != null and keywordGroups.size() > 0">
-                <foreach collection="keywordGroups" item="group" separator=" AND ">
-                    <trim prefix="(" suffix=")">
-                        <foreach collection="group" item="kw" separator=" OR ">
-                            (title LIKE CONCAT('%', #{kw}, '%')
-                             OR project_name LIKE CONCAT('%', #{kw}, '%')
-                             OR product LIKE CONCAT('%', #{kw}, '%')
-                             OR keywords LIKE CONCAT('%', #{kw}, '%')
-                             OR tenderer LIKE CONCAT('%', #{kw}, '%'))
-                        </foreach>
-                    </trim>
-                </foreach>
-            </if>
-            <if test="excludeKeywords != null and excludeKeywords.size() > 0">
-                <foreach collection="excludeKeywords" item="kw" separator=" AND ">
-                    <trim prefix="(" suffix=")">
-                        title NOT LIKE CONCAT('%', #{kw}, '%')
-                        AND project_name NOT LIKE CONCAT('%', #{kw}, '%')
-                        AND product NOT LIKE CONCAT('%', #{kw}, '%')
-                        AND keywords NOT LIKE CONCAT('%', #{kw}, '%')
-                        AND tenderer NOT LIKE CONCAT('%', #{kw}, '%')
-                    </trim>
-                </foreach>
-            </if>
-            <if test="minBudgetYuan != null">AND bidding_budget &gt;= #{minBudgetYuan}</if>
-            <if test="maxBudgetYuan != null">AND bidding_budget &lt;= #{maxBudgetYuan}</if>
+            <if test="minBudget != null">AND bidding_budget &gt;= #{minBudget}</if>
+            <if test="maxBudget != null">AND bidding_budget &lt;= #{maxBudget}</if>
             <if test="beginDate != null and beginDate != ''">AND publish_time &gt;= #{beginDate}</if>
             <if test="endDate != null and endDate != ''">AND publish_time &lt;= #{endDate}</if>
         </where>
-        ORDER BY publish_time DESC, id DESC
+        GROUP BY bucket_key
+        ORDER BY cnt DESC
         LIMIT #{limit}
     </select>
 
