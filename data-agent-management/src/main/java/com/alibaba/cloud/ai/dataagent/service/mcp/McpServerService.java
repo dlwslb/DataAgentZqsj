@@ -24,6 +24,7 @@ import com.alibaba.cloud.ai.dataagent.service.bizStatistics.StatisticsService;
 import com.alibaba.cloud.ai.dataagent.service.bizopportunity.BizOpportunityService;
 import com.alibaba.cloud.ai.dataagent.service.corecustomer.CoreCustomerService;
 import com.alibaba.cloud.ai.dataagent.service.graph.GraphService;
+import com.alibaba.cloud.ai.dataagent.service.lostbid.OperatorLostBidService;
 import com.alibaba.cloud.ai.dataagent.util.ProvinceUtil;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
@@ -53,6 +54,8 @@ public class McpServerService {
 	private final CoreCustomerService coreCustomerService;
 
 	private final BizOpportunityService bizOpportunityService;
+
+	private final OperatorLostBidService operatorLostBidService;
 
 	@Autowired
 	private UserService userService;
@@ -156,6 +159,69 @@ public class McpServerService {
 			}
 			return bizOpportunityService.queryBizOpportunity(tenantId, cleanProvince, city, keyword,
 					businessNo, stage, manager, beginDate, endDate, limit);
+		});
+	}
+
+	@Tool(description = "运营商丢标分析（bid_biz_win_bid 中标表）。一次调用即返回丢标原因报告所需的全部统计，"
+			+ "无需逐个运营商分别调用再自行汇总。\n"
+			+ "\n"
+			+ "【丢标口径】本省租户填报了项目参与情况（join_status）且不等于『已中标』的记录；"
+			+ "参与情况为空的记录是未跟进的公开标讯，不计入丢标。"
+			+ "注意：operator 是『项目归属的运营商市场』维度（招标方是哪家运营商），不是\"谁丢的标\"——"
+			+ "本省丢标大多发生在移动/电信/其他等运营商市场的项目上。\n"
+			+ "\n"
+			+ "【何时调用】用户询问本省丢标/未中标/丢单情况、丢标原因、丢标复盘、输给了谁、"
+			+ "哪些行业/哪类原因丢标最多时调用。例如\"分析黑龙江联通最近一个月丢标原因\""
+			+ "只调用一次本工具（不传 operator）即可，不要换运营商反复调用；返回的统计字段已覆盖报告所需的全部维度，"
+			+ "一次调用后直接写报告，不要反复调用或用脚本重算。\n"
+			+ "【调用条件】\n"
+			+ "1. 必须指定单个省份（丢标数据按租户/省份隔离，不支持全国汇总），且省份需在用户授权范围内；\n"
+			+ "2. operator 可选：不传或传『全部』= 统计本省全部运营商市场的丢标（丢标原因报告用这个）；"
+			+ "传 联通/电信/移动/广电/铁塔/其他 之一 = 只看该运营商市场下的丢标分布；"
+			+ "禁止为了拼全量而逐个运营商反复调用；\n"
+			+ "3. 可按 地市、行业、原因分类、是否复盘、项目名称/招标单位/中标单位关键词、中标时间区间 过滤。\n"
+			+ "\n"
+			+ "【返回内容】一次调用返回丢标报告所需的全部统计维度：overview（总量/总金额/均价）、reasonStats（原因分类）、"
+			+ "joinStatusStats（项目参与情况，用于区分『投标前主动放弃』与『投标后落败』与『结构性不可得』）、"
+			+ "industryStats（行业）、cityStats（地市）、weeklyStats（按周走势）、reviewStats（是否复盘）、"
+			+ "operatorStats（运营商市场）、winnerFamilyStats（中标方类型）、mechanismStats（丢标机制归因：授权/指定供应商/分包/纯硬件等），"
+			+ "以及按中标金额倒序的丢标明细 records（含中标单位、原因分类 lost_reason、是否复盘 review_status、具体情况说明 situation_desc）。\n"
+			+ "【输出要求】所有 *Stats 字段已是全量命中数据的统计（不受 limit 影响），报告所需的全部数字直接引用响应字段，"
+			+ "禁止再用 bash/python 做任何聚合、分类、核验或时间换算；"
+			+ "典型项目直接引用明细里的『原因分类』和『具体情况说明』，按『原因分类 → 典型项目 → 影响金额』组织，再给可执行改进建议；"
+			+ "未复盘占比高时单独提示补齐丢标复盘；严禁编造数据中没有的原因。\n"
+			+ "【禁止调用】用户要的是公开市场中标/招标项目明细或标讯统计时，走标讯查询工具，不要调用本工具；"
+			+ "用户问自己填报跟进的商机进展时走商机查询工具，也不要用本工具。")
+	public Map analyzeOperatorLostBid(
+			@ToolParam(description = "登录令牌，由平台自动注入，无需手动传入", required = false) String token,
+			@ToolParam(description = "省份名称，例如：北京（丢标数据按省份隔离，必须指定单个省份，不支持全国）", required = true) String province,
+			@ToolParam(description = "运营商市场维度，可选。不传或传『全部』= 本省全部运营商市场的丢标（丢标原因报告推荐）；传 联通/电信/移动/广电/铁塔/其他 = 只看该市场的丢标", required = false) String operator,
+			@ToolParam(description = "地市名称，可选，例如：长春", required = false) String city,
+			@ToolParam(description = "行业大类，可选，精确匹配", required = false) String industry,
+			@ToolParam(description = "弃标/丢标/漏单原因分类，可选，模糊匹配", required = false) String lostReason,
+			@ToolParam(description = "丢标是否复盘，可选，模糊匹配库中实际填报值（如：是/否/已复盘/未复盘）", required = false) String reviewStatus,
+			@ToolParam(description = "关键词，可选，模糊匹配项目名称/公告标题/招标单位/中标单位", required = false) String keyword,
+			@ToolParam(description = "中标发布时间起，可选，格式：2026-08-01", required = false) String beginDate,
+			@ToolParam(description = "中标发布时间止，可选，格式：2026-08-31", required = false) String endDate,
+			@ToolParam(description = "丢标明细返回条数上限，可选，默认20，最大500", required = false) Integer limit) {
+		return executeWithAuth(token, user -> {
+			String cleanProvince = ProvinceUtil.normalizeList(province);
+			if (cleanProvince.isEmpty()) {
+				return Map.of("error", "省份不能为空，丢标数据按省份隔离，请指定具体省份");
+			}
+			Map<String, Object> error = checkProvinceAuthorized(user, cleanProvince);
+			if (error != null) {
+				return error;
+			}
+			Long tenantId = userService.getTenantId(cleanProvince);
+			if (tenantId == null) {
+				return Map.of("warning", cleanProvince + " 未入住平台");
+			}
+			if (tenantId != 130L) {
+				return Map.of("warning", cleanProvince + " 敬请期待");
+			}
+			return operatorLostBidService.analyzeLostBid(tenantId, cleanProvince, operator, city, industry,
+					lostReason, reviewStatus, keyword, beginDate, endDate, limit);
 		});
 	}
 

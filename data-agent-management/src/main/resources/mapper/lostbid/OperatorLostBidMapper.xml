@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alibaba.cloud.ai.dataagent.mapper.lostbid.OperatorLostBidMapper">
+
+    <!--
+      丢标口径说明（改动前请先读这里）：
+      1. chatbi.bid_biz_win_bid 是全网中标表，绝大多数记录本省根本没跟进过，
+         join_status（项目参与情况）为空。所以必须要求 join_status 非空，
+         否则会把全网公开标讯当成"丢标"统计出来，数据完全失真。
+      2. join_status 记录的是「本省填报方的项目参与情况」，= '已中标' 是赢单要排除；
+         剩下的（未中标/弃标/丢标/漏单等）才是丢标集。
+      3. operator 是「项目归属的运营商市场」维度（招标方是哪家运营商），不是"谁丢的标"——
+         本省租户填报的丢标天然都是本省自己的参与记录，且大多发生在移动/电信/其他等市场，
+         所以 operator 只作可选过滤：不传 = 统计本省全部运营商市场的丢标，传了 = 只看某个市场。
+         存短名（联通/电信/移动/广电/铁塔/其他），与 BizStatisticsMapper 统计口径一致，等值匹配。
+      4. 租户隔离：tenant_id 必传（bid_biz_win_bid 继承 TenantBaseDO，该字段就是 WHERE 过滤条件），
+         由工具层用 userService.getTenantId(province) 从授权省份解析得出；
+         province 作为额外的地域过滤维度保留，两者叠加构成完整权限边界。
+      5. 填报字段：lost_reason=弃标/丢标/漏单原因分类（全租户统一列）；
+         「丢标是否复盘」「具体情况说明」落在 columnN 自定义列上，语义按租户不同，
+         由下方 reviewStatusColumn / situationDescColumn 片段按 tenantId 映射
+         （当前登记：130 黑龙江 → column9=复盘、column8=具体情况说明）。
+         输出别名固定 review_status / situation_desc，保证上层契约稳定；
+         复盘取值枚举后端不写死，由 aggregateByReviewStatus 暴露真实值。
+      6. win_bid_price 在 DB 里单位是元，*_wan 字段才是万元（÷10000，保留 2 位）。
+    -->
+    <!-- ═══ 租户字段映射（按租户配置）═══
+         bid_biz_win_bid 的 columnN 是各租户自定义用途的列，语义不统一：
+         当前登记：130（黑龙江）→ column9=丢标是否复盘、column8=具体情况说明。
+         新租户字段落位不同时，在下面 <choose> 里加一个 <when test="tenantId == xxxL"> 分支即可，
+         无需改动任何具体 SQL；未登记的租户走 otherwise 默认口径。
+         输出别名固定 review_status / situation_desc，返回结构对上层模型契约稳定。 -->
+    <sql id="reviewStatusColumn">
+        <choose>
+            <when test="tenantId == 130L">column9</when>
+            <otherwise>column9</otherwise>
+        </choose>
+    </sql>
+    <sql id="situationDescColumn">
+        <choose>
+            <when test="tenantId == 130L">column8</when>
+            <otherwise>column8</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="lostBidCondition">
+        deleted = 0
+        AND tenant_id = #{tenantId}
+        <if test="operator != null and operator != ''">
+            AND operator = #{operator}
+        </if>
+        AND join_status IS NOT NULL
+        AND join_status &lt;&gt; ''
+        AND join_status &lt;&gt; '已中标'
+        <if test="province != null and province != ''">
+            AND province = #{province}
+        </if>
+        <if test="city != null and city != ''">
+            AND city LIKE CONCAT('%', #{city}, '%')
+        </if>
+        <if test="industry != null and industry != ''">
+            AND industry = #{industry}
+        </if>
+        <if test="lostReason != null and lostReason != ''">
+            AND lost_reason LIKE CONCAT('%', #{lostReason}, '%')
+        </if>
+        <if test="reviewStatus != null and reviewStatus != ''">
+            AND <include refid="reviewStatusColumn"/> LIKE CONCAT('%', #{reviewStatus}, '%')
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (project_name LIKE CONCAT('%', #{keyword}, '%')
+            OR title LIKE CONCAT('%', #{keyword}, '%')
+            OR tenderer LIKE CONCAT('%', #{keyword}, '%')
+            OR win_tenderer LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="beginDate != null and beginDate != ''">
+            AND publish_time &gt;= #{beginDate}
+        </if>
+        <if test="endDate != null and endDate != ''">
+            AND publish_time &lt;= #{endDate}
+        </if>
+    </sql>
+
+    <!-- 丢标明细：金额倒序，把损失最大的项目排在前面，便于优先复盘 -->
+    <select id="selectLostBidRecords" resultType="java.util.LinkedHashMap">
+        SELECT id,
+               project_name,
+               province,
+               city,
+               operator,
+               industry,
+               tenderer,
+               win_tenderer,
+               ROUND(COALESCE(win_bid_price, 0) / 10000, 2) AS win_bid_price_wan,
+               DATE_FORMAT(publish_time, '%Y-%m-%d') AS publish_time,
+               join_status,
+               lost_reason,
+               <include refid="reviewStatusColumn"/> AS review_status,
+               <include refid="situationDescColumn"/> AS situation_desc
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        ORDER BY win_bid_price DESC, publish_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 总体指标 -->
+    <select id="selectLostBidOverview" resultType="java.util.LinkedHashMap">
+        SELECT COUNT(*)                                                              AS lost_count,
+               COALESCE(SUM(win_bid_price), 0)                                       AS lost_amount_yuan,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)                     AS lost_amount_wan,
+               COALESCE(ROUND(AVG(win_bid_price) / 10000, 2), 0)                     AS avg_amount_wan,
+               SUM(CASE WHEN lost_reason IS NULL OR TRIM(lost_reason) = '' THEN 1 ELSE 0 END)  AS reason_missing_count,
+               SUM(CASE WHEN <include refid="situationDescColumn"/> IS NULL OR TRIM(<include refid="situationDescColumn"/>) = '' THEN 1 ELSE 0 END) AS situation_missing_count,
+               SUM(CASE WHEN <include refid="reviewStatusColumn"/> IS NULL OR TRIM(<include refid="reviewStatusColumn"/>) = '' THEN 1 ELSE 0 END)    AS review_missing_count,
+               DATE_FORMAT(MIN(publish_time), '%Y-%m-%d')                            AS earliest_publish_time,
+               DATE_FORMAT(MAX(publish_time), '%Y-%m-%d')                            AS latest_publish_time
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+    </select>
+
+    <!-- 按 弃标/丢标/漏单原因分类 聚合 -->
+    <select id="aggregateByLostReason" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(lost_reason), ''), '未填写原因')  AS lost_reason,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan,
+               DATE_FORMAT(MAX(publish_time), '%Y-%m-%d')       AS latest_publish_time
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(lost_reason), ''), '未填写原因')
+        ORDER BY lost_count DESC, lost_amount_wan DESC
+        LIMIT 30
+    </select>
+
+    <!-- 按 行业 聚合 -->
+    <select id="aggregateByIndustry" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(industry), ''), '未填写行业')    AS industry,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan,
+               DATE_FORMAT(MAX(publish_time), '%Y-%m-%d')       AS latest_publish_time
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(industry), ''), '未填写行业')
+        ORDER BY lost_count DESC, lost_amount_wan DESC
+        LIMIT 30
+    </select>
+
+    <!-- 按 丢标是否复盘（reviewStatusColumn 映射列，130=column9）聚合 -->
+    <select id="aggregateByReviewStatus" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(<include refid="reviewStatusColumn"/>), ''), '未填写') AS review_status,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(<include refid="reviewStatusColumn"/>), ''), '未填写')
+        ORDER BY lost_count DESC
+        LIMIT 20
+    </select>
+
+    <!-- 按 运营商市场（operator）聚合：回答"在哪个运营商的盘子里丢得多"，避免模型逐个运营商分别查询再拼接 -->
+    <select id="aggregateByOperator" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(operator), ''), '未填写')     AS operator,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(operator), ''), '未填写')
+        ORDER BY lost_count DESC
+        LIMIT 10
+    </select>
+
+    <!-- 按 项目参与情况（join_status）聚合：区分"弃标审批/投标未中/客户直采"等，是报告最核心的定性维度 -->
+    <select id="aggregateByJoinStatus" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(join_status), ''), '未填写')  AS join_status,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(join_status), ''), '未填写')
+        ORDER BY lost_count DESC
+        LIMIT 20
+    </select>
+
+    <!-- 按 地市 聚合 -->
+    <select id="aggregateByCity" resultType="java.util.LinkedHashMap">
+        SELECT IFNULL(NULLIF(TRIM(city), ''), '未填写地市')     AS city,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY IFNULL(NULLIF(TRIM(city), ''), '未填写地市')
+        ORDER BY lost_count DESC
+        LIMIT 30
+    </select>
+
+    <!-- 按 ISO 周聚合，观察丢标走势（week_start 为该周周一日期） -->
+    <select id="aggregateByWeek" resultType="java.util.LinkedHashMap">
+        SELECT DATE_FORMAT(publish_time, '%x-W%v')              AS week,
+               DATE_FORMAT(MIN(publish_time), '%Y-%m-%d')       AS week_start,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY DATE_FORMAT(publish_time, '%x-W%v')
+        ORDER BY week
+        LIMIT 30
+    </select>
+
+    <!-- 中标方类型粗分（按名称关键词，仅作格局参考，非精确股权归属） -->
+    <select id="aggregateByWinnerFamily" resultType="java.util.LinkedHashMap">
+        SELECT CASE
+                   WHEN win_tenderer LIKE '%移动%' OR win_tenderer LIKE '%中移%' OR win_tenderer LIKE '%铁通%' THEN '移动系'
+                   WHEN win_tenderer LIKE '%电信%' OR win_tenderer LIKE '%天翼%' THEN '电信系'
+                   WHEN win_tenderer LIKE '%联通%' OR win_tenderer LIKE '%网通%' OR win_tenderer LIKE '%数科%' OR win_tenderer LIKE '%产互%' THEN '联通系'
+                   WHEN win_tenderer LIKE '%广电%' OR win_tenderer LIKE '%吉视%' OR win_tenderer LIKE '%铁塔%' THEN '广电/铁塔'
+                   ELSE '本地集成商/专业厂商/其他'
+               END AS winner_family,
+               COUNT(*)                                        AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+        GROUP BY CASE
+                   WHEN win_tenderer LIKE '%移动%' OR win_tenderer LIKE '%中移%' OR win_tenderer LIKE '%铁通%' THEN '移动系'
+                   WHEN win_tenderer LIKE '%电信%' OR win_tenderer LIKE '%天翼%' THEN '电信系'
+                   WHEN win_tenderer LIKE '%联通%' OR win_tenderer LIKE '%网通%' OR win_tenderer LIKE '%数科%' OR win_tenderer LIKE '%产互%' THEN '联通系'
+                   WHEN win_tenderer LIKE '%广电%' OR win_tenderer LIKE '%吉视%' OR win_tenderer LIKE '%铁塔%' THEN '广电/铁塔'
+                   ELSE '本地集成商/专业厂商/其他'
+               END
+        ORDER BY lost_amount_wan DESC
+        LIMIT 10
+    </select>
+
+    <!-- 丢标机制归因：按具体情况说明（situationDescColumn 映射列，130=column8）关键词粗分，
+         单条 SQL 多分支 UNION ALL 共用同一过滤条件。
+         ⚠️ 一条记录可能同时命中多个机制（交叉计数），各行不能相加，仅作归因参考 -->
+    <select id="aggregateByMechanism" resultType="java.util.LinkedHashMap">
+        SELECT '厂商授权/原厂配合缺失' AS mechanism, COUNT(*) AS lost_count,
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2) AS lost_amount_wan
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%授权%' OR <include refid="situationDescColumn"/> LIKE '%原厂%')
+        UNION ALL
+        SELECT '客户指定供应商/单一来源', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%单一来源%' OR <include refid="situationDescColumn"/> LIKE '%原供应商%' OR <include refid="situationDescColumn"/> LIKE '%原承建%'
+               OR <include refid="situationDescColumn"/> LIKE '%原服务商%' OR <include refid="situationDescColumn"/> LIKE '%直接选定%' OR <include refid="situationDescColumn"/> LIKE '%指定%')
+        UNION ALL
+        SELECT '不允许分包/转包', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%分包%' OR <include refid="situationDescColumn"/> LIKE '%转包%')
+        UNION ALL
+        SELECT '纯硬件无法计收', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%无法计收%' OR <include refid="situationDescColumn"/> LIKE '%不能计收%' OR <include refid="situationDescColumn"/> LIKE '%纯硬件%')
+        UNION ALL
+        SELECT '面向中小企业采购', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND <include refid="situationDescColumn"/> LIKE '%中小企业%'
+        UNION ALL
+        SELECT '业绩/案例不满足', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%业绩%' OR <include refid="situationDescColumn"/> LIKE '%案例%')
+        UNION ALL
+        SELECT '资质不满足', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND <include refid="situationDescColumn"/> LIKE '%资质%'
+        UNION ALL
+        SELECT '联合体受限', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND <include refid="situationDescColumn"/> LIKE '%联合体%'
+        UNION ALL
+        SELECT '垫资/回款风险', COUNT(*),
+               ROUND(COALESCE(SUM(win_bid_price), 0) / 10000, 2)
+        FROM chatbi.bid_biz_win_bid
+        WHERE <include refid="lostBidCondition"/>
+          AND (<include refid="situationDescColumn"/> LIKE '%垫资%' OR <include refid="situationDescColumn"/> LIKE '%回款%')
+        ORDER BY lost_count DESC
+    </select>
+</mapper>
