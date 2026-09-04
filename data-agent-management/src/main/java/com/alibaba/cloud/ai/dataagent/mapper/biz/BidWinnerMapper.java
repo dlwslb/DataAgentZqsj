@@ -171,6 +171,13 @@ public interface BidWinnerMapper {
                                                                @Param("limit") int limit);
 
     /**
+     * find_competitors 附加：指定竞对与本方的年度同项目共中标次数趋势（同 project_name 口径）。
+     * service 层仅对 Top 竞对调用，避免 N+1 全量查询。
+     */
+    List<java.util.Map<String, Object>> competitorYearlyCoBid(@Param("companyName") String companyName,
+                                                              @Param("competitor") String competitor);
+
+    /**
      * find_competitors 辅助：基于"同一招标方曾合作过的中标方"找对手
      * —— 即跟本方中标过同一个招标方的公司，视为同赛道竞争对手。
      */

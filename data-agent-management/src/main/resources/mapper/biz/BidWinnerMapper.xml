@@ -395,6 +395,22 @@
         LIMIT #{limit}
     </select>
 
+    <!-- find_competitors 附加：指定竞对与本方的年度同项目共中标趋势（路径A口径：同 project_name）
+         service 层仅对 Top 竞对调用，避免 N+1 全量查询 -->
+    <select id="competitorYearlyCoBid" resultType="java.util.Map">
+        SELECT
+            YEAR(w2.publish_time) AS yr,
+            COUNT(*) AS co_bid_count
+        FROM chatbi.bid_biz_win_bid w1
+        INNER JOIN chatbi.bid_biz_win_bid w2 ON w2.project_name = w1.project_name
+        <where>
+            w1.win_tenderer = #{companyName}
+            AND w2.win_tenderer = #{competitor}
+        </where>
+        GROUP BY YEAR(w2.publish_time)
+        ORDER BY yr
+    </select>
+
     <!-- find_competitors 辅助 1：基于"共享客户"找对手
          与本方中标过同一招标方的其他中标方（即同一客户的多供应商关系） -->
     <select id="findCompetitorsBySharedCaller" resultType="java.util.Map">
@@ -459,10 +475,23 @@
                 <when test="groupBy == 'quarter'">CONCAT(YEAR(publish_time), '-Q', QUARTER(publish_time)) AS bucket_key,</when>
                 <when test="groupBy == 'year'">YEAR(publish_time) AS bucket_key,</when>
                 <when test="groupBy == 'date'">DATE_FORMAT(publish_time, '%Y-%m-%d') AS bucket_key,</when>
+                <when test="groupBy == 'amount_bucket'">
+                    CASE
+                        WHEN win_bid_price IS NULL OR win_bid_price &lt;= 0 THEN '0-未披露'
+                        WHEN win_bid_price &lt; 100000 THEN '1-小于10万'
+                        WHEN win_bid_price &lt; 500000 THEN '2-10万-50万'
+                        WHEN win_bid_price &lt; 1000000 THEN '3-50万-100万'
+                        WHEN win_bid_price &lt; 3000000 THEN '4-100万-300万'
+                        WHEN win_bid_price &lt; 5000000 THEN '5-300万-500万'
+                        WHEN win_bid_price &lt; 10000000 THEN '6-500万-1000万'
+                        ELSE '7-大于等于1000万'
+                    END AS bucket_key,
+                </when>
                 <otherwise>province AS bucket_key,</otherwise>
             </choose>
             COUNT(*) AS cnt,
-            COALESCE(SUM(win_bid_price), 0) AS sum_amount
+            COALESCE(SUM(win_bid_price), 0) AS sum_amount,
+            COALESCE(SUM(CASE WHEN win_bid_price IS NOT NULL AND win_bid_price &gt; 0 THEN 1 ELSE 0 END), 0) AS disclosed_cnt
         FROM chatbi.bid_biz_win_bid
         <where>
             <if test="keywords != null and keywords.size() > 0">

@@ -363,10 +363,23 @@
                 <when test="groupBy == 'quarter'">CONCAT(YEAR(publish_time), '-Q', QUARTER(publish_time)) AS bucket_key,</when>
                 <when test="groupBy == 'year'">YEAR(publish_time) AS bucket_key,</when>
                 <when test="groupBy == 'date'">DATE_FORMAT(publish_time, '%Y-%m-%d') AS bucket_key,</when>
+                <when test="groupBy == 'amount_bucket'">
+                    CASE
+                        WHEN bidding_budget IS NULL OR bidding_budget &lt;= 0 THEN '0-未披露'
+                        WHEN bidding_budget &lt; 100000 THEN '1-小于10万'
+                        WHEN bidding_budget &lt; 500000 THEN '2-10万-50万'
+                        WHEN bidding_budget &lt; 1000000 THEN '3-50万-100万'
+                        WHEN bidding_budget &lt; 3000000 THEN '4-100万-300万'
+                        WHEN bidding_budget &lt; 5000000 THEN '5-300万-500万'
+                        WHEN bidding_budget &lt; 10000000 THEN '6-500万-1000万'
+                        ELSE '7-大于等于1000万'
+                    END AS bucket_key,
+                </when>
                 <otherwise>province AS bucket_key,</otherwise>
             </choose>
             COUNT(*) AS cnt,
-            COALESCE(SUM(bidding_budget), 0) AS sum_amount
+            COALESCE(SUM(bidding_budget), 0) AS sum_amount,
+            COALESCE(SUM(CASE WHEN bidding_budget IS NOT NULL AND bidding_budget &gt; 0 THEN 1 ELSE 0 END), 0) AS disclosed_cnt
         FROM chatbi.bid_biz_bidding
         <where>
             <if test="keywords != null and keywords.size() > 0">

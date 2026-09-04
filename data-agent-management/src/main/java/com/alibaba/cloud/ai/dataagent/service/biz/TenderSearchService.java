@@ -1218,6 +1218,25 @@ public class TenderSearchService {
         });
         if (sorted.size() > limit) sorted = sorted.subList(0, limit);
 
+        // 附加 Top 竞对的年度共中标趋势（同 project_name 口径），agent 无需二次拉取即可判断对手活跃度走势
+        int trendTop = Math.min(sorted.size(), 5);
+        for (int i = 0; i < trendTop; i++) {
+            Map<String, Object> c = sorted.get(i);
+            String competitorName = strOf(c, "company_name");
+            if (competitorName == null || competitorName.isBlank()) continue;
+            try {
+                Map<String, Integer> yearly = new LinkedHashMap<>();
+                for (Map<String, Object> yr : winnerMapper.competitorYearlyCoBid(company, competitorName)) {
+                    Object y = yr.get("yr");
+                    Object yc = yr.get("co_bid_count");
+                    yearly.put(y == null ? "未知" : y.toString(), yc instanceof Number ? ((Number) yc).intValue() : 0);
+                }
+                c.put("yearly_trend", yearly);
+            } catch (Exception e) {
+                log.warn("[find_competitors] 年度趋势查询失败 company={} competitor={}: {}", company, competitorName, e.getMessage());
+            }
+        }
+
         List<Map<String, Object>> competitors = new ArrayList<>();
         for (Map<String, Object> m : sorted) {
             competitors.add(m);
@@ -1228,6 +1247,7 @@ public class TenderSearchService {
         data.put("total_projects", totalProjectsRef[0]);
         data.put("competitors", competitors);
         data.put("_match_strategy", "3条路径加权合并：A=同project_name(×3) + B=共享招标方(×2) + C=同省份+同品类+时间接近(×1)，按co_bid_score排序");
+        data.put("_trend_note", "competitors 前 5 名附 yearly_trend（年份→同项目共中标次数，同 project_name 口径），用于判断对手活跃度走势");
         return success(data);
     }
 
@@ -1597,6 +1617,7 @@ public class TenderSearchService {
         if (groupBy.isEmpty()) groupBy = List.of("province");
 
         String gb = groupBy.get(0);
+        boolean amountBucket = "amount_bucket".equals(gb);
         int limit = Math.min(intOr(req, "limit", 50), 200);
 
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1624,16 +1645,24 @@ public class TenderSearchService {
         for (Map<String, Object> row : rows) {
             String key = strOf(row, "bucket_key");
             if (key == null) continue;
+            // amount_bucket 档位在 SQL 里带 "N-" 序号前缀（保证跨表合并稳定），返回给调用方前剥掉
+            if (amountBucket && key.length() > 2 && key.charAt(1) == '-') {
+                key = key.substring(2);
+            }
             Map<String, Object> m = merged.computeIfAbsent(key, k -> {
                 Map<String, Object> x = new LinkedHashMap<>();
                 x.put("key", k);
                 x.put("count", 0);
                 x.put("sum_amount", BigDecimal.ZERO);
+                x.put("disclosed_count", 0);
                 return x;
             });
             Object cnt = row.get("cnt");
             int c = cnt instanceof Number ? ((Number) cnt).intValue() : 0;
             m.put("count", numInt(m.get("count")) + c);
+            // 金额披露条数（金额非空且 > 0 的记录数），agent 算披露率可直接引用，无需 min_amount 探针
+            Object dc = row.get("disclosed_cnt");
+            m.put("disclosed_count", numInt(m.get("disclosed_count")) + (dc instanceof Number ? ((Number) dc).intValue() : 0));
             BigDecimal amt = toBigDecimal(row.get("sum_amount"));
             BigDecimal cur = toBigDecimal(m.get("sum_amount"));
             BigDecimal merged_amt = cur == null ? amt : (amt == null ? cur : cur.add(amt));
@@ -1642,9 +1671,11 @@ public class TenderSearchService {
         // 汇总必须在 merge 完成后基于每个 bucket 的最终值计算：
         // 之前在行循环里累加 merged_amt，会把同一 bucket 的中间累计值重复计入（多表合并时同一 key 必然多行），导致 total_amount 虚高
         long totalCount = 0;
+        long totalDisclosedCount = 0;
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Map<String, Object> m : merged.values()) {
             totalCount += numInt(m.get("count"));
+            totalDisclosedCount += numInt(m.get("disclosed_count"));
             BigDecimal amt = toBigDecimal(m.get("sum_amount"));
             if (amt != null) totalAmount = totalAmount.add(amt);
         }
@@ -1652,16 +1683,37 @@ public class TenderSearchService {
         for (Map<String, Object> m : merged.values()) {
             BigDecimal sum = toBigDecimal(m.get("sum_amount"));
             m.put("sum_amount_wan", yuanToWan(sum));
+            // 均价基于有金额记录（disclosed_count）计算，避免未披露金额条数稀释均值
+            int disclosed = numInt(m.get("disclosed_count"));
+            if (disclosed > 0 && sum != null && sum.signum() > 0) {
+                BigDecimal avg = sum.divide(BigDecimal.valueOf(disclosed), 2, RoundingMode.HALF_UP);
+                m.put("avg_amount", avg);
+                m.put("avg_amount_wan", yuanToWan(avg));
+            }
             buckets.add(m);
         }
-        buckets.sort((a, b) -> Integer.compare(numInt(b.get("count")), numInt(a.get("count"))));
+        if (amountBucket) {
+            // 金额档按从小到大固定顺序输出，而不是按 count 倒序
+            List<String> order = List.of("小于10万", "10万-50万", "50万-100万", "100万-300万",
+                    "300万-500万", "500万-1000万", "大于等于1000万", "未披露");
+            buckets.sort(Comparator.comparingInt((Map<String, Object> b) -> {
+                int idx = order.indexOf(strOf(b, "key"));
+                return idx < 0 ? order.size() : idx;
+            }));
+        } else {
+            buckets.sort((a, b) -> Integer.compare(numInt(b.get("count")), numInt(a.get("count"))));
+        }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("total_count", totalCount);
+        data.put("total_disclosed_count", totalDisclosedCount);
         data.put("total_amount", totalAmount);
         data.put("total_amount_wan", yuanToWan(totalAmount));
         data.put("buckets", buckets);
         data.put("group_by", groupBy);
+        if (amountBucket) {
+            data.put("_note", "amount_bucket=金额分档（单位元，从小到大）；金额未披露（null 或 0）的记录单独记入'未披露'档；sum_amount/avg_amount 仅基于有金额记录计算；top-level total_disclosed_count 为有金额记录总数");
+        }
         if (wantPrepose) {
             data.put("data_freshness_note", "bid_type 含商机（prepose 表）时，sum_amount 仅累计有金额的记录（商机表金额列数据不严格）");
         }
