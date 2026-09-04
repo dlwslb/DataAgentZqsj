@@ -5,7 +5,7 @@
 
     <resultMap id="BaseResultMap" type="com.alibaba.cloud.ai.dataagent.entity.biz.BidBiddingEntity">
         <id column="id" property="id" jdbcType="BIGINT"/>
-        <result column="project_name" property="projectName"/>
+        <result column="title" property="title"/>
         <result column="province" property="province"/>
         <result column="city" property="city"/>
         <result column="district" property="district"/>
@@ -30,6 +30,7 @@
         <result column="bidding_scale" property="biddingScale"/>
         <result column="product" property="product"/>
         <result column="detail_link" property="detailLink"/>
+        <result column="bid_url" property="bidUrl"/>
         <result column="web_source_name" property="webSourceName"/>
         <result column="keywords" property="keywords"/>
         <result column="marketing_unit" property="marketingUnit"/>
@@ -39,12 +40,13 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, project_name, province, city, district, industry, info_type,
+        <!-- title 与 project_name 内容高度重叠，对外契约只露 title；title 为空时用项目名兕底 -->
+        id, COALESCE(NULLIF(title, ''), project_name) AS title, province, city, district, industry, info_type,
         tenderer,tenderer_code, tenderer_address, tenderer_contact, tenderer_phone,
         agency, agency_contact, agency_phone,
         bidding_budget, bid_way, channel, publish_time,
         time_bid_open, time_bid_close, time_get_file_start, time_get_file_end,
-        bidding_scale, SUBSTRING_INDEX(product, ',', 5) as product, detail_link, web_source_name,
+        bidding_scale, SUBSTRING_INDEX(product, ',', 5) as product, detail_link, bid_url, web_source_name,
         keywords, marketing_unit, project_site, is_operator_tenderer,
         field
     </sql>
@@ -80,6 +82,15 @@
         SELECT <include refid="Base_Column_List"/>
         FROM chatbi.bid_biz_bidding
         WHERE id = #{id}
+    </select>
+
+    <!-- find_potential_bidders：按原文链接反查标讯（Service 先查 winner 表，未命中再查 bidding 表） -->
+    <select id="selectByBidUrl" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM chatbi.bid_biz_bidding
+        WHERE bid_url = #{bidUrl}
+        ORDER BY publish_time DESC, id DESC
+        LIMIT 1
     </select>
 
     <!-- 高级搜索公共条件：provinces IN / keywordGroups（AND，组内 OR）/ excludeKeywords / 金额 / 日期 -->
@@ -346,8 +357,11 @@
         SELECT
             <choose>
                 <when test="groupBy == 'province'">province AS bucket_key,</when>
+                <when test="groupBy == 'city'">IFNULL(city, '') AS bucket_key,</when>
                 <when test="groupBy == 'industry'">industry AS bucket_key,</when>
                 <when test="groupBy == 'month'">DATE_FORMAT(publish_time, '%Y-%m') AS bucket_key,</when>
+                <when test="groupBy == 'quarter'">CONCAT(YEAR(publish_time), '-Q', QUARTER(publish_time)) AS bucket_key,</when>
+                <when test="groupBy == 'year'">YEAR(publish_time) AS bucket_key,</when>
                 <when test="groupBy == 'date'">DATE_FORMAT(publish_time, '%Y-%m-%d') AS bucket_key,</when>
                 <otherwise>province AS bucket_key,</otherwise>
             </choose>

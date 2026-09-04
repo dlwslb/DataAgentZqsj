@@ -101,6 +101,9 @@ public interface BidWinnerMapper {
 
     BidWinnerEntity selectById(@Param("id") Long id);
 
+    /** 按 bid_url 精确反查中标公告（find_potential_bidders 用来从项目链接推断招标方） */
+    BidWinnerEntity selectByBidUrl(@Param("bidUrl") String bidUrl);
+
     /**
      * Top 中标单位聚合（按 win_tenderer 分组）。
      */

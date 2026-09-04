@@ -5,7 +5,7 @@
 
     <resultMap id="BaseResultMap" type="com.alibaba.cloud.ai.dataagent.entity.biz.BidPreposeEntity">
         <id column="id" property="id" jdbcType="BIGINT"/>
-        <result column="project_name" property="projectName"/>
+        <result column="title" property="title"/>
         <result column="province" property="province"/>
         <result column="city" property="city"/>
         <result column="district" property="district"/>
@@ -20,6 +20,7 @@
         <result column="procurement_system" property="procurementSystem"/>
         <result column="product" property="product"/>
         <result column="detail_link" property="detailLink"/>
+        <result column="bid_url" property="bidUrl"/>
         <result column="web_source_name" property="webSourceName"/>
         <result column="notes" property="notes"/>
         <result column="collect_status" property="collectStatus"/>
@@ -36,10 +37,11 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, project_name, province, city, district, industry, info_type,
+        <!-- title 与 project_name 内容高度重叠，对外契约只露 title；title 为空时用项目名兕底 -->
+        id, COALESCE(NULLIF(title, ''), project_name) AS title, province, city, district, industry, info_type,
         tenderer, bidding_budget, bid_way, channel,
         publish_time, service_time, procurement_system, SUBSTRING_INDEX(product, ',', 5) as product,
-        detail_link, web_source_name,
+        detail_link, bid_url, web_source_name,
         notes,  collect_status, written, written_time,
         bidding_joined, keywords,
         tenderer_address, tenderer_contact, tenderer_phone,
@@ -202,8 +204,11 @@
         SELECT
             <choose>
                 <when test="groupBy == 'province'">province AS bucket_key,</when>
+                <when test="groupBy == 'city'">IFNULL(city, '') AS bucket_key,</when>
                 <when test="groupBy == 'industry'">industry AS bucket_key,</when>
                 <when test="groupBy == 'month'">DATE_FORMAT(publish_time, '%Y-%m') AS bucket_key,</when>
+                <when test="groupBy == 'quarter'">CONCAT(YEAR(publish_time), '-Q', QUARTER(publish_time)) AS bucket_key,</when>
+                <when test="groupBy == 'year'">YEAR(publish_time) AS bucket_key,</when>
                 <when test="groupBy == 'date'">DATE_FORMAT(publish_time, '%Y-%m-%d') AS bucket_key,</when>
                 <otherwise>province AS bucket_key,</otherwise>
             </choose>

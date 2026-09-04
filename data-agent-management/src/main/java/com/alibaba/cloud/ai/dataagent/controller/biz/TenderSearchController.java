@@ -25,6 +25,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -41,6 +44,9 @@ import java.util.function.Function;
 @RequestMapping("/api_v2")
 @RequiredArgsConstructor
 public class TenderSearchController {
+
+    /** Service 层识别的内部键：用户授权省份列表（归一化短名），用于与请求 provinces 求交集防越权 */
+    public static final String AUTH_PROVINCES_KEY = "__authorized_provinces";
 
     private final TenderSearchService tenderSearchService;
 
@@ -152,37 +158,68 @@ public class TenderSearchController {
     /**
      * 公共 token 校验 + 业务执行模板。
      *
-     * <p>携带了 {@code Bearer} token 时进行校验，失败则返回统一的 error 结构；
-     * 未携带 token 或校验通过时，继续执行具体业务逻辑。
-     * @param authHeader Authorization 请求头（可选）
+     * <p>必须携带合法的 {@code Bearer} token（缺失、格式非法、解析失败一律拒绝）；
+     * 校验通过后把用户授权省份注入请求体（内部键 {@link #AUTH_PROVINCES_KEY}），
+     * 由 Service 层与用户传入的 provinces 取交集，防止越权查询未授权省份数据。
+     * @param authHeader Authorization 请求头
      * @param req 请求体
      * @param action 具体的业务查询逻辑
-     * @return 业务结果，或校验失败的 error 结构
+     * @return 业务结果，或校验失败的统一 error 结构
      */
     private Map<String, Object> executeWithAuth(String authHeader, Map<String, Object> req,
             Function<Map<String, Object>, Map<String, Object>> action) {
-        if(authHeader == null){
-            return Map.of("error", "无效 token");
-        }else if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            // 一次性获取所有信息
-            User user = userService.getUserInfoFromToken(token);
-            if (user == null) {
-                log.warn("无法解析 token，token 可能无效或已过期");
-                return Map.of("error", "无效 token");
-            }
-            String authorizedProvince = (user != null && user.getProvince() != null) ? user.getProvince() : "";
-            authorizedProvince = ProvinceUtil.normalizeList(authorizedProvince);
-            if (authorizedProvince.isBlank()) {
-                log.warn("⛔ [query_biz_data] 用户无任何省份授权: userId={}, AuthContext={}",user != null ? user.getId() : "null", user);
-                return Map.of("error", "此省份未授权,需要请联系客户经理进行开通。");
-            }
-            // AI 每日调用限制：业务调用前检查并扣减当日次数，用完拒绝（跨天自动重置）
-            if (!userService.tryConsumeAiQuota(user.getId())) {
-                log.warn("⛔ [api_v2] 用户 AI 每日调用配额已用完: userId={}", user.getId());
-                return Map.of("error", "今日 AI 调用次数已用完，次日将自动恢复。");
+        if (req == null) {
+            req = new LinkedHashMap<>();
+        }
+        // 非 "Bearer " 前缀一律拒绝，杜绝伪造 Authorization 头绕过校验
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            log.warn("⛔ [api_v2] 缺失或格式非法的 Authorization 头");
+            return error("INVALID_TOKEN", "无效 token");
+        }
+        String token = authHeader.substring(7);
+        // 一次性获取所有信息
+        User user = userService.getUserInfoFromToken(token);
+        if (user == null) {
+            log.warn("无法解析 token，token 可能无效或已过期");
+            return error("INVALID_TOKEN", "无效 token");
+        }
+        List<String> authorizedProvinces = splitAuthorizedProvinces(user.getProvince());
+        if (authorizedProvinces.isEmpty()) {
+            log.warn("⛔ [api_v2] 用户无任何省份授权: userId={}", user.getId());
+            return error("PROVINCE_NOT_AUTHORIZED", "此省份未授权，需要请联系客户经理进行开通。");
+        }
+        // AI 每日调用限制：业务调用前检查并扣减当日次数，用完拒绝（跨天自动重置）
+        if (!userService.tryConsumeAiQuota(user.getId())) {
+            log.warn("⛔ [api_v2] 用户 AI 每日调用配额已用完: userId={}", user.getId());
+            return error("QUOTA_EXCEEDED", "今日 AI 调用次数已用完，次日将自动恢复。");
+        }
+        // 省份授权下推：Service 层用该列表与请求 provinces 求交集
+        req.put(AUTH_PROVINCES_KEY, authorizedProvinces);
+        return action.apply(req);
+    }
+
+    /** 解析用户授权省份字符串（逗号分隔）为归一化短名列表 */
+    private static List<String> splitAuthorizedProvinces(String provinceStr) {
+        List<String> out = new ArrayList<>();
+        if (provinceStr == null || provinceStr.isBlank()) {
+            return out;
+        }
+        for (String p : provinceStr.split(",")) {
+            String n = ProvinceUtil.normalizeProvince(p);
+            if (!n.isEmpty() && !out.contains(n)) {
+                out.add(n);
             }
         }
-        return action.apply(req);
+        return out;
+    }
+
+    /** 统一错误响应结构（HTTP 200，success=false + 错误码 + 中文 message，字段名与项目 ApiResponse 约定一致） */
+    private static Map<String, Object> error(String code, String message) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("success", false);
+        resp.put("data", null);
+        resp.put("message", message);
+        resp.put("code", code);
+        return resp;
     }
 }

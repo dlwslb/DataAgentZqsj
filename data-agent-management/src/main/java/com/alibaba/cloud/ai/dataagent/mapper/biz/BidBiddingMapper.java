@@ -108,6 +108,9 @@ public interface BidBiddingMapper {
 
     BidBiddingEntity selectById(@Param("id") Long id);
 
+    /** 按 bid_url 精确反查招标公告（find_potential_bidders 用来从项目链接推断招标方） */
+    BidBiddingEntity selectByBidUrl(@Param("bidUrl") String bidUrl);
+
     /**
      * Top 采购单位聚合（招标方 tenderer）。
      *

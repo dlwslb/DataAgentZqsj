@@ -25,12 +25,10 @@ import com.alibaba.cloud.ai.dataagent.vo.ApiResponse;
 import com.alibaba.cloud.ai.dataagent.vo.ModelCheckVo;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @AllArgsConstructor
 @RestController
