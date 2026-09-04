@@ -48,7 +48,7 @@ public interface BidWinnerMapper {
      *
      * @param keywordGroups 关键词分组（AND 关系），group 内是 OR；命中 title/projectName/product/win_tenderer 任一字段
      */
-    List<BidWinnerEntity> listByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    List<BidWinnerEntity> listByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                          @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                          @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                          @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -61,7 +61,7 @@ public interface BidWinnerMapper {
     /**
      * 精确计数（复用 listByAdvanced 条件）：total=公告条数，distinct_total=按(发布日期+项目名+地市+区县+中标方)去重后的项目数。
      */
-    java.util.Map<String, Object> countByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    java.util.Map<String, Object> countByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                   @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                   @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                   @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -70,7 +70,7 @@ public interface BidWinnerMapper {
                                                   @Param("endDate") String endDate);
 
     /** 按发布日期聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByDate(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByDate(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -80,7 +80,7 @@ public interface BidWinnerMapper {
                                                     @Param("limit") int limit);
 
     /** 按省份+地市聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByCity(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByCity(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -90,7 +90,7 @@ public interface BidWinnerMapper {
                                                     @Param("limit") int limit);
 
     /** 中标方聚合：按 win_tenderer 分组的次数与金额（服务端去重聚合，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> aggregateWinners(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> aggregateWinners(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                          @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                          @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                          @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,

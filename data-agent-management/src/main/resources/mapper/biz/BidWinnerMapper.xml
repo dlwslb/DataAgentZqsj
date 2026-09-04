@@ -88,11 +88,20 @@
             <foreach collection="keywordGroups" item="group" separator=" AND ">
                 <trim prefix="(" suffix=")">
                     <foreach collection="group" item="kw" separator=" OR ">
-                        (title LIKE CONCAT('%', #{kw}, '%')
-                         OR project_name LIKE CONCAT('%', #{kw}, '%')
-                         OR product LIKE CONCAT('%', #{kw}, '%')
-                         OR win_tenderer LIKE CONCAT('%', #{kw}, '%')
-                         OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                        <choose>
+                            <when test="matchField == 'title'">title LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'product'">product LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'keywords'">keywords LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'win_tenderer'">win_tenderer LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'tenderer'">tenderer LIKE CONCAT('%', #{kw}, '%')</when>
+                            <otherwise>
+                                (title LIKE CONCAT('%', #{kw}, '%')
+                                 OR project_name LIKE CONCAT('%', #{kw}, '%')
+                                 OR product LIKE CONCAT('%', #{kw}, '%')
+                                 OR win_tenderer LIKE CONCAT('%', #{kw}, '%')
+                                 OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                            </otherwise>
+                        </choose>
                     </foreach>
                 </trim>
             </foreach>

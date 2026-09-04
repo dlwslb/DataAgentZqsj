@@ -54,6 +54,7 @@ public interface BidBiddingMapper {
     /**
      * 高级搜索（query_bids_advanced）。
      *
+     * @param matchField       字段路由 token（title/product/keywords/tenderer/win_tenderer），null=全字段 OR
      * @param provinces         省份集合（精确）
      * @param keywordGroups     关键词分组（AND 关系，每个 group 内部是 OR）
      *                          元素是 {@code List<String>}；每个 group 命中 title/projectName/product/keywords 任一字段即算匹配
@@ -64,7 +65,7 @@ public interface BidBiddingMapper {
      * @param endDate           截止发布日期
      * @param limit             LIMIT 上限
      */
-    List<BidBiddingEntity> listByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    List<BidBiddingEntity> listByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                           @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                           @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                           @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -77,7 +78,7 @@ public interface BidBiddingMapper {
     /**
      * 精确计数（复用 listByAdvanced 条件）：total=公告条数，distinct_total=按(发布日期+项目名+地市+区县)去重后的项目数。
      */
-    java.util.Map<String, Object> countByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    java.util.Map<String, Object> countByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                   @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                   @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                   @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -86,7 +87,7 @@ public interface BidBiddingMapper {
                                                   @Param("endDate") String endDate);
 
     /** 按发布日期聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByDate(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByDate(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,
@@ -96,7 +97,7 @@ public interface BidBiddingMapper {
                                                     @Param("limit") int limit);
 
     /** 按省份+地市聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByCity(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByCity(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") java.math.BigDecimal minBudgetYuan,

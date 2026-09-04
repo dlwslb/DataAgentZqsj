@@ -43,7 +43,7 @@ public interface BidPreposeMapper {
     /**
      * 高级搜索（query_bids_advanced）。与 bidding 表 listByAdvanced 字段含义一致。
      */
-    List<BidPreposeEntity> listByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    List<BidPreposeEntity> listByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                           @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                           @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                           @Param("minBudgetYuan") BigDecimal minBudgetYuan,
@@ -56,7 +56,7 @@ public interface BidPreposeMapper {
     /**
      * 精确计数（复用 listByAdvanced 条件）：total=公告条数，distinct_total=按(发布日期+项目名+地市+区县)去重后的项目数。
      */
-    java.util.Map<String, Object> countByAdvanced(@Param("provinces") java.util.List<String> provinces,
+    java.util.Map<String, Object> countByAdvanced(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                   @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                   @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                   @Param("minBudgetYuan") BigDecimal minBudgetYuan,
@@ -65,7 +65,7 @@ public interface BidPreposeMapper {
                                                   @Param("endDate") String endDate);
 
     /** 按发布日期聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByDate(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByDate(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") BigDecimal minBudgetYuan,
@@ -75,7 +75,7 @@ public interface BidPreposeMapper {
                                                     @Param("limit") int limit);
 
     /** 按省份+地市聚合（服务端统计，供 agent 直接引用） */
-    List<java.util.Map<String, Object>> statsByCity(@Param("provinces") java.util.List<String> provinces,
+    List<java.util.Map<String, Object>> statsByCity(@Param("matchField") String matchField, @Param("provinces") java.util.List<String> provinces,
                                                     @Param("keywordGroups") java.util.List<java.util.List<String>> keywordGroups,
                                                     @Param("excludeKeywords") java.util.List<String> excludeKeywords,
                                                     @Param("minBudgetYuan") BigDecimal minBudgetYuan,

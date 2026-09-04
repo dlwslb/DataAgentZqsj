@@ -43,7 +43,9 @@ import java.util.stream.Collectors;
  *   <li>✅ {@code search_bids} / {@code get_bid_detail} 真正查 4 张表 + 字段映射</li>
  *   <li>✅ {@code search_bids} 支持：keywords 多值 OR 匹配 / 真实计数 total+total_distinct /
  *       stats=true 服务端聚合（by_date / by_city / top_winners）/ fields 字段裁剪 / page 翻页</li>
- *   <li>⚠️ {@code match_modes} 高级过滤：仅支持单值锁表（bidding/winner/prepose/purchaseIntention），多值忽略</li>
+ *   <li>✅ {@code match_modes} 高级过滤：单值表锁（bidding/winner/prepose/purchaseIntention，覆盖 bid_type 选表）或
+ *       单值字段路由（title/product/keywords/tenderer/win_tenderer，路由 advancedWhere 关键词匹配字段，win_tenderer 仅中标表支持）；
+ *       多值 / fulltext / 未知值回退全字段 OR</li>
  *   <li>⚠️ {@code bid_process} stage 字段：由调用方传入；本服务按 bid_type 推断（bidding=4, bid_winner=7, prepose=2, purchase_intention=1）</li>
  *   <li>⚠️ 9 个企业/市场分析类工具（{@code search_company} / {@code get_company_profile} / {@code find_competitors} 等）：
  *       暂未实现，stub 返回空 list；待后端同事补全</li>
@@ -61,6 +63,13 @@ public class TenderSearchService {
 
     private static final BigDecimal WAN_SCALE = new BigDecimal("10000");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /** match_modes 字段路由 token（单值生效；多值/fulltext/未知值回退全字段 OR） */
+    private static final Set<String> MATCH_FIELD_TOKENS = new HashSet<>(Arrays.asList(
+            "title", "product", "keywords", "tenderer", "win_tenderer"));
+    /** match_modes 表锁 token（兼容旧用法：覆盖 bid_type 的表选择） */
+    private static final Set<String> TABLE_LOCK_TOKENS = new HashSet<>(Arrays.asList(
+            "bidding", "winner", "prepose", "purchaseIntention"));
 
     // ============================================================
     // 1. 标讯搜索类（4 个）
@@ -91,8 +100,10 @@ public class TenderSearchService {
         boolean wantPurchaseIntention = wantAll || "采购".equals(bidType);
         boolean wantBidding = wantAll || "招标".equals(bidType);
         boolean wantWinner = wantAll || "中标".equals(bidType);
-        if(matchModes!=null && matchModes.size()==1){
-            // match_modes 单值会覆盖 bid_type 的表选择（精细化场景：agent 用 match_modes 锁定单表）
+        String matchField = resolveMatchField(matchModes);
+        if (matchModes != null && matchModes.size() == 1 && TABLE_LOCK_TOKENS.contains(matchModes.get(0))) {
+            // match_modes 单值表锁 token（bidding/winner/prepose/purchaseIntention）覆盖 bid_type 的表选择；
+            // 字段路由 token（title/product/keywords/tenderer/win_tenderer）不影响选表，仅路由关键词匹配字段
             wantPrepose = "prepose".equals(matchModes.get(0));
             wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
             wantBidding = "bidding".equals(matchModes.get(0));
@@ -108,9 +119,9 @@ public class TenderSearchService {
 
         if (wantBidding) {
             List<BidBiddingEntity> rows = biddingMapper.listByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = biddingMapper.countByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidBiddingEntity e : rows) {
@@ -120,9 +131,9 @@ public class TenderSearchService {
 
         if (wantWinner) {
             List<BidWinnerEntity> rows = winnerMapper.listByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = winnerMapper.countByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidWinnerEntity e : rows) {
@@ -133,9 +144,9 @@ public class TenderSearchService {
         if (wantPurchaseIntention) {
             // 采购意向表：标的物 = product（取前 5 个逗号分隔 token 已在 XML SUBSTRING_INDEX 处理）
             List<BidPurchaseIntentionEntity> rows = purchaseIntentionMapper.listByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = purchaseIntentionMapper.countByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidPurchaseIntentionEntity e : rows) {
@@ -146,9 +157,9 @@ public class TenderSearchService {
         if (wantPrepose) {
             // 拟在建项目表：金额在 toBidItem 里以空字符串返回（prepose 是项目储备，金额字段不严格）
             List<BidPreposeEntity> rows = preposeMapper.listByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = preposeMapper.countByAdvanced(
-                    provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, null, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidPreposeEntity e : rows) {
@@ -171,7 +182,7 @@ public class TenderSearchService {
         data.put("page_size", pageSize);
         data.put("items", items);
         if (withStats) {
-            data.put("stats", buildSearchStats(provinces, effectiveGroups, minAmount, maxAmount, beginDate, endDate,
+            data.put("stats", buildSearchStats(matchField, provinces, effectiveGroups, minAmount, maxAmount, beginDate, endDate,
                     wantBidding, wantWinner, wantPurchaseIntention, wantPrepose));
         }
         data.put("guide",
@@ -189,7 +200,7 @@ public class TenderSearchService {
      * 服务端聚合统计（search_bids stats=true 时返回）：by_date / by_city / top_winners。
      * 让 agent 直接引用写报告，替代全量拉取后用脚本自行聚合的模式。
      */
-    private Map<String, Object> buildSearchStats(List<String> provinces, List<List<String>> keywordGroups,
+    private Map<String, Object> buildSearchStats(String matchField, List<String> provinces, List<List<String>> keywordGroups,
                                                  BigDecimal minAmount, BigDecimal maxAmount,
                                                  String beginDate, String endDate,
                                                  boolean wantBidding, boolean wantWinner,
@@ -197,20 +208,20 @@ public class TenderSearchService {
         Map<String, Long> byDate = new TreeMap<>(Collections.reverseOrder());
         Map<String, Long> byCity = new LinkedHashMap<>();
         if (wantBidding) {
-            mergeDateStats(byDate, biddingMapper.statsByDate(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
-            mergeCityStats(byCity, biddingMapper.statsByCity(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
+            mergeDateStats(byDate, biddingMapper.statsByDate(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
+            mergeCityStats(byCity, biddingMapper.statsByCity(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
         }
         if (wantWinner) {
-            mergeDateStats(byDate, winnerMapper.statsByDate(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
-            mergeCityStats(byCity, winnerMapper.statsByCity(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
+            mergeDateStats(byDate, winnerMapper.statsByDate(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
+            mergeCityStats(byCity, winnerMapper.statsByCity(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
         }
         if (wantPurchaseIntention) {
-            mergeDateStats(byDate, purchaseIntentionMapper.statsByDate(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
-            mergeCityStats(byCity, purchaseIntentionMapper.statsByCity(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
+            mergeDateStats(byDate, purchaseIntentionMapper.statsByDate(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
+            mergeCityStats(byCity, purchaseIntentionMapper.statsByCity(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
         }
         if (wantPrepose) {
-            mergeDateStats(byDate, preposeMapper.statsByDate(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
-            mergeCityStats(byCity, preposeMapper.statsByCity(provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
+            mergeDateStats(byDate, preposeMapper.statsByDate(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 90));
+            mergeCityStats(byCity, preposeMapper.statsByCity(matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 50));
         }
 
         Map<String, Object> stats = new LinkedHashMap<>();
@@ -219,7 +230,7 @@ public class TenderSearchService {
         if (wantWinner) {
             List<Map<String, Object>> topWinners = new ArrayList<>();
             for (Map<String, Object> row : winnerMapper.aggregateWinners(
-                    provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 20)) {
+                    matchField, provinces, keywordGroups, null, minAmount, maxAmount, beginDate, endDate, 20)) {
                 Map<String, Object> w = new LinkedHashMap<>();
                 w.put("winner", strOf(row, "winner"));
                 w.put("cnt", numLong(row.get("cnt")));
@@ -262,6 +273,24 @@ public class TenderSearchService {
                         (a, b) -> a, LinkedHashMap::new));
     }
 
+    /**
+     * match_modes → advancedWhere 关键词字段路由（XML choose/when 的 matchField）。
+     * 仅单值 token 生效：title/product/keywords/tenderer/win_tenderer；
+     * 多值、fulltext、空值、未知值一律返回 null（全字段 OR，避免静默空结果）。
+     * win_tenderer 仅中标表存在，其余表的 XML 无该 when 分支会自动走 otherwise 全字段 OR，无需按表特判。
+     */
+    private static String resolveMatchField(List<String> matchModes) {
+        if (matchModes == null || matchModes.size() != 1) {
+            return null;
+        }
+        String v = matchModes.get(0);
+        if (v == null || v.isBlank() || "fulltext".equalsIgnoreCase(v.trim())) {
+            return null;
+        }
+        v = v.trim();
+        return MATCH_FIELD_TOKENS.contains(v) ? v : null;
+    }
+
     /** query_bids_advanced：高级搜索（支持 keyword_groups AND 关系 / exclude_keywords 排除词 / match_modes 字段过滤） */
     public Map<String, Object> queryBidsAdvanced(Map<String, Object> req) {
         String bidType = strOr(req, "bid_type", "全部");
@@ -282,7 +311,7 @@ public class TenderSearchService {
         List<List<String>> effectiveGroups = new ArrayList<>(keywordGroups);
         if (!keywords.isEmpty()) {
             List<String> topGroup = new ArrayList<>(keywords);
-            // 把 match_modes 也作为筛选条件；若指定 caller/winner 则只在该字段查，否则全字段查（XML 已默认全字段）
+            // match_modes 字段路由 token 由 resolveMatchField 解析后随各 mapper 调用下发（单值生效，多值/未知值回退全字段 OR）
             effectiveGroups.add(0, topGroup);
         }
 
@@ -291,8 +320,10 @@ public class TenderSearchService {
         boolean wantPurchaseIntention = wantAll || "采购".equals(bidType);
         boolean wantBidding = wantAll || "招标".equals(bidType);
         boolean wantWinner = wantAll || "中标".equals(bidType);
-        if(matchModes!=null && matchModes.size()==1){
-            // match_modes 单值会覆盖 bid_type 的表选择（精细化场景：agent 用 match_modes 锁定单表）
+        String matchField = resolveMatchField(matchModes);
+        if (matchModes != null && matchModes.size() == 1 && TABLE_LOCK_TOKENS.contains(matchModes.get(0))) {
+            // match_modes 单值表锁 token（bidding/winner/prepose/purchaseIntention）覆盖 bid_type 的表选择；
+            // 字段路由 token（title/product/keywords/tenderer/win_tenderer）不影响选表，仅路由关键词匹配字段
             wantPrepose = "prepose".equals(matchModes.get(0));
             wantPurchaseIntention = "purchaseIntention".equals(matchModes.get(0));
             wantBidding = "bidding".equals(matchModes.get(0));
@@ -305,40 +336,40 @@ public class TenderSearchService {
 
         if (wantBidding) {
             List<BidBiddingEntity> rows = biddingMapper.listByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords,
+                    matchField, provinces, effectiveGroups, excludeKeywords,
                     minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = biddingMapper.countByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidBiddingEntity e : rows) items.add(toBidItem(e, 4, "招标"));
         }
         if (wantWinner) {
             List<BidWinnerEntity> rows = winnerMapper.listByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords,
+                    matchField, provinces, effectiveGroups, excludeKeywords,
                     minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = winnerMapper.countByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidWinnerEntity e : rows) items.add(toBidItem(e, 7, "中标"));
         }
         if (wantPurchaseIntention) {
             List<BidPurchaseIntentionEntity> rows = purchaseIntentionMapper.listByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords,
+                    matchField, provinces, effectiveGroups, excludeKeywords,
                     minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = purchaseIntentionMapper.countByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidPurchaseIntentionEntity e : rows) items.add(toBidItem(e, 1, "采购"));
         }
         if (wantPrepose) {
             List<BidPreposeEntity> rows = preposeMapper.listByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords,
+                    matchField, provinces, effectiveGroups, excludeKeywords,
                     minAmount, maxAmount, beginDate, endDate, offset, pageSize);
             Map<String, Object> c = preposeMapper.countByAdvanced(
-                    provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
+                    matchField, provinces, effectiveGroups, excludeKeywords, minAmount, maxAmount, beginDate, endDate);
             total += numLong(c.get("total"));
             distinctTotal += numLong(c.get("distinct_total"));
             for (BidPreposeEntity e : rows) items.add(toBidItem(e, 2, "商机"));

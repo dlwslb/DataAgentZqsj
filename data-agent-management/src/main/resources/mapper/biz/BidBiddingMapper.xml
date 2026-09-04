@@ -91,17 +91,25 @@
                 #{p}
             </foreach>
         </if>
-        <!-- 关键词分组：每个 group 是 AND；group 内多个 keyword 之间是 OR（任一字段命中即算 group 命中） -->
+        <!-- 关键词分组：每个 group 是 AND；group 内多个 keyword 之间是 OR；matchField 单值时按字段路由（service 层已按表适配），否则全字段 OR -->
         <if test="keywordGroups != null and keywordGroups.size() > 0">
             AND
             <foreach collection="keywordGroups" item="group" separator=" AND ">
                 <trim prefix="(" suffix=")">
                     <foreach collection="group" item="kw" separator=" OR ">
-                        (title LIKE CONCAT('%', #{kw}, '%')
-                         OR project_name LIKE CONCAT('%', #{kw}, '%')
-                         OR product LIKE CONCAT('%', #{kw}, '%')
-                         OR keywords LIKE CONCAT('%', #{kw}, '%')
-                         OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                        <choose>
+                            <when test="matchField == 'title'">title LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'product'">product LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'keywords'">keywords LIKE CONCAT('%', #{kw}, '%')</when>
+                            <when test="matchField == 'tenderer'">tenderer LIKE CONCAT('%', #{kw}, '%')</when>
+                            <otherwise>
+                                (title LIKE CONCAT('%', #{kw}, '%')
+                                 OR project_name LIKE CONCAT('%', #{kw}, '%')
+                                 OR product LIKE CONCAT('%', #{kw}, '%')
+                                 OR keywords LIKE CONCAT('%', #{kw}, '%')
+                                 OR tenderer LIKE CONCAT('%', #{kw}, '%'))
+                            </otherwise>
+                        </choose>
                     </foreach>
                 </trim>
             </foreach>
